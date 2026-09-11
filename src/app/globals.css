@@ -1,0 +1,77 @@
+@import "tailwindcss";
+
+/* 디자인 토큰 — docs/design/tokens.css 원본을 그대로 옮긴 것.
+   값을 바꿀 때는 tokens.css · 세 .dc.html 의 helmet 과 함께 고친다.
+   `*: initial` 은 Tailwind 기본값(하늘색·rounded-2xl·shadow-lg 같은)을 지워
+   「금지 3 — 저장한 시스템 밖의 색 · 임의의 px」을 클래스 단계에서 막는다. */
+@theme {
+  /* 색 — 주 색 */
+  --color-*: initial;
+  --color-primary: #f97316; /* 버튼·강조 */
+  --color-primary-strong: #ea580c; /* hover·강조 텍스트 */
+  --color-primary-soft: #fff1e2; /* 배지 배경 */
+
+  /* 색 — 바탕과 글자 (따뜻한 톤) */
+  --color-bg: #faf7f3; /* 화면 배경(웜 오프화이트) */
+  --color-surface: #ffffff; /* 카드·입력칸 */
+  --color-border: #ece5da; /* 옅은 웜그레이 테두리 */
+  --color-text: #2b2620; /* 본문 */
+  --color-text-muted: #8a7f70; /* 보조 */
+  --color-text-faint: #bdb3a3; /* 비활성·플레이스홀더 */
+  --color-neutral-soft: #f1ece4; /* 중립 배지 배경 */
+
+  /* 색 — 경고 */
+  --color-danger: #d1453b;
+
+  /* 글자 */
+  --font-*: initial;
+  /* 토큰 원본의 첫 글꼴 'Noto Sans KR' 자리에 layout.tsx 의 next/font 변수를 넣었다 — 같은 글꼴, 나머지 폴백은 원본 그대로 */
+  --font-sans: var(--font-noto-sans-kr), -apple-system, BlinkMacSystemFont, "Malgun Gothic", system-ui, sans-serif;
+
+  --text-*: initial;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-base: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+
+  /* 굵기 — 유틸리티 이름이 되도록 Tailwind 의 font-weight 자리에 등록한다
+     (font-regular · font-medium · font-bold · font-black) */
+  --font-weight-*: initial;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-bold: 700;
+  --font-weight-black: 900;
+
+  --leading-*: initial;
+  --leading-tight: 1.35;
+
+  /* 간격 — 4의 배수. p-1 … p-6 이 --space-1 … --space-6 과 같은 값이 되게 한다 */
+  --spacing: 4px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* 모서리 반경 */
+  --radius-*: initial;
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-full: 999px;
+
+  /* 크기 */
+  --tap-min: 44px; /* 누르는 요소 최소 크기 */
+  --control-height: 48px; /* 전체 너비 버튼 */
+  --icon-sm: 14px;
+  --icon-md: 20px;
+  --screen-width: 390px;
+  --screen-height: 844px;
+
+  /* 그림자 */
+  --shadow-*: initial;
+  --shadow-card: 0 1px 2px rgba(43, 38, 32, 0.05), 0 6px 16px rgba(43, 38, 32, 0.06);
+}

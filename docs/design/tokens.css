@@ -1,0 +1,61 @@
+/* 팀 일정 관리 — 디자인 시스템 토큰 (단일 원본)
+   화면(.dc.html)들은 이 토큰만 참조한다. 임의의 인라인 값 금지.
+   각 화면은 스트리밍 중에도 깨지지 않도록 동일한 :root 블록을 helmet에 복제해 둔다.
+   값을 바꿀 때는 이 파일과 세 화면의 helmet을 함께 수정한다. */
+:root {
+  /* 색 — 주 색 */
+  --color-primary: #f97316;        /* 버튼·강조 */
+  --color-primary-strong: #ea580c; /* hover·강조 텍스트 */
+  --color-primary-soft: #fff1e2;   /* 배지 배경 */
+
+  /* 색 — 바탕과 글자 (따뜻한 톤) */
+  --color-bg: #faf7f3;             /* 화면 배경(웜 오프화이트) */
+  --color-surface: #ffffff;        /* 카드·입력칸 */
+  --color-border: #ece5da;         /* 옅은 웜그레이 테두리 */
+  --color-text: #2b2620;           /* 본문 */
+  --color-text-muted: #8a7f70;     /* 보조 */
+  --color-text-faint: #bdb3a3;     /* 비활성·플레이스홀더 */
+  --color-neutral-soft: #f1ece4;   /* 중립 배지 배경 */
+
+  /* 색 — 경고 */
+  --color-danger: #d1453b;
+
+  /* 글자 */
+  --font-sans: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Malgun Gothic', system-ui, sans-serif;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-base: 15px;
+  --text-lg: 17px;
+  --text-xl: 20px;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-bold: 700;
+  --weight-black: 900;
+  --leading-tight: 1.35;
+
+  /* 간격 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+
+  /* 모서리 반경 */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-full: 999px;
+
+  /* 크기 */
+  --tap-min: 44px;        /* 누르는 요소 최소 크기 */
+  --control-height: 48px; /* 전체 너비 버튼 */
+  --icon-sm: 14px;
+  --icon-md: 20px;
+  --screen-width: 390px;
+  --screen-height: 844px;
+
+  /* 그림자 */
+  --shadow-card: 0 1px 2px rgba(43, 38, 32, 0.05), 0 6px 16px rgba(43, 38, 32, 0.06);
+}

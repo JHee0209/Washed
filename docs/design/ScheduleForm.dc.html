@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
+<style>
+:root{--color-primary:#f97316;--color-primary-strong:#ea580c;--color-primary-soft:#fff1e2;--color-bg:#faf7f3;--color-surface:#ffffff;--color-border:#ece5da;--color-text:#2b2620;--color-text-muted:#8a7f70;--color-text-faint:#bdb3a3;--color-neutral-soft:#f1ece4;--color-danger:#d1453b;--font-sans:'Noto Sans KR',-apple-system,BlinkMacSystemFont,'Malgun Gothic',system-ui,sans-serif;--text-xs:12px;--text-sm:13px;--text-md:14px;--text-base:15px;--text-lg:17px;--text-xl:20px;--weight-regular:400;--weight-medium:500;--weight-bold:700;--weight-black:900;--leading-tight:1.35;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--radius-sm:8px;--radius-md:14px;--radius-lg:20px;--radius-full:999px;--tap-min:44px;--control-height:48px;--icon-sm:14px;--icon-md:20px;--screen-width:390px;--screen-height:844px;--shadow-card:0 1px 2px rgba(43,38,32,.05),0 6px 16px rgba(43,38,32,.06)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--color-bg)}
+a{color:var(--color-primary);text-decoration:none}
+a:hover{color:var(--color-primary-strong)}
+input::placeholder{color:var(--color-text-faint)}
+</style>
+</helmet>
+
+<div style="width:var(--screen-width);height:var(--screen-height);background:var(--color-bg);font-family:var(--font-sans);color:var(--color-text);display:flex;flex-direction:column;overflow:hidden">
+
+  <header style="flex:0 0 auto;display:flex;align-items:center;gap:var(--space-3);padding:var(--space-5) var(--space-5) var(--space-3)">
+    <button type="button" aria-label="뒤로가기" style="flex:0 0 auto;width:var(--tap-min);height:var(--tap-min);border:1px solid var(--color-border);border-radius:var(--radius-full);background:var(--color-surface);display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="border-color:var(--color-primary)">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+    </button>
+    <h1 style="margin:0;font-size:var(--text-xl);font-weight:var(--weight-black)">{{headerLabel}}</h1>
+  </header>
+
+  <div style="flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:var(--space-5);padding:var(--space-3) var(--space-5) var(--space-6)">
+
+    <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-2)">
+        <label for="f-title" style="font-size:var(--text-sm);font-weight:var(--weight-bold);color:var(--color-text-muted)">제목</label>
+        <span style="font-size:var(--text-xs);color:var(--color-text-faint)">{{titleCount}}</span>
+      </div>
+      <input id="f-title" type="text" maxlength="30" placeholder="예: 9월 정기 모임" value="{{titleValue}}" style="width:100%;min-height:var(--tap-min);font-family:var(--font-sans);font-size:var(--text-base);color:var(--color-text);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);outline:none" style-focus="border-color:var(--color-primary)">
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+      <label for="f-date" style="font-size:var(--text-sm);font-weight:var(--weight-bold);color:var(--color-text-muted)">날짜</label>
+      <input id="f-date" type="date" value="{{dateValue}}" style="width:100%;min-height:var(--tap-min);font-family:var(--font-sans);font-size:var(--text-base);color:var(--color-text);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);outline:none" style-focus="border-color:var(--color-primary)">
+      <sc-if value="{{showDateError}}" hint-placeholder-val="{{false}}">
+        <p style="margin:0;font-size:var(--text-xs);color:var(--color-danger)">지난 날짜입니다</p>
+      </sc-if>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+      <label for="f-time" style="font-size:var(--text-sm);font-weight:var(--weight-bold);color:var(--color-text-muted)">시간</label>
+      <input id="f-time" type="time" value="{{timeValue}}" style="width:100%;min-height:var(--tap-min);font-family:var(--font-sans);font-size:var(--text-base);color:var(--color-text);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);outline:none" style-focus="border-color:var(--color-primary)">
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+      <label for="f-place" style="font-size:var(--text-sm);font-weight:var(--weight-bold);color:var(--color-text-muted)">장소</label>
+      <input id="f-place" type="text" placeholder="예: 스터디룸 B" value="{{placeValue}}" style="width:100%;min-height:var(--tap-min);font-family:var(--font-sans);font-size:var(--text-base);color:var(--color-text);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);outline:none" style-focus="border-color:var(--color-primary)">
+    </div>
+
+  </div>
+
+  <div style="flex:0 0 auto;padding:var(--space-3) var(--space-5) var(--space-6)">
+    <sc-if value="{{isSubmittable}}" hint-placeholder-val="{{true}}">
+      <button type="button" style="width:100%;height:var(--control-height);border:none;border-radius:var(--radius-md);background:var(--color-primary);color:var(--color-surface);font-family:var(--font-sans);font-size:var(--text-base);font-weight:var(--weight-bold);cursor:pointer" style-hover="background:var(--color-primary-strong)">{{submitLabel}}</button>
+    </sc-if>
+    <sc-if value="{{isDisabled}}" hint-placeholder-val="{{false}}">
+      <button type="button" disabled="{{true}}" style="width:100%;height:var(--control-height);border:1px solid var(--color-border);border-radius:var(--radius-md);background:var(--color-neutral-soft);color:var(--color-text-faint);font-family:var(--font-sans);font-size:var(--text-base);font-weight:var(--weight-bold);cursor:not-allowed">{{submitLabel}}</button>
+    </sc-if>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844},&quot;mode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;create&quot;,&quot;edit&quot;],&quot;default&quot;:&quot;edit&quot;,&quot;tsType&quot;:&quot;'create' | 'edit'&quot;,&quot;section&quot;:&quot;상태&quot;},&quot;allFilled&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;상태&quot;},&quot;showDateError&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;상태&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const isEdit = this.props.mode === 'edit';
+    const filled = this.props.allFilled ?? true;
+    const title = isEdit ? '9월 정기 모임' : '';
+    return {
+      headerLabel: isEdit ? '일정 수정' : '일정 등록',
+      titleValue: title,
+      titleCount: title.length + '/30자',
+      dateValue: isEdit ? '2026-09-12' : '',
+      timeValue: isEdit ? '19:00' : '',
+      placeValue: isEdit ? '스터디룸 B' : '',
+      showDateError: !!this.props.showDateError,
+      submitLabel: isEdit ? '수정' : '등록',
+      isSubmittable: filled,
+      isDisabled: !filled
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap">
+<style>
+:root{--color-primary:#f97316;--color-primary-strong:#ea580c;--color-primary-soft:#fff1e2;--color-bg:#faf7f3;--color-surface:#ffffff;--color-border:#ece5da;--color-text:#2b2620;--color-text-muted:#8a7f70;--color-text-faint:#bdb3a3;--color-neutral-soft:#f1ece4;--color-danger:#d1453b;--font-sans:'Noto Sans KR',-apple-system,BlinkMacSystemFont,'Malgun Gothic',system-ui,sans-serif;--text-xs:12px;--text-sm:13px;--text-md:14px;--text-base:15px;--text-lg:17px;--text-xl:20px;--weight-regular:400;--weight-medium:500;--weight-bold:700;--weight-black:900;--leading-tight:1.35;--space-1:4px;--space-2:8px;--space-3:12px;--space-4:16px;--space-5:20px;--space-6:24px;--radius-sm:8px;--radius-md:14px;--radius-lg:20px;--radius-full:999px;--tap-min:44px;--control-height:48px;--icon-sm:14px;--icon-md:20px;--screen-width:390px;--screen-height:844px;--shadow-card:0 1px 2px rgba(43,38,32,.05),0 6px 16px rgba(43,38,32,.06)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--color-bg)}
+a{color:var(--color-primary);text-decoration:none}
+a:hover{color:var(--color-primary-strong)}
+input::placeholder{color:var(--color-text-faint)}
+</style>
+</helmet>
+
+<div style="width:var(--screen-width);height:var(--screen-height);background:var(--color-bg);font-family:var(--font-sans);color:var(--color-text);display:flex;flex-direction:column;overflow:hidden">
+
+  <header style="flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);padding:var(--space-5) var(--space-5) var(--space-3)">
+    <div style="display:flex;align-items:center;gap:var(--space-3)">
+      <button type="button" aria-label="뒤로가기" style="flex:0 0 auto;width:var(--tap-min);height:var(--tap-min);border:1px solid var(--color-border);border-radius:var(--radius-full);background:var(--color-surface);display:flex;align-items:center;justify-content:center;cursor:pointer" style-hover="border-color:var(--color-primary)">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--color-text)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+      </button>
+      <h1 style="margin:0;font-size:var(--text-xl);font-weight:var(--weight-black)">일정 상세</h1>
+    </div>
+    <sc-if value="{{canEdit}}" hint-placeholder-val="{{true}}">
+      <button type="button" style="flex:0 0 auto;min-height:var(--tap-min);padding:0 var(--space-2);border:none;background:transparent;color:var(--color-primary);font-family:var(--font-sans);font-size:var(--text-md);font-weight:var(--weight-bold);cursor:pointer" style-hover="color:var(--color-primary-strong)">수정</button>
+    </sc-if>
+  </header>
+
+  <div style="flex:1 1 auto;overflow-y:auto;display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-2) var(--space-5) var(--space-6)">
+
+    <section style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-4);box-shadow:var(--shadow-card);display:flex;flex-direction:column;gap:var(--space-3)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-2)">
+        <h2 style="margin:0;font-size:var(--text-lg);font-weight:var(--weight-bold);line-height:var(--leading-tight)">9월 정기 모임</h2>
+        <sc-if value="{{isUpcoming}}" hint-placeholder-val="{{true}}">
+          <span style="flex:0 0 auto;background:var(--color-primary-soft);color:var(--color-primary-strong);font-size:var(--text-xs);font-weight:var(--weight-bold);padding:var(--space-1) var(--space-2);border-radius:var(--radius-full);white-space:nowrap">예정</span>
+        </sc-if>
+        <sc-if value="{{isStarted}}" hint-placeholder-val="{{false}}">
+          <span style="flex:0 0 auto;background:var(--color-neutral-soft);color:var(--color-text-muted);font-size:var(--text-xs);font-weight:var(--weight-bold);padding:var(--space-1) var(--space-2);border-radius:var(--radius-full);white-space:nowrap">{{statusLabel}}</span>
+        </sc-if>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:var(--space-2)">
+        <span style="display:flex;align-items:center;gap:var(--space-2);font-size:var(--text-sm);color:var(--color-text-muted)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="16" rx="3"></rect><path d="M8 3v4M16 3v4M3 10h18"></path></svg>
+          9월 12일(토) · 19:00
+        </span>
+        <span style="display:flex;align-items:center;gap:var(--space-2);font-size:var(--text-sm);color:var(--color-text-muted)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s7-6.5 7-11.5A7 7 0 0 0 5 9.5C5 14.5 12 21 12 21z"></path><circle cx="12" cy="9.5" r="2.3"></circle></svg>
+          스터디룸 B
+        </span>
+      </div>
+    </section>
+
+    <section style="display:flex;flex-direction:column;gap:var(--space-2)">
+      <h3 style="margin:0;font-size:var(--text-md);font-weight:var(--weight-bold)">참석 여부 남기기</h3>
+      <sc-if value="{{canRespond}}" hint-placeholder-val="{{true}}">
+        <input type="text" placeholder="이름을 입력하세요" style="width:100%;min-height:var(--tap-min);font-family:var(--font-sans);font-size:var(--text-base);color:var(--color-text);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4);outline:none" style-focus="border-color:var(--color-primary)">
+        <div style="display:flex;gap:var(--space-3)">
+          <button type="button" style="flex:1 1 0;min-height:var(--tap-min);border:1.5px solid var(--color-primary);border-radius:var(--radius-md);background:var(--color-surface);color:var(--color-primary);font-family:var(--font-sans);font-size:var(--text-md);font-weight:var(--weight-bold);cursor:pointer" style-hover="background:var(--color-primary-soft)">참석</button>
+          <button type="button" style="flex:1 1 0;min-height:var(--tap-min);border:1.5px solid var(--color-primary);border-radius:var(--radius-md);background:var(--color-surface);color:var(--color-primary);font-family:var(--font-sans);font-size:var(--text-md);font-weight:var(--weight-bold);cursor:pointer" style-hover="background:var(--color-primary-soft)">불참</button>
+        </div>
+      </sc-if>
+      <sc-if value="{{isStarted}}" hint-placeholder-val="{{false}}">
+        <p style="margin:0;font-size:var(--text-sm);color:var(--color-text-muted);background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-md);padding:var(--space-3) var(--space-4)">이미 시작된 일정입니다</p>
+      </sc-if>
+    </section>
+
+    <section style="display:flex;flex-direction:column;gap:var(--space-3)">
+      <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2)">
+        <h3 style="margin:0;font-size:var(--text-sm);font-weight:var(--weight-bold);color:var(--color-text-muted)">{{attendLabel}}</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)">
+          <sc-for list="{{attendList}}" as="name" hint-placeholder-count="2">
+            <span style="display:inline-flex;align-items:center;font-size:var(--text-sm);padding:var(--space-1) var(--space-3);border-radius:var(--radius-full);background:var(--color-bg);border:1px solid var(--color-border);color:var(--color-text)">{{name}}</span>
+          </sc-for>
+        </div>
+      </div>
+      <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2)">
+        <h3 style="margin:0;font-size:var(--text-sm);font-weight:var(--weight-bold);color:var(--color-text-muted)">{{absentLabel}}</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)">
+          <sc-for list="{{absentList}}" as="name" hint-placeholder-count="1">
+            <span style="display:inline-flex;align-items:center;font-size:var(--text-sm);padding:var(--space-1) var(--space-3);border-radius:var(--radius-full);background:var(--color-bg);border:1px solid var(--color-border);color:var(--color-text)">{{name}}</span>
+          </sc-for>
+        </div>
+      </div>
+      <div style="background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:var(--space-4);display:flex;flex-direction:column;gap:var(--space-2)">
+        <h3 style="margin:0;font-size:var(--text-sm);font-weight:var(--weight-bold);color:var(--color-text-muted)">{{pendingLabel}}</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:var(--space-2)">
+          <sc-for list="{{pendingList}}" as="name" hint-placeholder-count="1">
+            <span style="display:inline-flex;align-items:center;font-size:var(--text-sm);padding:var(--space-1) var(--space-3);border-radius:var(--radius-full);background:var(--color-bg);border:1px solid var(--color-border);color:var(--color-text)">{{name}}</span>
+          </sc-for>
+          <sc-if value="{{pendingIsEmpty}}" hint-placeholder-val="{{false}}">
+            <span style="font-size:var(--text-sm);color:var(--color-text-faint)">없음</span>
+          </sc-if>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:390,&quot;height&quot;:844},&quot;status&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;예정&quot;,&quot;진행 중&quot;,&quot;지난 일정&quot;],&quot;default&quot;:&quot;예정&quot;,&quot;tsType&quot;:&quot;'예정' | '진행 중' | '지난 일정'&quot;,&quot;section&quot;:&quot;상태&quot;},&quot;isOrganizer&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;상태&quot;},&quot;allResponded&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;상태&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const isOrganizer = this.props.isOrganizer ?? true;
+    const status = this.props.status || '예정';
+    const isUpcoming = status === '예정';
+    const attendList = ['민수', '서연'];
+    const absentList = ['태오'];
+    const pendingList = this.props.allResponded ? [] : ['지우'];
+    return {
+      statusLabel: status,
+      isUpcoming,
+      isStarted: !isUpcoming,
+      canRespond: isUpcoming,
+      canEdit: isOrganizer && isUpcoming,
+      attendList, absentList, pendingList,
+      attendLabel: '참석 ' + attendList.length + '명',
+      absentLabel: '불참 ' + absentList.length + '명',
+      pendingLabel: '미응답 ' + pendingList.length + '명',
+      pendingIsEmpty: pendingList.length === 0
+    };
+  }
+}
+</script>
+</body>
+</html>
