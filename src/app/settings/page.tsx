@@ -78,8 +78,10 @@ export default function SettingsPage() {
     if (pushPending) return;
     setPushPending(true);
     try {
+      // enablePush 는 서버에 구독을 저장하지 못하면 던진다 — 권한만 켜지고
+      // 알림은 오지 않는 상태를 성공이라고 말하지 않기 위해서다.
       const result = await enablePush();
-      if (result === 'granted') showToast('이제 폰 알림을 받아요.');
+      if (result === 'granted') showToast('폰 알림을 켰어요.');
       else showToast('브라우저에서 알림이 허용되지 않았어요.');
     } catch {
       showToast('알림을 켜지 못했어요. 잠시 뒤 다시 시도해주세요.');
@@ -200,12 +202,19 @@ export default function SettingsPage() {
               <div className="group" style={{ marginBottom: '10px' }}>
                 <div className="cell">
                   <div style={{ flex: 1, minWidth: 0 }}>
+                    {/*
+                      브라우저 권한(granted)과 서버에 구독이 저장돼 있는지는 **다른**
+                      상태다 — 권한은 켜져 있어도 구독이 지워졌을 수 있다(푸시가
+                      404 · 410 으로 돌아오면 서버가 지운다). 여기서는 구독 상태를
+                      따로 조회하지 않으므로 **권한만 말한다.**
+                      (구독은 홈 진입 때 syncPushSubscription 이 다시 맞춘다.)
+                    */}
                     <div className="ctitle">
-                      {pushPermission === 'granted' ? '알림을 받고 있어요' : '알림이 꺼져 있어요'}
+                      {pushPermission === 'granted' ? '폰 알림 권한이 켜져 있어요' : '알림이 꺼져 있어요'}
                     </div>
                     <div className="cdesc">
                       {pushPermission === 'granted'
-                        ? '배정 · 종료 · 공지 알림을 폰으로 받아요.'
+                        ? '배정 · 종료 · 공지 알림을 폰으로 받을 수 있어요.'
                         : pushPermission === 'denied'
                           ? '브라우저가 알림을 차단했어요. 브라우저나 폰의 사이트 설정에서 직접 허용해주세요.'
                           : pushPermission === 'unsupported'

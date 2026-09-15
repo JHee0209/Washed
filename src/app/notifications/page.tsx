@@ -78,14 +78,34 @@ export default function NotificationsPage() {
     load();
   }, [load]);
 
-  // 앱을 열어 둔 채 푸시를 받으면 서비스 워커가 알려 준다(public/sw.js).
+  // 목록을 다시 읽어야 하는 순간들. useUnreadCount 와 같은 원칙이다 — 폴링하지 않고
+  // 값이 바뀌었을 수 있는 때에만 읽는다.
+  //
+  //   · 창이 다시 focus 될 때
+  //   · 탭이 다시 보이게 될 때 (모바일에서 앱을 다시 열면 focus 없이 이것만 온다)
+  //   · 앱이 열린 채 푸시가 도착했다고 서비스 워커가 알릴 때
+  //
+  // 앞의 둘이 없으면 **푸시를 허용하지 않은 사람**의 화면이 영영 갱신되지 않는다.
+  // 그쪽에는 서비스 워커 알림이 오지 않지만 DB 에는 알림이 쌓이기 때문이다(05 P26).
   useEffect(() => {
-    if (!('serviceWorker' in navigator)) return;
-    const onMessage = (event: MessageEvent) => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load();
+    };
+    const onSwMessage = (event: MessageEvent) => {
       if (event.data?.type === 'washed:notification') load();
     };
-    navigator.serviceWorker.addEventListener('message', onMessage);
-    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+
+    window.addEventListener('focus', load);
+    document.addEventListener('visibilitychange', onVisible);
+
+    const sw = 'serviceWorker' in navigator ? navigator.serviceWorker : null;
+    sw?.addEventListener('message', onSwMessage);
+
+    return () => {
+      window.removeEventListener('focus', load);
+      document.removeEventListener('visibilitychange', onVisible);
+      sw?.removeEventListener('message', onSwMessage);
+    };
   }, [load]);
 
   const unreadCount = items.filter((n) => !n.is_read).length;

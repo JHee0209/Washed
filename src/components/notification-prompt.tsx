@@ -22,9 +22,12 @@ import {
   askedServerSnapshot,
   askedSnapshot,
   enablePush,
+  installGuideSeenServerSnapshot,
+  installGuideSeenSnapshot,
   iosNeedsInstallServerSnapshot,
   iosNeedsInstallSnapshot,
   markAsked,
+  markInstallGuideSeen,
   permissionServerSnapshot,
   permissionSnapshot,
   subscribePushState,
@@ -47,6 +50,11 @@ export default function NotificationPrompt() {
     iosNeedsInstallSnapshot,
     iosNeedsInstallServerSnapshot,
   );
+  const installGuideSeen = useSyncExternalStore(
+    subscribePushState,
+    installGuideSeenSnapshot,
+    installGuideSeenServerSnapshot,
+  );
 
   // 이미 허용한 기기면 서버에 구독이 남아 있도록 조용히 맞춘다.
   // (열쇠가 회전되거나 서버 행이 지워졌을 수 있다.)
@@ -66,9 +74,6 @@ export default function NotificationPrompt() {
       setPending(false);
     }
   }
-
-  // 이미 물어본 기기면 띄우지 않는다.
-  if (asked) return null;
 
   const card: React.CSSProperties = {
     position: 'absolute',
@@ -121,7 +126,12 @@ export default function NotificationPrompt() {
 
   // 아이폰을 사파리로 연 상태 — 허용을 물어봐도 알림이 오지 않는다.
   // 먼저 홈 화면에 추가하는 법을 알린다 (F41).
+  //
+  // 이 안내를 닫는 것은 **허용을 물어본 것이 아니다.** 그래서 washed_push_asked 가
+  // 아니라 washed_push_install_guide_seen 을 쓴다 — 홈 화면에 추가해 앱으로 다시
+  // 열면 그때 아래의 진짜 허용 안내가 뜬다.
   if (iosNeedsInstall) {
+    if (installGuideSeen) return null;
     return (
       <div style={card}>
         <span style={titleStyle}>홈 화면에 추가하면 알림을 받을 수 있어요</span>
@@ -130,13 +140,16 @@ export default function NotificationPrompt() {
           차례와 종료 알림을 폰으로 받을 수 있어요.
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" onClick={markAsked} style={primaryButton}>
+          <button type="button" onClick={markInstallGuideSeen} style={primaryButton}>
             확인했어요
           </button>
         </div>
       </div>
     );
   }
+
+  // 여기부터가 **실제 허용 안내**다. 05 P26 의 "한 번만 묻는다" 가 걸리는 자리다.
+  if (asked) return null;
 
   // 브라우저가 이미 허용 · 거절을 기억하고 있으면 묻지 않는다.
   // 거절한 사람은 설정 화면의 "알림이 꺼져 있어요" 줄에서 다시 켠다 (P26).
