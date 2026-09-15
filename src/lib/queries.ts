@@ -1,5 +1,10 @@
 // 로그인한 사람의 화면이 읽는 조회들. 서버 컴포넌트에서만 부른다.
 //
+// **알림은 여기 없다.** 알림함 목록 · 안 읽은 개수 · 읽음 처리는 전부
+// src/lib/notifications.ts 한 곳에 있다 — 보관 기간(30일 · 「공지」만 3개월 ·
+// 05 P14 · P18)이 목록과 개수에 똑같이 걸려야 하는데, 여기에 필터 없는 사본을
+// 두면 두 값이 어긋난다.
+//
 // API 라우트를 따로 두지 않고 서버 컴포넌트가 바로 읽는다 — 화면과 조회가
 // 한 곳에 있어 줄서기 로직이 붙기 전까지 흐름을 따라가기 쉽다.
 // 바꾸는 동작(줄서기 · 취소 · 신고)은 나중에 라우트로 뺀다.
@@ -71,16 +76,6 @@ export async function requireMe(): Promise<Me> {
     hasPassword: Boolean(row.password_hash),
     withdrawRequestedAt: row.withdraw_requested_at,
   };
-}
-
-/** 안 읽은 알림 수 — 상단바 종에 붙는다 (F7) */
-export async function unreadCount(userId: string): Promise<number> {
-  const rows = await sql<{ n: number }>`
-    SELECT COUNT(*)::int AS n
-      FROM notifications
-     WHERE user_id = ${userId} AND is_read = false
-  `;
-  return rows[0]?.n ?? 0;
 }
 
 export type Machine = {
@@ -223,22 +218,6 @@ export async function myWarnings(userId: string) {
   return { warnings, restriction: restriction[0] ?? null };
 }
 
-/** 알림함 (F7 · 06 「알림」 · 보관 30일) */
-export async function myNotifications(userId: string) {
-  return sql<{
-    notification_id: string;
-    kind: string;
-    title: string;
-    body: string;
-    is_read: boolean;
-    received_at: string;
-  }>`
-    SELECT notification_id, kind, title, body, is_read, received_at
-      FROM notifications
-     WHERE user_id = ${userId}
-     ORDER BY received_at DESC
-  `;
-}
 
 /** 공지 (F17 · 06 「공지」 · 보관 3개월 · P18) */
 export async function listNotices() {

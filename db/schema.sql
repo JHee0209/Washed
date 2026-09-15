@@ -311,7 +311,12 @@ CREATE TABLE IF NOT EXISTS notifications (
   -- 여기의 「공지」는 알림함 한 줄의 종류 값일 뿐, 공지 자체가 아니다 —
   -- 공지 원본은 11번 notices 표에 따로 있다 (06 「공지」 · 05 P18 · F26).
   -- 관리자가 공지를 등록하면 알림함의 "공지" 탭에 자동으로 반영되고, 지우면 함께
-  -- 사라진다. 보관 기간도 서로 다르다 — 알림은 30일(P14), 공지는 3개월(P18).
+  -- 사라진다(아래 notice_id 가 그 연결이다).
+  --
+  -- 보관 기간은 **종류마다 다르다** (05 P14 · 「보관 기간과 조회 기간」):
+  --   배정 · 종료 · 경고 · 결과 … 30일
+  --   공지 ……………………………… 3개월 (공지 원본이 3개월 남으므로 · P18 의 예외)
+  -- 30일 하나로 읽지 않는다 — 그러면 아직 살아 있는 공지를 사생만 못 보게 된다.
   kind            text        NOT NULL
                               CHECK (kind IN ('공지', '배정', '종료', '경고', '결과')),
 
@@ -511,5 +516,22 @@ CREATE INDEX IF NOT EXISTS email_verifications_email_purpose_idx
 -- 인증코드는 06 의 다른 항목과 달리 보관할 이유가 없다 — 만료 24시간 뒤 지운다.
 CREATE INDEX IF NOT EXISTS email_verifications_expires_at_idx
   ON email_verifications (expires_at);
+
+-- -----------------------------------------------------------------------------
+-- 13. 알림 → 공지 연결  (0004 · 05 P18 · 06 「알림」 · 「공지」)
+-- -----------------------------------------------------------------------------
+-- 7번 notifications 는 11번 notices 보다 **먼저** 만들어진다. 그래서 이 외래키는
+-- CREATE TABLE 안에 넣을 수 없고(아직 없는 표를 가리키게 된다), 두 표가 모두 선
+-- 뒤인 여기에서 건다. 빈 DB 에 db:push 를 해도 순서가 맞는다.
+--
+-- 공지에서 나온 알림만 값이 있고 나머지는 NULL 이다. ON DELETE CASCADE 라
+-- 공지를 지우면 그 공지가 만든 알림도 함께 사라진다 — 05 P18 의 "알림함에서도
+-- 사라진다" 가 여기서 지켜진다.
+ALTER TABLE notifications
+  ADD COLUMN IF NOT EXISTS notice_id uuid NULL
+    REFERENCES notices(notice_id) ON DELETE CASCADE;
+
+CREATE INDEX IF NOT EXISTS notifications_notice_id_idx
+  ON notifications (notice_id);
 
 COMMIT;

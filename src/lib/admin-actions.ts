@@ -13,6 +13,7 @@ import { revalidatePath } from 'next/cache';
 
 import { requireAdmin } from '@/lib/admin-session';
 import { sql } from '@/lib/db';
+import { notify } from '@/lib/notify';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 조회
@@ -149,12 +150,19 @@ export async function adminWarnings() {
   `;
 }
 
-/** 탭 6 — 공지사항 (F26 · 보관 3개월 · P18) */
+/**
+ * 탭 6 — 공지사항 (F26 · 05 P18)
+ *
+ * 등록 후 3개월이 지난 공지는 보이지 않는다. 지우는 것은 서버 배치의 몫이고
+ * (08 · 9번 — 아직 없다) 여기서는 **조회**만 자른다. 배치가 생기면 지워진 것은
+ * 어차피 안 나오므로 이 필터는 빼도 된다 (08 · 9번).
+ */
 export async function adminNotices() {
   await requireAdmin();
   return sql<{ notice_id: string; title: string; body: string; created_at: string }>`
     SELECT notice_id, title, body, created_at
       FROM notices
+     WHERE created_at >= now() - interval '3 months'
      ORDER BY created_at DESC
   `;
 }
@@ -216,14 +224,75 @@ export async function removeMachine(machineId: string) {
   revalidatePath('/admin');
 }
 
-/** 신고 처리 상태 바꾸기 (F27) */
+/**
+ * 신고 처리 상태 바꾸기 (F27 · F24 · 05 P9 · P19)
+ *
+ * P9 — 접수됨 → 처리중 → 처리완료(사실) 순으로 가고, 반려(거짓)는 접수됨 · 처리중
+ * 어느 단계에서든 고를 수 있다. **처리완료와 반려는 되돌릴 수 없다.**
+ * 그래서 「어디서 어디로」가 허용되는지를 표로 두고 그 밖은 전부 막는다.
+ *
+ * P19 — 상태가 접수됨에서 바뀌면 **신고한 사람에게만** 결과를 알린다.
+ * 신고당한 사람에게는 누가 신고했는지 알리지 않는다.
+ */
+const REPORT_TRANSITIONS: Record<string, string[]> = {
+  접수됨: ['처리중', '반려'],
+  처리중: ['처리완료', '반려'],
+  // 처리완료 · 반려는 끝난 상태다 — 나가는 길이 없다 (P9)
+  처리완료: [],
+  반려: [],
+};
+
+/** 신고자에게 보낼 결과 문구 (07 화면 문구) */
+const REPORT_RESULT_BODY: Record<string, string> = {
+  처리중: '접수하신 신고를 확인 중이에요.',
+  처리완료: '접수하신 신고의 처리가 완료됐어요.',
+  반려: '접수하신 신고는 사실이 아닌 것으로 확인되어 반려됐어요.',
+};
+
 export async function setReportStatus(reportId: string, status: string) {
   await requireAdmin();
-  if (!['접수됨', '처리중', '처리완료'].includes(status)) {
+  if (!REPORT_TRANSITIONS[status]) {
     throw new Error('알 수 없는 상태입니다.');
   }
-  await sql`UPDATE reports SET status = ${status} WHERE report_id = ${reportId}`;
+
+  const current = await sql<{ status: string; reason: string; reporter_user_id: string }>`
+    SELECT status, reason, reporter_user_id FROM reports WHERE report_id = ${reportId} LIMIT 1
+  `;
+  const row = current[0];
+  if (!row) throw new Error('신고를 찾을 수 없습니다.');
+
+  // 같은 상태를 다시 고른 것이면 아무것도 하지 않는다 — 결과 알림이 두 번 가면 안 된다.
+  if (row.status === status) {
+    return;
+  }
+  if (!REPORT_TRANSITIONS[row.status].includes(status)) {
+    throw new Error(`'${row.status}' 에서 '${status}' 로는 바꿀 수 없습니다.`);
+  }
+
+  // 조건부 UPDATE 다 — 읽은 뒤 누가 먼저 바꿨다면 여기서 0줄이 되어 알림도 나가지 않는다.
+  const updated = await sql<{ report_id: string }>`
+    UPDATE reports
+       SET status = ${status}
+     WHERE report_id = ${reportId} AND status = ${row.status}
+    RETURNING report_id
+  `;
+  if (updated.length === 0) return;
+
+  // P19 — 신고자에게만. 알림함 기록이 핵심이고 푸시는 그 뒤 best-effort 다(P26).
+  try {
+    await notify(
+      row.reporter_user_id,
+      '결과',
+      `신고 결과: ${row.reason}`,
+      REPORT_RESULT_BODY[status] ?? '신고 상태가 바뀌었어요.',
+    );
+  } catch (error) {
+    // 상태는 이미 바뀌었다. 알림을 못 만들었다고 되돌리지는 않되, 조용히 넘기지도 않는다.
+    console.error('신고 결과 알림 생성 실패', reportId, error);
+  }
+
   revalidatePath('/admin');
+  revalidatePath('/notifications');
 }
 
 /**
@@ -270,8 +339,35 @@ export async function issueWarning(userId: string, reason: string) {
         THEN now() + make_interval(days => ${RESTRICT_DAYS}::int)
         ELSE usage_restrictions.restricted_until END
   `;
+
+  // 05 P16 — 사용자 알림함에 경고 알림이 남는다.
+  // 지금 제한이 걸렸는지는 DB 가 판정한다(서버 시각 기준 · P7).
+  const restriction = await sql<{ days_left: number | null }>`
+    SELECT CASE WHEN restricted_until IS NULL OR restricted_until <= now() THEN NULL
+                ELSE CEIL(EXTRACT(EPOCH FROM (restricted_until - now())) / 86400)::int
+           END AS days_left
+      FROM usage_restrictions
+     WHERE user_id = ${userId}
+     LIMIT 1
+  `;
+  const daysLeft = restriction[0]?.days_left ?? null;
+
+  try {
+    await notify(
+      userId,
+      '경고',
+      '경고가 1회 누적됐어요',
+      daysLeft
+        ? `${reason.trim()} — 경고 ${WARNING_LIMIT}회가 되어 ${daysLeft}일 동안 줄서기를 할 수 없어요.`
+        : `${reason.trim()} — 경고 ${WARNING_LIMIT}회가 되면 ${RESTRICT_DAYS}일 동안 줄서기를 할 수 없어요.`,
+    );
+  } catch (error) {
+    console.error('경고 알림 생성 실패', userId, error);
+  }
+
   revalidatePath('/admin');
   revalidatePath('/history');
+  revalidatePath('/notifications');
 }
 
 /**
@@ -323,16 +419,48 @@ export async function clearRestriction(userId: string) {
   revalidatePath('/history');
 }
 
-/** 공지 올리기 (F26) */
+/**
+ * 공지 올리기 (F26 · 05 P18)
+ *
+ * P18 — 「등록한 공지는 사생 알림함의 "공지" 탭에 자동으로 반영된다. 따로 발송하지
+ * 않는다.」 그래서 공지를 넣는 것과 사람마다 알림함 줄을 만드는 것은 **한 문장**으로
+ * 한다. 두 번에 나눠 보내면 앞은 성공하고 뒤가 실패했을 때 "공지는 있는데 아무도
+ * 알림함에서 못 보는" 상태가 남는다. db.ts 는 트랜잭션을 열어 주지 않으므로
+ * CTE 로 한 문장을 만든다.
+ *
+ * 탈퇴를 신청한 사람은 빼 둔다 — 즉시 이용이 정지된 상태다 (05 P24).
+ *
+ * [?] 폰 알림은 보내지 않는다. P18 이 "따로 발송하지 않는다" 이고 08 · 12번이 푸시를
+ * 보내는 자리를 배정 · 종료 · 경고 · 신고 결과 넷으로 열거하며 공지를 넣지 않았다.
+ * 팀이 보내기로 정하면 아래 INSERT 뒤에 sendPushToUser() 를 도는 단계를 더한다
+ * (DB 가 커밋된 뒤 best-effort 로 — 05 P26).
+ */
 export async function addNotice(title: string, body: string) {
   await requireAdmin();
   if (!title.trim() || !body.trim()) throw new Error('제목과 내용을 모두 입력해주세요.');
-  await sql`INSERT INTO notices (title, body) VALUES (${title.trim()}, ${body.trim()})`;
+
+  await sql`
+    WITH new_notice AS (
+      INSERT INTO notices (title, body)
+      VALUES (${title.trim()}, ${body.trim()})
+      RETURNING notice_id, title, body
+    )
+    INSERT INTO notifications (user_id, kind, title, body, notice_id)
+    SELECT u.user_id, '공지', n.title, n.body, n.notice_id
+      FROM users u CROSS JOIN new_notice n
+     WHERE u.withdraw_requested_at IS NULL
+  `;
+
   revalidatePath('/admin');
   revalidatePath('/notifications');
 }
 
-/** 공지 지우기 (F26) */
+/**
+ * 공지 지우기 (F26 · 05 P18)
+ *
+ * 「관리자가 공지를 삭제하면 알림함에서도 사라진다」 — notifications.notice_id 의
+ * ON DELETE CASCADE(0004)가 딸린 알림을 함께 지우므로 여기서 따로 지우지 않는다.
+ */
 export async function removeNotice(noticeId: string) {
   await requireAdmin();
   await sql`DELETE FROM notices WHERE notice_id = ${noticeId}`;

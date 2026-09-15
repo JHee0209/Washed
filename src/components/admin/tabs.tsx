@@ -367,20 +367,35 @@ function Reports({ rows }: { rows: Data['reports'] }) {
             <td style={cell}>
               <Dot
                 color={
-                  r.status === '처리완료' ? '#00BF40' : r.status === '처리중' ? '#2F63B8' : '#FF9200'
+                  r.status === '처리완료'
+                    ? '#00BF40'
+                    : r.status === '반려'
+                      ? '#E52222'
+                      : r.status === '처리중'
+                        ? '#2F63B8'
+                        : '#FF9200'
                 }
               />
               {r.status}
             </td>
+            {/*
+              05 P9 — 접수됨 → 처리중 → 처리완료 순으로 가고, 반려는 접수됨 · 처리중
+              어디서든 고를 수 있다. 처리완료 · 반려는 되돌릴 수 없으므로 그 자리에서는
+              단추를 아예 내지 않는다("배지가 눌리지 않는다").
+              서버(setReportStatus)도 같은 표로 한 번 더 막는다.
+            */}
             <td style={cell}>
               <div style={{ display: 'flex', gap: 6 }}>
-                {r.status !== '처리중' ? (
+                {r.status === '접수됨' ? (
                   <Btn onClick={() => setReportStatus(r.report_id, '처리중')}>처리중</Btn>
                 ) : null}
-                {r.status !== '처리완료' ? (
+                {r.status === '처리중' ? (
                   <Btn tone="primary" onClick={() => setReportStatus(r.report_id, '처리완료')}>
                     완료
                   </Btn>
+                ) : null}
+                {r.status === '접수됨' || r.status === '처리중' ? (
+                  <Btn onClick={() => setReportStatus(r.report_id, '반려')}>반려</Btn>
                 ) : null}
               </div>
             </td>
