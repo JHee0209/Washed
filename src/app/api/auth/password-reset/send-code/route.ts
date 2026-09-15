@@ -10,9 +10,9 @@
 // 가입하지 않은 주소로는 코드가 아예 만들어지지 않아 다음 단계로 갈 수 없다.
 
 import { sql } from '@/lib/db';
-import { sendVerificationCode } from '@/lib/email';
+import { resolveMailMode, sendVerificationCode } from '@/lib/email';
 import { toSchoolEmail } from '@/lib/school-email';
-import { EXPIRY_MINUTES, issueCode } from '@/lib/verification';
+import { EXPIRY_MINUTES, invalidateCode, issueCode, type IssueResult } from '@/lib/verification';
 
 export const runtime = 'nodejs';
 
@@ -71,13 +71,19 @@ export async function POST(request: Request) {
 
   const canSend = Boolean(user) && !user?.withdraw_requested_at;
 
+  // issued 는 아래 devCode 판정에서도 쓰므로 **블록 밖에서** 선언한다.
+  // (블록 안에서 const 로 선언하고 밖에서 읽으면 컴파일되지 않는다.)
+  let issued: IssueResult | null = null;
+
   if (canSend) {
-    const issued = await issueCode(email, '비밀번호 재설정');
+    issued = await issueCode(email, '비밀번호 재설정');
     if (issued.ok) {
       try {
         await sendVerificationCode(email, '비밀번호 재설정', issued.code, issued.minutes);
       } catch (error) {
         console.error('재설정 메일 발송 실패', error);
+        // 닿지 못한 코드는 죽인다 — 살려 두면 60초 쿨다운만 먹는다.
+        await invalidateCode(issued.verificationId);
         // 여기만은 사실대로 알린다 — 사용자가 기다려도 오지 않을 메일이다.
         // 05 P22 · P12 — 갈 곳은 문의하기가 아니라 관리자 전화다.
         return Response.json(
@@ -94,5 +100,14 @@ export async function POST(request: Request) {
     // 코드는 이미 나가 있고, 남은 시간을 알려 주면 가입 여부가 드러난다.
   }
 
-  return Response.json({ ok: true, minutes: MINUTES });
+  // 개발 편의. 두 자물쇠(운영 빌드 아님 · 콘솔 모드)를 모두 지날 때만 넣는다
+  // — 06 「이메일 인증코드」 · 08 · 25줄.
+  const devCode =
+    process.env.NODE_ENV !== 'production' &&
+    resolveMailMode() === 'console' &&
+    issued?.ok
+      ? { devCode: issued.code }
+      : {};
+
+  return Response.json({ ok: true, minutes: MINUTES, ...devCode });
 }

@@ -15,6 +15,11 @@ import 'server-only';
 
 type Purpose = '회원가입' | '비밀번호 재설정';
 
+export type MailMode = 'console' | 'resend';
+
+/** 콘솔 출력 위아래 여백 — 터미널에서 코드가 눈에 띄게 한다 */
+const EMPTY_LINE = '';
+
 const SUBJECTS: Record<Purpose, string> = {
   회원가입: '[Washed] 회원가입 인증번호',
   '비밀번호 재설정': '[Washed] 비밀번호 재설정 인증코드',
@@ -48,24 +53,72 @@ function renderHtml(purpose: Purpose, code: string, minutes: number): string {
 </body></html>`;
 }
 
+/**
+ * 지금 어느 경로로 보내는지 **한 곳에서** 정한다.
+ *
+ * 라우트가 process.env.MAIL_MODE 를 따로 비교하면 "미설정 + development" 일 때
+ * 실제 동작은 console 인데 값은 undefined 라 판정이 어긋난다. 그래서 개발용 코드
+ * 노출(devCode) 여부도 이 함수의 결과만 보고 정한다.
+ *
+ *   console  개발 전용. Resend 를 부르지 않고 터미널에 코드를 찍는다.
+ *   resend   실제 발송. RESEND_API_KEY · MAIL_FROM 이 있어야 한다.
+ *
+ * 운영에서 console 은 허용하지 않는다 — 인증번호가 서버 로그에만 남고
+ * 사용자에게는 영영 가지 않는 상태가 되기 때문이다.
+ *
+ * 검사는 **호출 시점**에 한다(모듈 로드 시점이 아니라). 빌드 단계에 환경변수가
+ * 아직 주입되지 않은 배포에서 빌드 자체가 깨지지 않게 하려는 것이다.
+ */
+export function resolveMailMode(): MailMode {
+  const raw = process.env.MAIL_MODE?.trim();
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  let mode: MailMode;
+  if (!raw) {
+    mode = isProduction ? 'resend' : 'console';
+  } else if (raw === 'console' || raw === 'resend') {
+    mode = raw;
+  } else {
+    throw new Error(`MAIL_MODE 값이 잘못됐습니다: '${raw}' — 'console' 또는 'resend' 여야 합니다.`);
+  }
+
+  if (mode === 'console' && isProduction) {
+    throw new Error(
+      'MAIL_MODE=console 은 개발 전용입니다. 운영에서는 인증번호가 사용자에게 가지 않습니다 — MAIL_MODE=resend 로 두고 RESEND_API_KEY · MAIL_FROM 을 넣어주세요.',
+    );
+  }
+
+  if (mode === 'resend' && (!process.env.RESEND_API_KEY || !process.env.MAIL_FROM)) {
+    throw new Error('RESEND_API_KEY · MAIL_FROM 이 없습니다. 메일을 보낼 수 없습니다.');
+  }
+
+  return mode;
+}
+
 export async function sendVerificationCode(
   to: string,
   purpose: Purpose,
   code: string,
   minutes: number,
 ): Promise<void> {
-  const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.MAIL_FROM;
+  const mode = resolveMailMode();
 
-  if (!apiKey || !from) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('RESEND_API_KEY · MAIL_FROM 이 없습니다. 메일을 보낼 수 없습니다.');
-    }
-    // 로컬 개발: 실제로 보내지 않고 콘솔에만 찍는다.
-    // 이 경로는 개발에서만 돈다 — 코드는 응답으로 내려가지 않는다 (08 · 1번).
-    console.info(`[메일 생략] ${to} · ${purpose} · 코드 ${code} · ${minutes}분`);
+  if (mode === 'console') {
+    // 개발 전용: 실제로 보내지 않고 터미널에 찍는다.
+    // 한글은 글자 폭이 2칸이라 padEnd 로 만든 상자가 어긋난다 — 줄만 맞춘다.
+    console.log(EMPTY_LINE);
+    console.log('──────────────── Washed 인증번호 ────────────────');
+    console.log(`  수신 이메일 : ${to}`);
+    console.log(`  발송 목적   : ${purpose}`);
+    console.log(`  인증코드    : ${code}   (유효시간 ${minutes}분)`);
+    console.log('─────────────────────────────────────────────────');
+    console.log(EMPTY_LINE);
     return;
   }
+
+  // resolveMailMode() 가 이미 둘 다 있음을 확인했다.
+  const apiKey = process.env.RESEND_API_KEY!;
+  const from = process.env.MAIL_FROM!;
 
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',

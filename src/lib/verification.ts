@@ -50,7 +50,7 @@ function generateCode(): string {
 }
 
 export type IssueResult =
-  | { ok: true; code: string; minutes: number }
+  | { ok: true; code: string; minutes: number; verificationId: string }
   | { ok: false; reason: 'cooldown'; retryAfterSeconds: number };
 
 /**
@@ -60,10 +60,16 @@ export type IssueResult =
  * 이전 코드는 지우지 않는다. 검증이 항상 「가장 최근 한 줄」만 보므로 자동으로 죽는다.
  */
 export async function issueCode(email: string, purpose: Purpose): Promise<IssueResult> {
+  // 살아 있는 줄만 본다. 메일 발송이 실패해 invalidateCode() 로 죽인 줄이
+  // 다음 재발송을 60초 막는 것을 피하려는 것이다.
+  //
+  // 정상 만료된 줄이 함께 빠지는 것은 무해하다 — 만료(가입 3분 · 재설정 5분)가
+  // 쿨다운 60초보다 길어, 만료된 줄은 이미 쿨다운을 지난 뒤다.
   const recent = await sql<{ seconds_ago: number }>`
     SELECT EXTRACT(EPOCH FROM (now() - created_at))::int AS seconds_ago
       FROM email_verifications
      WHERE email = ${email} AND purpose = ${purpose}
+       AND expires_at > now()
      ORDER BY created_at DESC
      LIMIT 1
   `;
@@ -81,7 +87,7 @@ export async function issueCode(email: string, purpose: Purpose): Promise<IssueR
   const code = generateCode();
   const codeHash = await hash(code);
 
-  await sql`
+  const inserted = await sql<{ verification_id: string }>`
     INSERT INTO email_verifications (email, purpose, code_hash, expires_at)
     VALUES (
       ${email},
@@ -89,9 +95,26 @@ export async function issueCode(email: string, purpose: Purpose): Promise<IssueR
       ${codeHash},
       now() + make_interval(mins => ${minutes}::int)
     )
+    RETURNING verification_id
   `;
 
-  return { ok: true, code, minutes };
+  return { ok: true, code, minutes, verificationId: inserted[0].verification_id };
+}
+
+/**
+ * 방금 만든 코드를 죽인다 — **메일 발송이 실패했을 때** 부른다.
+ *
+ * 줄을 **지우지 않는다.** verifyCode() 가 「가장 최근 한 줄」만 보므로, 최신 줄을
+ * 지우면 직전 줄이 다시 최신이 되어 **이미 지나간 코드가 되살아난다.** 만료시각을
+ * 지금으로 당겨 두면 그 줄은 최신 자리를 지킨 채 죽고(= verifyCode 가 'expired'),
+ * issueCode() 의 쿨다운 조회는 expires_at > now() 로 이 줄을 건너뛴다.
+ */
+export async function invalidateCode(verificationId: string): Promise<void> {
+  await sql`
+    UPDATE email_verifications
+       SET expires_at = now()
+     WHERE verification_id = ${verificationId}
+  `;
 }
 
 export type VerifyResult =

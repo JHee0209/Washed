@@ -5,9 +5,9 @@
 // **코드는 응답에 넣지 않는다.** 메일로만 나간다 (08 · 25번 줄).
 
 import { sql } from '@/lib/db';
-import { sendVerificationCode } from '@/lib/email';
+import { resolveMailMode, sendVerificationCode } from '@/lib/email';
 import { toSchoolEmail } from '@/lib/school-email';
-import { issueCode } from '@/lib/verification';
+import { invalidateCode, issueCode } from '@/lib/verification';
 
 export const runtime = 'nodejs';
 
@@ -58,6 +58,9 @@ export async function POST(request: Request) {
     await sendVerificationCode(email, '회원가입', issued.code, issued.minutes);
   } catch (error) {
     console.error('가입 인증 메일 발송 실패', error);
+    // 닿지 못한 코드는 죽인다 — 이걸 살려 두면 60초 쿨다운만 먹고
+    // 사용자는 오지 않을 메일을 기다리게 된다.
+    await invalidateCode(issued.verificationId);
     // P12 · P22 — 메일이 닿지 않을 때 사용자가 갈 곳은 관리자 전화다
     return Response.json(
       {
@@ -69,5 +72,15 @@ export async function POST(request: Request) {
     );
   }
 
-  return Response.json({ ok: true, minutes: issued.minutes });
+  // 개발 편의: 터미널을 보지 않아도 되게 코드를 함께 내려준다.
+  //
+  // 06 「이메일 인증코드」는 "어떤 응답으로도 화면에 내려보내지 않는다"(08 · 25줄)이므로
+  // **두 자물쇠를 모두 지날 때만** 넣는다 — 운영 빌드가 아니고(NODE_ENV),
+  // 메일을 실제로 보내지 않는 콘솔 모드일 때(resolveMailMode).
+  const devCode =
+    process.env.NODE_ENV !== 'production' && resolveMailMode() === 'console'
+      ? { devCode: issued.code }
+      : {};
+
+  return Response.json({ ok: true, minutes: issued.minutes, ...devCode });
 }
