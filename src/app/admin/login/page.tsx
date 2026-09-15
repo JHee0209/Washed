@@ -1,15 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, useTransition } from 'react';
 import Link from 'next/link';
 
-// 관리자 계정 정보 (테스트용 하드코딩)
-const ADMIN_ID = 'eulji-university-dorm';
-const ADMIN_PW = 'eulji-seongnam';
+import { loginAction } from './actions';
+
+// 계정은 admin_accounts 표에 있다 (06 「관리자 계정」 · 05 P12 · 08 · 1번).
+// 만드는 자리는 `npm run admin:create <아이디> <비밀번호>` 다.
+// 검증은 서버에서만 한다 — loginAction → adminSignIn() 이 washed-admin 쿠키를 심는다.
 
 export default function AdminLoginPage() {
-  const router = useRouter();
+  const [pending, startTransition] = useTransition();
+  const [errorMsg, setErrorMsg] = useState('');
 
   // --- 상태 관리 ---
   const [adminId, setAdminId] = useState('');
@@ -31,20 +33,33 @@ export default function AdminLoginPage() {
   }, []);
 
   // --- 핸들러 함수 ---
+  // 아이디 · 비밀번호는 서버가 본다. 맞으면 loginAction 안의 redirect('/admin') 이
+  // 이동까지 처리하므로 여기서 router.push 를 부르지 않는다.
   const handleLogin = () => {
-    if (adminId.trim() === ADMIN_ID && password === ADMIN_PW) {
-      try {
-        if (remember) {
-          localStorage.setItem('washed_admin_id', adminId.trim());
-        } else {
-          localStorage.removeItem('washed_admin_id');
-        }
-      } catch (e) {}
-      // 로그인 성공 시 관리자 대시보드로 이동
-      router.push('/admin');
-    } else {
-      setShowError(true);
-    }
+    if (pending) return;
+    setShowError(false);
+
+    // 아이디 저장은 기기 편의 기능이라 그대로 둔다 (비밀번호는 저장하지 않는다).
+    try {
+      if (remember) {
+        localStorage.setItem('washed_admin_id', adminId.trim());
+      } else {
+        localStorage.removeItem('washed_admin_id');
+      }
+    } catch (e) {}
+
+    const formData = new FormData();
+    formData.set('loginId', adminId.trim());
+    formData.set('password', password);
+
+    startTransition(async () => {
+      // 어느 쪽이 틀렸는지 구별해 알려주지 않는다 (admin-session.ts)
+      const message = await loginAction(null, formData);
+      if (message) {
+        setErrorMsg(message);
+        setShowError(true);
+      }
+    });
   };
 
   // 비밀번호 표시 아이콘 (눈 모양)
@@ -116,7 +131,7 @@ export default function AdminLoginPage() {
             </div>
 
             {showError && (
-              <div style={{ marginTop: '10px', fontSize: '12.5px', color: '#E0554E' }}>아이디 또는 비밀번호가 올바르지 않습니다.</div>
+              <div style={{ marginTop: '10px', fontSize: '12.5px', color: '#E0554E' }}>{errorMsg || '아이디 또는 비밀번호가 올바르지 않습니다.'}</div>
             )}
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '16px 0 20px' }}>
@@ -132,7 +147,7 @@ export default function AdminLoginPage() {
               <span onClick={() => setHelpOpen(true)} style={{ fontSize: '13px', fontWeight: 600, color: '#2F63B8', whiteSpace: 'nowrap', cursor: 'pointer' }}>비밀번호 재발급 문의</span>
             </div>
 
-            <button className="primary" onClick={handleLogin}>로그인</button>
+            <button className="primary" onClick={handleLogin} disabled={pending}>{pending ? '확인 중…' : '로그인'}</button>
           </div>
 
           <div style={{ marginTop: '22px', fontSize: '12.5px', fontWeight: 500, color: '#6B8CB8', textAlign: 'center', lineHeight: 1.6, animation: 'riseIn .7s ease-out .6s both' }}>

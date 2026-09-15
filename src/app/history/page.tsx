@@ -6,7 +6,19 @@ import Link from 'next/link';
 const MY_USER_KEY = '원병찬·302호';
 
 // 임시 기록 데이터 (나중에 DB에서 가져올 데이터)
-const baseGroups = [
+//
+// duration · warning 은 **없을 수 있다** — 배정만 받고 쓰지 않으면(05 P3) 사용 시간이
+// 없고, 경고 없이 끝난 건에는 사유가 없다. 타입을 적어 두지 않으면 추론이 항목마다
+// 갈려(union) `it.duration` 을 읽을 수 없다.
+type HistoryItem = {
+  name: string;
+  time: string;
+  iconSrc: string;
+  duration?: string;
+  warning?: string;
+};
+
+const baseGroups: { date: string; items: HistoryItem[] }[] = [
   { date: '오늘', items: [
     { name: '세탁기 2호기', time: '09:12', duration: '52분', iconSrc: '/icons/washer-history.svg' },
   ]},
