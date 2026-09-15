@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased;background:#EAEBEC;overflow:hidden}
+html{overflow:hidden}
+*{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;box-sizing:border-box}
+a{color:#2F63B8;text-decoration:none}
+a:hover{color:#1F4E9C}
+.no-scrollbar{scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+input,textarea{background:#fff;transition:background .18s ease}
+input:focus,textarea:focus{background:#fff}
+</style>
+<script src="./i18n.js"></script>
+</helmet>
+
+<div style="width:390px;height:844px;margin:40px auto">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="390" height="844" hint-size="390,844">
+    <div style="position:relative;height:840px;width:100%;display:flex;flex-direction:column;background:#F3F6FB;color:#1E3557;overflow:hidden">
+
+      <div style="flex-shrink:0;display:flex;align-items:center;gap:10px;padding:63px 20px 12px;background:#fff;border-bottom:1px solid #EAF0FA;width:396px;height:96px">
+        <a href="설정.dc.html" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0">
+          <svg width="11" height="18" viewBox="0 0 11 18" fill="none"><path d="M9.5 1.5 1.5 9l8 7.5" stroke="#1E3557" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </a>
+        <span style="font-size:16px;font-weight:800;color:#1E3557;letter-spacing:-0.3px;white-space:nowrap">프로필 수정</span>
+      </div>
+
+      <div class="no-scrollbar" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch">
+        <div style="padding:24px 16px 28px;display:flex;flex-direction:column;gap:22px">
+
+          <div style="display:flex;flex-direction:column;align-items:center;gap:10px">
+            <div style="width:76px;height:76px;border-radius:50%;background:#B7C6E0;display:flex;align-items:center;justify-content:center;overflow:hidden"><svg width="76" height="76" viewBox="-7 -5.25 38 38" fill="#fff"><circle cx="12" cy="8.6" r="4.2"></circle><path d="M3.5 22c0-5 3.8-8 8.5-8s8.5 3 8.5 8"></path></svg></div>
+            <span style="font-size:12.5px;font-weight:600;color:#5B93E0;cursor:default;white-space:nowrap">프로필 사진 변경</span>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label style="font-size:12.5px;font-weight:700;color:#5A7CA8">이름</label>
+            <input value="{{ name }}" oninput="{{ setName }}" placeholder="이름을 입력해 주세요" style="width:100%;border:none;outline:none;border-radius:12px;box-shadow:inset 0 0 0 1px #E6EDF7;padding:13px 14px;font-size:14px;color:#1E3557">
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label style="font-size:12.5px;font-weight:700;color:#5A7CA8">학번</label>
+            <input value="{{ studentId }}" disabled="{{ true }}" style="width:100%;border:none;outline:none;border-radius:12px;box-shadow:inset 0 0 0 1px #E6EDF7;padding:13px 14px;font-size:14px;color:#8FAAD0;background:#F3F6FB">
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:6px">
+            
+            
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <label style="font-size: 12.5px; font-weight: 700; color: #5A7CA8; margin-top: -25px">호실</label>
+            <input value="{{ room }}" oninput="{{ setRoom }}" placeholder="호실을 입력해 주세요" style="width:100%;border:none;outline:none;border-radius:12px;box-shadow:inset 0 0 0 1px #E6EDF7;padding:13px 14px;font-size:14px;color:#1E3557">
+          </div>
+
+          <div style="height:1px;background:#E1E8F2;margin:4px 0"></div>
+
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <span style="font-size:14px;font-weight:700">비밀번호 변경</span>
+
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <label style="font-size:12.5px;font-weight:700;color:#5A7CA8">현재 비밀번호</label>
+              <div style="position:relative">
+                <input type="{{ currentPwType }}" value="{{ currentPw }}" oninput="{{ setCurrentPw }}" placeholder="현재 비밀번호를 입력해 주세요" style="width:100%;border:none;outline:none;border-radius:12px;box-shadow:inset 0 0 0 1px {{ currentPwLine }};padding:13px 40px 13px 14px;font-size:14px;color:#1E3557">
+                <sc-if value="{{ currentPwHasText }}" hint-placeholder-val="{{ false }}">
+                  <button type="button" onclick="{{ toggleCurrentPwVisible }}" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:transparent;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;color:#8FAAD0">{{ currentPwEyeIcon }}</button>
+                </sc-if>
+              </div>
+              <sc-if value="{{ showCurrentPwError }}" hint-placeholder-val="{{ false }}">
+                <span style="font-size:12px;color:#E0554E">현재 비밀번호가 올바르지 않아요</span>
+              </sc-if>
+            </div>
+
+            <sc-if value="{{ pwVerified }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label style="font-size:12.5px;font-weight:700;color:#5A7CA8">새 비밀번호</label>
+                <div style="position:relative">
+                  <input type="{{ newPwType }}" value="{{ newPw }}" oninput="{{ setNewPw }}" placeholder="새 비밀번호를 입력해 주세요" style="width:100%;border:none;outline:none;border-radius:12px;box-shadow:inset 0 0 0 1px #E6EDF7;padding:13px 40px 13px 14px;font-size:14px;color:#1E3557">
+                  <sc-if value="{{ newPwHasText }}" hint-placeholder-val="{{ false }}">
+                    <button type="button" onclick="{{ toggleNewPwVisible }}" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:transparent;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;color:#8FAAD0">{{ newPwEyeIcon }}</button>
+                  </sc-if>
+                </div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label style="font-size:12.5px;font-weight:700;color:#5A7CA8">새 비밀번호 확인</label>
+                <div style="position:relative">
+                  <input type="{{ newPwConfirmType }}" value="{{ newPwConfirm }}" oninput="{{ setNewPwConfirm }}" placeholder="새 비밀번호를 다시 입력해 주세요" style="width:100%;border:none;outline:none;border-radius:12px;box-shadow:inset 0 0 0 1px #E6EDF7;padding:13px 40px 13px 14px;font-size:14px;color:#1E3557">
+                  <sc-if value="{{ newPwConfirmHasText }}" hint-placeholder-val="{{ false }}">
+                    <button type="button" onclick="{{ toggleNewPwConfirmVisible }}" style="position:absolute;right:8px;top:50%;transform:translateY(-50%);border:none;background:transparent;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;color:#8FAAD0">{{ newPwConfirmEyeIcon }}</button>
+                  </sc-if>
+                </div>
+                <sc-if value="{{ showPwMismatch }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:12px;color:#E0554E">비밀번호가 일치하지 않아요</span>
+                </sc-if>
+                <sc-if value="{{ showPwSameAsOld }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:12px;color:#E0554E">현재 비밀번호와 동일합니다</span>
+                </sc-if>
+              </div>
+              <button onclick="{{ changePassword }}" disabled="{{ changePwDisabled }}" style="{{ changePwStyle }}">비밀번호 변경</button>
+            </sc-if>
+
+            <sc-if value="{{ pwNotVerified }}" hint-placeholder-val="{{ true }}">
+              <button onclick="{{ verifyCurrentPw }}" disabled="{{ verifyDisabled }}" style="{{ verifyStyle }}">확인</button>
+            </sc-if>
+          </div>
+
+          <button onclick="{{ save }}" disabled="{{ saveDisabled }}" style="{{ saveStyle }}">저장하기</button>
+        </div>
+      </div>
+
+      <sc-if value="{{ toastVisible }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;left:50%;bottom:24px;transform:translateX(-50%);z-index:110;background:#17233C;color:#EEF4FD;border-radius:14px;padding:11px 17px;font-size:12.5px;font-weight:600;box-shadow:0 4px 12px rgba(20,42,84,.22);display:flex;align-items:center;gap:8px;max-width:88%">
+          <div style="width:7px;height:7px;border-radius:50%;background:#5BD39A;flex-shrink:0"></div>
+          <span>{{ toastMessage }}</span>
+        </div>
+      </sc-if>
+
+    </div>
+  </x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    name: '병찬', phone: '010-1234-5243', school: '을지대', room: '302호', toastVisible: false,
+    currentPw: '', currentPwError: false, pwVerified: false, newPw: '', newPwConfirm: '', pwToast: false,
+  };
+  _actualPassword = 'washed1234';
+
+  componentWillUnmount() { clearTimeout(this._toastTimer); }
+
+  _eyeIcon(open) {
+    return open
+      ? React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none' },
+          React.createElement('path', { d: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z', stroke: 'currentColor', strokeWidth: 1.8 }),
+          React.createElement('circle', { cx: 12, cy: 12, r: 3, stroke: 'currentColor', strokeWidth: 1.8 }))
+      : React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none' },
+          React.createElement('path', { d: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z', stroke: 'currentColor', strokeWidth: 1.8 }),
+          React.createElement('circle', { cx: 12, cy: 12, r: 3, stroke: 'currentColor', strokeWidth: 1.8 }),
+          React.createElement('line', { x1: 3, y1: 21, x2: 21, y2: 3, stroke: 'currentColor', strokeWidth: 1.8 }));
+  }
+
+  renderVals() {
+    const s = this.state;
+    const canSave = s.name.trim() !== '';
+    return {
+      initial: s.name.trim() ? s.name.trim()[0] : '?',
+      name: s.name, setName: (e) => this.setState({ name: e.target.value }),
+      studentId: '20231234',
+      phone: s.phone, setPhone: (e) => {
+        const digits = e.target.value.replace(/[^0-9]/g, '').slice(0, 11);
+        let formatted = digits;
+        if (digits.length > 3 && digits.length <= 7) formatted = `${digits.slice(0, 3)}-${digits.slice(3)}`;
+        else if (digits.length > 7) formatted = `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+        this.setState({ phone: formatted });
+      },
+      school: s.school, setSchool: (e) => this.setState({ school: e.target.value }),
+      room: s.room, setRoom: (e) => {
+        const raw = e.target.value;
+        const prev = s.room;
+        let digits;
+        if (prev.endsWith('호') && raw === prev.slice(0, -1)) {
+          digits = prev.slice(0, -1).replace(/[^0-9]/g, '').slice(0, -1);
+        } else {
+          digits = raw.replace(/[^0-9]/g, '');
+        }
+        this.setState({ room: digits ? `${digits}호` : '' });
+      },
+      saveDisabled: !canSave,
+      saveStyle: canSave
+        ? 'border:none;cursor:pointer;color:#fff;background:#4C86D8;border-radius:12px;padding:14px;font-size:14.5px;font-weight:700'
+        : 'border:none;cursor:default;color:#A8BCD9;background:#EDF2FA;border-radius:12px;padding:14px;font-size:14.5px;font-weight:700',
+      toastVisible: s.toastVisible,
+      toastMessage: s.pwToast ? '비밀번호가 변경됐어요.' : '프로필이 저장됐어요.',
+      save: () => {
+        if (!canSave) return;
+        this.setState({ toastVisible: true, pwToast: false });
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => this.setState({ toastVisible: false }), 2200);
+      },
+
+      currentPw: s.currentPw,
+      setCurrentPw: (e) => this.setState({ currentPw: e.target.value, currentPwError: false }),
+      currentPwType: s.currentPwVisible ? 'text' : 'password',
+      currentPwHasText: s.currentPw.length > 0,
+      toggleCurrentPwVisible: () => this.setState((st) => ({ currentPwVisible: !st.currentPwVisible })),
+      currentPwEyeIcon: this._eyeIcon(s.currentPwVisible),
+      newPwType: s.newPwVisible ? 'text' : 'password',
+      newPwHasText: s.newPw.length > 0,
+      toggleNewPwVisible: () => this.setState((st) => ({ newPwVisible: !st.newPwVisible })),
+      newPwEyeIcon: this._eyeIcon(s.newPwVisible),
+      newPwConfirmType: s.newPwConfirmVisible ? 'text' : 'password',
+      newPwConfirmHasText: s.newPwConfirm.length > 0,
+      toggleNewPwConfirmVisible: () => this.setState((st) => ({ newPwConfirmVisible: !st.newPwConfirmVisible })),
+      newPwConfirmEyeIcon: this._eyeIcon(s.newPwConfirmVisible),
+      currentPwLine: s.currentPwError ? '#E0554E' : '#E6EDF7',
+      showCurrentPwError: s.currentPwError,
+      verifyDisabled: !s.currentPw.trim(),
+      verifyStyle: s.currentPw.trim()
+        ? 'border:none;cursor:pointer;color:#4C86D8;background:transparent;box-shadow:inset 0 0 0 1.5px #4C86D8;border-radius:12px;padding:12px;font-size:13.5px;font-weight:700'
+        : 'border:none;cursor:default;color:#C3D2E6;background:transparent;box-shadow:inset 0 0 0 1.5px #E6EDF7;border-radius:12px;padding:12px;font-size:13.5px;font-weight:700',
+      verifyCurrentPw: () => {
+        if (!s.currentPw.trim()) return;
+        if (s.currentPw === this._actualPassword) this.setState({ pwVerified: true, currentPwError: false });
+        else this.setState({ currentPwError: true });
+      },
+      pwVerified: s.pwVerified,
+      pwNotVerified: !s.pwVerified,
+      newPw: s.newPw, setNewPw: (e) => this.setState({ newPw: e.target.value }),
+      newPwConfirm: s.newPwConfirm, setNewPwConfirm: (e) => this.setState({ newPwConfirm: e.target.value }),
+      showPwMismatch: s.newPwConfirm.length > 0 && s.newPw !== s.newPwConfirm,
+      showPwSameAsOld: s.newPw.length > 0 && s.newPw === s.currentPw,
+      changePwDisabled: !s.newPw || s.newPw !== s.newPwConfirm || s.newPw === s.currentPw,
+      changePwStyle: (s.newPw && s.newPw === s.newPwConfirm && s.newPw !== s.currentPw)
+        ? 'border:none;cursor:pointer;color:#4C86D8;background:transparent;box-shadow:inset 0 0 0 1.5px #4C86D8;border-radius:12px;padding:12px;font-size:13.5px;font-weight:700'
+        : 'border:none;cursor:default;color:#C3D2E6;background:transparent;box-shadow:inset 0 0 0 1.5px #E6EDF7;border-radius:12px;padding:12px;font-size:13.5px;font-weight:700',
+      changePassword: () => {
+        if (!s.newPw || s.newPw !== s.newPwConfirm || s.newPw === s.currentPw) return;
+        this._actualPassword = s.newPw;
+        this.setState({ pwVerified: false, currentPw: '', newPw: '', newPwConfirm: '', pwToast: true, toastVisible: true });
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => this.setState({ toastVisible: false }), 2200);
+      },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

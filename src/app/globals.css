@@ -1,32 +1,33 @@
 @import "tailwindcss";
 
-/* 디자인 토큰 — docs/design/tokens.css 원본을 그대로 옮긴 것.
-   값을 바꿀 때는 tokens.css · 세 .dc.html 의 helmet 과 함께 고친다.
+/* 디자인 토큰 — 값 출처는 docs/07-screens.md 「디자인」 절과 docs/design/*.dc.html 이다.
+   Washed 화면들은 토큰 파일 없이 인라인 hex 로 그려져 있으므로, 여기가 코드 쪽 단일 원본이다.
+   값을 바꿀 때는 07-screens.md 「디자인」 절과 함께 고친다.
    `*: initial` 은 Tailwind 기본값(하늘색·rounded-2xl·shadow-lg 같은)을 지워
    「금지 3 — 저장한 시스템 밖의 색 · 임의의 px」을 클래스 단계에서 막는다. */
 @theme {
-  /* 색 — 주 색 */
+  /* 색 — 주 색 (07 「디자인」) */
   --color-*: initial;
-  --color-primary: #f97316; /* 버튼·강조 */
-  --color-primary-strong: #ea580c; /* hover·강조 텍스트 */
-  --color-primary-soft: #fff1e2; /* 배지 배경 */
+  --color-primary: #5b93e0; /* 버튼·강조 */
+  --color-primary-strong: #2f63b8; /* hover·강조 텍스트 · 언어 버튼 테두리와 글자 */
+  --color-primary-soft: #eaf0fa; /* 배지 배경 · 상단 바 아래 선 */
 
-  /* 색 — 바탕과 글자 (따뜻한 톤) */
-  --color-bg: #faf7f3; /* 화면 배경(웜 오프화이트) */
-  --color-surface: #ffffff; /* 카드·입력칸 */
-  --color-border: #ece5da; /* 옅은 웜그레이 테두리 */
-  --color-text: #2b2620; /* 본문 */
-  --color-text-muted: #8a7f70; /* 보조 */
-  --color-text-faint: #bdb3a3; /* 비활성·플레이스홀더 */
-  --color-neutral-soft: #f1ece4; /* 중립 배지 배경 */
+  /* 색 — 바탕과 글자 */
+  --color-bg: #f3f6fb; /* 화면 배경(단색 · 그라데이션 금지) */
+  --color-surface: #ffffff; /* 카드·입력칸·상단 바 */
+  --color-text: #1e3557; /* 본문 */
 
-  /* 색 — 경고 */
-  --color-danger: #d1453b;
+  /* 색 — 상태 (07 「디자인」 의 「상태 색」) */
+  --color-success: #188a5e; /* 완료 */
+  --color-warning: #f0913f; /* 경고 · 건조기 */
+  --color-danger: #e0554e; /* 제한 · 오류 */
 
   /* 글자 */
   --font-*: initial;
-  /* 토큰 원본의 첫 글꼴 'Noto Sans KR' 자리에 layout.tsx 의 next/font 변수를 넣었다 — 같은 글꼴, 나머지 폴백은 원본 그대로 */
-  --font-sans: var(--font-noto-sans-kr), -apple-system, BlinkMacSystemFont, "Malgun Gothic", system-ui, sans-serif;
+  /* 화면 원본의 첫 글꼴은 Pretendard 다. 중국어·일본어에서 글자가 깨지지 않도록
+     Noto Sans SC · Noto Sans JP 를 뒤에 폴백으로 둔다(07 「디자인」 · docs/design/i18n.js). */
+  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, system-ui, "Malgun Gothic",
+    "Noto Sans SC", "Noto Sans JP", sans-serif;
 
   --text-*: initial;
   --text-xs: 12px;
@@ -56,11 +57,12 @@
   --space-5: 20px;
   --space-6: 24px;
 
-  /* 모서리 반경 */
+  /* 모서리 반경 — 07 「금지 3」 이 정한 네 값만 쓴다 */
   --radius-*: initial;
-  --radius-sm: 8px;
+  --radius-sm: 12px;
   --radius-md: 14px;
-  --radius-lg: 20px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --radius-full: 999px;
 
   /* 크기 */
@@ -68,10 +70,76 @@
   --control-height: 48px; /* 전체 너비 버튼 */
   --icon-sm: 14px;
   --icon-md: 20px;
-  --screen-width: 390px;
+  --screen-width: 390px; /* 07 「공통 인수 조건」 — 폰 세로 390px */
   --screen-height: 844px;
+}
 
-  /* 그림자 */
-  --shadow-*: initial;
-  --shadow-card: 0 1px 2px rgba(43, 38, 32, 0.05), 0 6px 16px rgba(43, 38, 32, 0.06);
+/* 로그인 · 회원가입 · 비밀번호찾기에서 함께 쓰는 입력칸과 버튼.
+   값 출처는 docs/design/로그인.dc.html 의 <style> 이다 — 그쪽을 고치면 여기도 고친다. */
+.field {
+  width: 100%;
+  height: 52px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1.5px solid #e3ebf7;
+  background: #f6f9fe;
+  font-size: 15px;
+  font-weight: 500;
+  color: #1e3557;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+.field::placeholder {
+  color: #a8bcd9;
+  font-weight: 400;
+}
+.field:focus {
+  outline: none;
+  border-color: #5b93e0;
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(91, 147, 224, 0.14);
+}
+
+.primary {
+  width: 100%;
+  height: 54px;
+  border: 0;
+  border-radius: 14px;
+  cursor: pointer;
+  background: linear-gradient(180deg, #5b93e0 0%, #3b76cc 100%);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  box-shadow: 0 8px 20px rgba(47, 99, 184, 0.28);
+  transition: transform 0.12s ease, box-shadow 0.18s ease;
+}
+.primary:active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 12px rgba(47, 99, 184, 0.24);
+}
+.primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.google {
+  width: 100%;
+  height: 52px;
+  border: 1.5px solid #e3ebf7;
+  border-radius: 14px;
+  background: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #33456b;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.google:active {
+  background: #f6f9fe;
+  border-color: #cfddf2;
 }

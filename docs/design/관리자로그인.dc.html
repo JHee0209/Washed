@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased;background:#F3F6FB}
+*{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;box-sizing:border-box}
+a{color:#2F63B8;text-decoration:none}
+a:hover{color:#1F4E9C}
+@keyframes riseIn{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:translateY(0)}}
+@keyframes markSettle{0%{opacity:0;transform:scale(.86)}60%{opacity:1;transform:scale(1.03)}100%{opacity:1;transform:scale(1)}}
+.field{width:100%;height:52px;padding:0 16px;border-radius:14px;border:1.5px solid #E3EBF7;background:#fff;font-size:15px;font-weight:500;color:#1E3557;transition:border-color .18s ease,box-shadow .18s ease}
+.field::placeholder{color:#A8BCD9;font-weight:400}
+.field:focus{outline:none;border-color:#5B93E0;box-shadow:0 0 0 4px rgba(91,147,224,.14)}
+.primary{width:100%;height:54px;border:0;border-radius:14px;cursor:pointer;background:linear-gradient(180deg,#5B93E0 0%,#3B76CC 100%);color:#fff;font-size:16px;font-weight:700;letter-spacing:-.2px;box-shadow:0 8px 20px rgba(47,99,184,.28);transition:transform .12s ease,box-shadow .18s ease}
+.primary:active{transform:translateY(1px);box-shadow:0 4px 12px rgba(47,99,184,.24)}
+.check{position:absolute;opacity:0;width:0;height:0}
+.check + span{width:20px;height:20px;border-radius:6px;border:1.5px solid #CFDDF2;background:#fff;display:inline-flex;align-items:center;justify-content:center;flex:none;transition:all .15s ease}
+.check + span svg{opacity:0;transition:opacity .15s ease}
+.check:checked + span{background:#5B93E0;border-color:#5B93E0}
+.check:checked + span svg{opacity:1}
+</style>
+</helmet>
+
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:40px 24px;background:#F3F6FB;position:relative;overflow:hidden">
+  <div style="position:absolute;top:-260px;left:50%;transform:translateX(-50%);width:820px;height:820px;border-radius:50%;background:radial-gradient(circle,rgba(91,147,224,.14) 0%,rgba(91,147,224,0) 62%);pointer-events:none"></div>
+
+  <div style="position:relative;z-index:1;width:100%;max-width:420px;display:flex;flex-direction:column;align-items:center">
+
+    <div style="width:100%;display:flex;flex-direction:column;align-items:center;margin-bottom:26px">
+      <div style="width:76px;height:76px;border-radius:22px;background:#fff;box-shadow:0 10px 24px rgba(47,99,184,.14),0 2px 6px rgba(47,99,184,.06);display:flex;align-items:center;justify-content:center;animation:markSettle .8s cubic-bezier(.22,1,.36,1) both">
+        <img src="./icons/logo-mark.png" alt="Washed" style="width:44px;height:44px;object-fit:contain">
+      </div>
+      <div style="margin-top:16px;font-size:30px;font-weight:800;color:#2F63B8;letter-spacing:-1px;line-height:1.15;white-space:nowrap;animation:riseIn .7s cubic-bezier(.22,1,.36,1) .2s both">Washed <span style="color:#1E3557">관리자</span></div>
+      <div style="margin-top:9px;font-size:13px;font-weight:600;color:#6B8CB8;letter-spacing:-.2px;white-space:nowrap;animation:riseIn .7s ease-out .32s both">기기 · 대기열 · 신고 관리 콘솔</div>
+    </div>
+
+    <div style="width:100%;background:#fff;border-radius:24px;padding:26px 22px 22px;box-shadow:0 14px 36px rgba(47,99,184,.12),0 2px 8px rgba(47,99,184,.05);animation:riseIn .8s cubic-bezier(.22,1,.36,1) .42s both">
+
+      <label style="display:block;font-size:13px;font-weight:700;color:#33456B;margin-bottom:8px">관리자 아이디</label>
+      <input class="field" type="text" value="{{ adminId }}" oninput="{{ setAdminId }}" placeholder="관리자 아이디를 입력해 주세요">
+
+      <label style="display:block;font-size:13px;font-weight:700;color:#33456B;margin:18px 0 8px">비밀번호</label>
+      <div style="position:relative">
+        <input class="field" type="{{ pwType }}" value="{{ password }}" oninput="{{ setPassword }}" placeholder="비밀번호를 입력해 주세요" style="padding-right:44px">
+        <sc-if value="{{ pwHasText }}" hint-placeholder-val="{{ false }}">
+          <button type="button" onclick="{{ togglePw }}" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);border:none;background:transparent;cursor:pointer;padding:4px;display:flex;align-items:center;justify-content:center;color:#8FAAD0">{{ pwEyeIcon }}</button>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ showError }}" hint-placeholder-val="{{ false }}">
+        <div style="margin-top:10px;font-size:12.5px;color:#E0554E">아이디 또는 비밀번호가 올바르지 않습니다.</div>
+      </sc-if>
+
+      <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 20px">
+        <label style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:500;color:#5A6E8F;cursor:pointer;position:relative">
+          <input class="check" type="checkbox" checked="{{ remember }}" onchange="{{ toggleRemember }}">
+          <span><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2.5 6.3L4.8 8.6L9.5 3.7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+          아이디 저장
+        </label>
+        <span onclick="{{ openHelp }}" style="font-size:13px;font-weight:600;color:#2F63B8;white-space:nowrap;cursor:pointer">비밀번호 재발급 문의</span>
+      </div>
+
+      <button class="primary" onclick="{{ login }}">로그인</button>
+    </div>
+
+    <div style="margin-top:22px;font-size:12.5px;font-weight:500;color:#6B8CB8;text-align:center;line-height:1.6;animation:riseIn .7s ease-out .6s both">
+      관리자 계정은 기숙사 행정실에서 발급합니다.<br>
+      <a href="로그인.dc.html" style="font-weight:700">일반 사용자 로그인</a>
+    </div>
+
+  </div>
+
+  <sc-if value="{{ helpOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:200;background:rgba(20,42,84,.42);display:flex;align-items:center;justify-content:center;padding:24px">
+      <div style="width:100%;max-width:340px;background:#fff;border-radius:18px;padding:24px;display:flex;flex-direction:column;gap:16px;box-shadow:0 20px 40px -12px rgba(20,42,84,.4)">
+        <div style="display:flex;flex-direction:column;gap:8px;text-align:center">
+          <span style="font-size:16px;font-weight:800;color:#1E3557">비밀번호 재발급 안내</span>
+          <span style="font-size:13px;color:#5A6E8F;line-height:1.6">관리자 계정 비밀번호 재발급은<br>기숙사 행정실에서 처리합니다.</span>
+          <span style="margin-top:4px;font-size:19px;font-weight:800;color:#2F63B8;letter-spacing:-.3px">031-740-7700</span>
+          <span style="font-size:12px;color:#6B8CB8">평일 09:00 ~ 18:00</span>
+        </div>
+        <button onclick="{{ closeHelp }}" style="border:none;cursor:pointer;color:#fff;background:#4C86D8;border-radius:12px;padding:12px;font-size:14px;font-weight:700">확인</button>
+      </div>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static ADMIN_ID = 'eulji-university-dorm';
+  static ADMIN_PW = 'eulji-seongnam';
+
+  state = { adminId: '', password: '', pwVisible: false, showError: false, remember: false };
+
+  componentDidMount() {
+    try {
+      const saved = localStorage.getItem('washed_admin_id');
+      if (saved) this.setState({ adminId: saved, remember: true });
+    } catch (e) {}
+  }
+
+  _eyeIcon(open) {
+    return open
+      ? React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none' },
+          React.createElement('path', { d: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z', stroke: 'currentColor', strokeWidth: 1.8 }),
+          React.createElement('circle', { cx: 12, cy: 12, r: 3, stroke: 'currentColor', strokeWidth: 1.8 }))
+      : React.createElement('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none' },
+          React.createElement('path', { d: 'M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z', stroke: 'currentColor', strokeWidth: 1.8 }),
+          React.createElement('circle', { cx: 12, cy: 12, r: 3, stroke: 'currentColor', strokeWidth: 1.8 }),
+          React.createElement('line', { x1: 3, y1: 21, x2: 21, y2: 3, stroke: 'currentColor', strokeWidth: 1.8 }));
+  }
+
+  renderVals() {
+    const s = this.state;
+    return {
+      adminId: s.adminId, setAdminId: (e) => this.setState({ adminId: e.target.value, showError: false }),
+      password: s.password, setPassword: (e) => this.setState({ password: e.target.value, showError: false }),
+      pwType: s.pwVisible ? 'text' : 'password',
+      pwHasText: s.password.length > 0,
+      togglePw: () => this.setState((st) => ({ pwVisible: !st.pwVisible })),
+      pwEyeIcon: this._eyeIcon(s.pwVisible),
+      showError: s.showError,
+      remember: s.remember,
+      helpOpen: !!s.helpOpen,
+      openHelp: () => this.setState({ helpOpen: true }),
+      closeHelp: () => this.setState({ helpOpen: false }),
+      toggleRemember: () => this.setState((st) => ({ remember: !st.remember })),
+      login: () => {
+        if (s.adminId.trim() === Component.ADMIN_ID && s.password === Component.ADMIN_PW) {
+          try {
+            if (s.remember) localStorage.setItem('washed_admin_id', s.adminId.trim());
+            else localStorage.removeItem('washed_admin_id');
+          } catch (e) {}
+          window.location.href = '관리자.dc.html';
+        } else {
+          this.setState({ showError: true });
+        }
+      },
+    };
+  }
+}
+
+</script>
+</body>
+</html>

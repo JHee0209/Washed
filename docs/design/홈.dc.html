@@ -1,0 +1,712 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased;background:#EAEBEC;overflow:hidden}
+html{overflow:hidden}
+*{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;box-sizing:border-box}
+a{color:#5B93E0;text-decoration:none}
+a:hover{color:#3B76CC}
+.no-scrollbar{scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+@keyframes qrScan{0%{top:8%}100%{top:88%}}
+</style>
+<script src="./i18n.js"></script>
+</helmet>
+
+<div style="width:390px;height:844px;margin:40px auto">
+  
+<x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="390" height="844" hint-size="390,844" style="position: relative">
+    <div style="position: relative; height: 840px; width: 100%; display: flex; flex-direction: column; background: #F3F6FB; color: #1E3557; overflow: hidden">
+
+      <div style="flex-shrink: 0; display: flex; align-items: center; gap: 8px; padding: 63px 20px 12px; background: #fff; border-bottom: 1px solid #EAF0FA; width: 396px; height: 96px; position: relative">
+        <img src="./icons/logo-mark.png" alt="Washed" style="width:34px;height:34px;object-fit:contain;margin-left:-3px;margin-top:2px">
+        <span style="font-size:16px;font-weight:800;color:#2F63B8;letter-spacing:-0.3px;margin-left:-7px;margin-top:2px">Washed</span>
+      <div style="box-sizing: border-box; display: flex; flex-direction: column; width: 8px; height: 9px; background-color: #FFFFFF08; border-radius: 8px; position: absolute; left: 331px; top: 64px"></div><a href="알림.dc.html" style="box-sizing: border-box; display: flex; flex-direction: column; width: 25px; height: 25px; border-radius: 8px; position: absolute; left: 337px; top: 63px; background: url(&quot;{{ bellIconSrc }}&quot;) center / cover no-repeat"></a></div>
+
+      <div class="no-scrollbar" style="flex: 1 1 0; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overflow-x: hidden">
+        
+      <div style="padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 20px; position: relative">
+
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <h1 style="margin: 0; font-size: 23px; font-weight: 800; letter-spacing: -0.02em; color: #1E3557; margin-top: -5px">안녕하세요, 병찬</h1>
+            <p style="margin:0;font-size:13px;color:#8FAAD0">오늘도 줄 서지 않고 편하게 세탁해요</p>
+          </div>
+
+          <sc-if value="{{ fullyIdle }}" hint-placeholder-val="{{ false }}">
+            <div style="background: #fff; border-radius: 20px; padding: 18px; box-shadow: 0px 10px 26px -8px rgba(47,99,184,.28); height: 48px; display:flex; align-items:center">
+              <span style="font-size:13px;color:#8FAAD0">아무것도 사용하지 않고 있습니다</span>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ hasActivity }}" hint-placeholder-val="{{ true }}">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start">
+              <div style="background:#fff;border-radius:20px;padding:14px;box-shadow:0px 10px 26px -8px rgba(47,99,184,.28);display:flex;flex-direction:column;gap:10px;min-width:0;align-self:{{ waitCardAlign }}">
+                <span style="font-size:13px;font-weight:700;color:#5B93E0">내 대기 현황</span>
+                <sc-if value="{{ hasMyWaiting }}" hint-placeholder-val="{{ false }}">
+                  <sc-for list="{{ myWaiting }}" as="mq" hint-placeholder-count="0">
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                      <div style="display: flex; align-items: center; gap: 8px; margin-top: 3px">
+                        <sc-if value="{{ mq.isWasher }}" hint-placeholder-val="{{ false }}">
+                          <img src="icons/washer-inuse.svg" alt="" style="width:30px;height:30px;flex-shrink:0">
+                        </sc-if>
+                        <sc-if value="{{ mq.isDryer }}" hint-placeholder-val="{{ false }}">
+                          <img src="icons/dryer-inuse.svg" alt="" style="width:30px;height:30px;flex-shrink:0">
+                        </sc-if>
+                        <div style="display:flex;flex-direction:column;min-width:0">
+                          <span style="font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ mq.name }}</span>
+                          <span style="font-size:11px;font-weight:700;color:#5B93E0">약 {{ mq.waitLeft }} 후 배정</span>
+                        </div>
+                      </div>
+                      <span style="font-size: 11px; color: #8FAAD0; line-height: 1.4; margin-top: 9px; margin-bottom: 8px">이용 예정이 아니면 줄 빠지기를 눌러주세요.<br></span>
+                      <button onclick="{{ mq.leave }}" style="border: none; cursor: pointer; color: #E0554E; background: transparent; box-shadow: inset 0 0 0 1px #F0B6B2; border-radius: 10px; padding: 8px; font-size: 12px; font-weight: 700">줄 빠지기</button>
+                    </div>
+                  </sc-for>
+                </sc-if>
+                <sc-if value="{{ noWaiting }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:12px;color:#8FAAD0">대기 중인 기기가 없어요</span>
+                </sc-if>
+              </div>
+
+              <div style="background:#fff;border-radius:20px;padding:14px;box-shadow:0px 10px 26px -8px rgba(47,99,184,.28);display:flex;flex-direction:column;gap:10px;min-width:0;align-self:{{ currentCardAlign }}">
+                <span style="font-size:13px;font-weight:700;color:{{ currentTitleColor }}">현재 상태</span>
+                <sc-if value="{{ hasMyCurrent }}" hint-placeholder-val="{{ false }}">
+                  <sc-for list="{{ myCurrent }}" as="cu" hint-placeholder-count="0">
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                      <div style="display:flex;align-items:center;gap:8px">
+                        <sc-if value="{{ cu.isWasher }}" hint-placeholder-val="{{ false }}">
+                          <img src="icons/washer-inuse.svg" alt="" style="width:30px;height:30px;flex-shrink:0">
+                        </sc-if>
+                        <sc-if value="{{ cu.isDryer }}" hint-placeholder-val="{{ false }}">
+                          <img src="icons/dryer-inuse.svg" alt="" style="width:30px;height:30px;flex-shrink:0">
+                        </sc-if>
+                        <div style="display:flex;flex-direction:column;min-width:0">
+                          <span style="font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ cu.name }}</span>
+                          <span style="font-size:11px;font-weight:700;color:{{ cu.timeColor }}">{{ cu.timeLeft }} 남음</span>
+                        </div>
+                      </div>
+                      <span style="font-size: 11px; color: {{ cu.msgColor }}; line-height: 1.4; margin-top: 9px; margin-bottom: 8px">{{ cu.message }}</span>
+                      <button onclick="{{ cu.onClick }}" style="{{ cu.btnStyle }}">{{ cu.btnLabel }}</button>
+                    </div>
+                  </sc-for>
+                </sc-if>
+              </div>
+            </div>
+          </sc-if>
+
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <h2 style="margin:0;font-size:17px;font-weight:800;letter-spacing:-0.02em;color:#1E3557">실시간 대기 현황</h2>
+            <p style="margin:0;font-size:12px;color:#8FAAD0">차례 10분 전, 이용 가능해질 때 알려드려요</p>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:start">
+            <sc-for list="{{ typeSummaries }}" as="ts" hint-placeholder-count="2">
+              <div style="background:#fff;border-radius:18px;padding:14px;box-shadow:0px 10px 26px -8px rgba(47,99,184,.28);display:flex;flex-direction:column;gap:8px;min-width:0">
+                <div style="display:flex;align-items:center;justify-content:space-between">
+                  <span style="font-size:13px;font-weight:700">{{ ts.label }}</span>
+                  <span style="font-size:11px;color:#8FAAD0">전체 {{ ts.total }}대</span>
+                </div>
+                <div style="display:flex;height:7px;border-radius:4px;overflow:hidden">
+                  <div style="background:{{ ts.inuseColor }};width:{{ ts.inusePct }}"></div>
+                  <div style="background:{{ ts.availableColor }};width:{{ ts.availablePct }}"></div>
+                </div>
+                <div style="display:flex;gap:10px;font-size:11px;color:#8FAAD0;flex-wrap:wrap">
+                  <span><span style="color:{{ ts.inuseColor }};font-weight:700">{{ ts.inuse }}</span> 사용중</span>
+                  <span><span style="color:{{ ts.availableColor }};font-weight:700">{{ ts.available }}</span> 가능</span>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <span style="font-size:10.5px;color:#5B93E0">{{ ts.actionInfo }}</span>
+                  <sc-if value="{{ ts.actionLabel }}" hint-placeholder-val="{{ false }}">
+                    <button onclick="{{ ts.actionOnClick }}" disabled="{{ ts.actionDisabled }}" style="{{ ts.actionStyle }}width:100%">{{ ts.actionLabel }}</button>
+                  </sc-if>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div style="font-size:13px;font-weight:700">기기 목록</div>
+              <div style="display:flex;gap:4px;background:#E4EDFA;border-radius:12px;padding:3px">
+                <sc-for list="{{ typeFilters }}" as="f" hint-placeholder-count="3">
+                  <div onclick="{{ f.onClick }}" style="cursor:pointer;padding:5px 8px;border-radius:10px;font-size:10.5px;font-weight:700;white-space:nowrap;background:{{ f.bg }};color:{{ f.color }}">{{ f.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+
+            <sc-if value="{{ hasWasherMachines }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="font-size:10.5px;font-weight:700;color:#8FAAD0">세탁기</span>
+                <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+                  <sc-for list="{{ washerMachines }}" as="m" hint-placeholder-count="0">
+                    <div style="background:#fff;border-radius:14px;padding:10px;box-shadow:0px 10px 26px -8px rgba(47,99,184,.28);display:flex;flex-direction:column;gap:6px;min-width:0">
+                      <sc-if value="{{ m.iconAvailable }}" hint-placeholder-val="{{ false }}">
+                        <img src="icons/washer-available.svg" alt="" style="width:24px;height:24px;flex-shrink:0">
+                      </sc-if>
+                      <sc-if value="{{ m.iconInuse }}" hint-placeholder-val="{{ false }}">
+                        <img src="icons/washer-inuse.svg" alt="" style="width:24px;height:24px;flex-shrink:0">
+                      </sc-if>
+                      <sc-if value="{{ m.iconFault }}" hint-placeholder-val="{{ false }}">
+                        <div style="position:relative;width:24px;height:24px;flex-shrink:0">
+                          <img src="icons/washer-inuse.svg" alt="" style="width:24px;height:24px;filter:grayscale(1) opacity(.55)">
+                          <div style="position:absolute;top:-4px;right:-4px;width:14px;height:14px;border-radius:50%;background:#E52222;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1">!</div>
+                        </div>
+                      </sc-if>
+                      <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+                        <span style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.name }}</span>
+                        <div style="display:inline-flex;align-items:center;gap:4px">
+                          <div style="width:5px;height:5px;border-radius:50%;background:{{ m.badgeDot }};flex-shrink:0"></div>
+                          <span style="font-size:9.5px;font-weight:600;color:{{ m.badgeFg }}">{{ m.badgeLabel }}</span>
+                        </div>
+                      </div>
+                      <sc-if value="{{ m.showProgress }}" hint-placeholder-val="{{ false }}">
+                        <div style="height:4px;border-radius:2px;background:#EDF2FA;position:relative;overflow:hidden"><div style="position:absolute;inset:0;width:{{ m.progress }};background:#5B93E0;border-radius:2px"></div></div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+
+            <sc-if value="{{ showDivider }}" hint-placeholder-val="{{ false }}">
+              <div style="height:1px;background:#E3EBF7"></div>
+            </sc-if>
+
+            <sc-if value="{{ hasDryerMachines }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <span style="font-size:10.5px;font-weight:700;color:#8FAAD0">건조기</span>
+                <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px">
+                  <sc-for list="{{ dryerMachines }}" as="m" hint-placeholder-count="0">
+                    <div style="background:#fff;border-radius:14px;padding:10px;box-shadow:0px 10px 26px -8px rgba(47,99,184,.28);display:flex;flex-direction:column;gap:6px;min-width:0">
+                      <sc-if value="{{ m.iconAvailable }}" hint-placeholder-val="{{ false }}">
+                        <img src="icons/dryer-available.svg" alt="" style="width:24px;height:24px;flex-shrink:0">
+                      </sc-if>
+                      <sc-if value="{{ m.iconInuse }}" hint-placeholder-val="{{ false }}">
+                        <img src="icons/dryer-inuse.svg" alt="" style="width:24px;height:24px;flex-shrink:0">
+                      </sc-if>
+                      <div style="display:flex;flex-direction:column;gap:1px;min-width:0">
+                        <span style="font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ m.name }}</span>
+                        <div style="display:inline-flex;align-items:center;gap:4px">
+                          <div style="width:5px;height:5px;border-radius:50%;background:{{ m.badgeDot }};flex-shrink:0"></div>
+                          <span style="font-size:9.5px;font-weight:600;color:{{ m.badgeFg }}">{{ m.badgeLabel }}</span>
+                        </div>
+                      </div>
+                      <sc-if value="{{ m.showProgress }}" hint-placeholder-val="{{ false }}">
+                        <div style="height:4px;border-radius:2px;background:#EDF2FA;position:relative;overflow:hidden"><div style="position:absolute;inset:0;width:{{ m.progress }};background:#5B93E0;border-radius:2px"></div></div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+
+        </div></div>
+
+      <div style="flex-shrink: 0; display: flex; justify-content: center; padding: 8px 0; background: rgba(255,255,255,.92); backdrop-filter: blur(16px); border-top: 1px solid rgba(112,115,124,.12); height: 60px">
+        <div style="display: flex; gap: 28px; justify-content: center">
+          <a href="홈.dc.html" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 16px;border-radius:10px;background:rgba(0,102,255,.08)">
+            <div style="width:7px;height:7px;border-radius:50%;background:#0066FF"></div>
+            <span style="font-size:10.5px;font-weight:600;color:#0066FF">홈</span>
+          </a>
+          <a href="기록.dc.html" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 16px;border-radius:10px">
+            <div style="width:7px;height:7px;border-radius:50%;background:#B5B5B5"></div>
+            <span style="font-size:10.5px;font-weight:600;color:#70737C">기록</span>
+          </a>
+          <a href="설정.dc.html" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 16px;border-radius:10px">
+            <div style="width:7px;height:7px;border-radius:50%;background:#B5B5B5"></div>
+            <span style="font-size:10.5px;font-weight:600;color:#70737C">설정</span>
+          </a>
+        </div>
+      </div>
+
+      <sc-if value="{{ warningOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;z-index:200;background:rgba(20,42,84,.48);display:flex;align-items:center;justify-content:center;padding:20px">
+          <div style="width:100%;max-width:300px;background:#fff;border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:16px;box-shadow:0px 20px 40px -12px rgba(20,42,84,.55)">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <span style="font-size:16px;font-weight:800">QR 인증 안내</span>
+              <span style="font-size:12.5px;color:#8FAAD0;line-height:1.6">QR을 찍으면 바로 타이머가 시작돼요.<br>세탁물을 넣은 뒤 기기에 붙은 QR을 찍어주세요.</span>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button onclick="{{ closeScanner }}" style="border:none;cursor:pointer;color:#1E3557;background:transparent;box-shadow:inset 0 0 0 1px #E3EBF7;border-radius:12px;padding:9px 16px;font-size:13px;font-weight:700">취소</button>
+              <button onclick="{{ proceedToScan }}" style="border:none;cursor:pointer;color:#fff;background:#4C86D8;border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700">확인</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ scannerOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;z-index:200;background:rgba(13,28,58,.74);display:flex;align-items:center;justify-content:center;padding:20px">
+          <div style="width:100%;max-width:300px;background:#17233C;border-radius:20px;padding:18px;display:flex;flex-direction:column;gap:12px;box-shadow:0px 20px 44px -12px rgba(8,20,46,.75)">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:14px;font-weight:800;color:#EEF4FD">QR 스캔</span>
+              <div onclick="{{ closeScanner }}" style="cursor:pointer;color:rgba(224,235,250,.62);font-size:18px;line-height:1;padding:2px 6px">×</div>
+            </div>
+            <div style="position:relative;aspect-ratio:1;border-radius:18px;overflow:hidden;background:#0D1728">
+              <div style="position:absolute;inset:0;background:repeating-linear-gradient(45deg,rgba(255,255,255,.03) 0 10px,transparent 10px 20px)"></div>
+              <div style="position:absolute;left:12%;top:12%;width:20px;height:20px;border-left:3px solid #5B93E0;border-top:3px solid #5B93E0;border-radius:4px 0 0 0"></div>
+              <div style="position:absolute;right:12%;top:12%;width:20px;height:20px;border-right:3px solid #5B93E0;border-top:3px solid #5B93E0;border-radius:0 4px 0 0"></div>
+              <div style="position:absolute;left:12%;bottom:12%;width:20px;height:20px;border-left:3px solid #5B93E0;border-bottom:3px solid #5B93E0;border-radius:0 0 0 4px"></div>
+              <div style="position:absolute;right:12%;bottom:12%;width:20px;height:20px;border-right:3px solid #5B93E0;border-bottom:3px solid #5B93E0;border-radius:0 0 4px 0"></div>
+              <div style="position:absolute;left:12%;right:12%;height:2px;background:#5B93E0;box-shadow:0 0 12px rgba(91,147,224,.85);animation:qrScan 1.8s ease-in-out infinite alternate"></div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <span style="font-size:13px;font-weight:700;color:#EEF4FD;text-align:center">{{ scannerName }}</span>
+              <span style="font-size:11px;color:rgba(224,235,250,.62);line-height:1.5;text-align:center">QR 코드를 사각형 안에 맞춰주세요.</span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button onclick="{{ closeScanner }}" style="flex:1;border:none;cursor:pointer;color:#EEF4FD;background:transparent;box-shadow:inset 0 0 0 1px rgba(224,235,250,.26);border-radius:12px;padding:10px;font-size:13px;font-weight:700">취소</button>
+              <button onclick="{{ confirmScan }}" style="flex:1;border:none;cursor:pointer;color:#fff;background:#4C86D8;border-radius:12px;padding:11px;font-size:13px;font-weight:700">인식 완료</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ expiredOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;z-index:200;background:rgba(20,42,84,.48);display:flex;align-items:center;justify-content:center;padding:20px">
+          <div style="width:100%;max-width:300px;background:#fff;border-radius:20px;padding:22px;display:flex;flex-direction:column;gap:16px;box-shadow:0px 20px 40px -12px rgba(20,42,84,.55)">
+            <div style="display:flex;flex-direction:column;gap:6px">
+              <span style="font-size:16px;font-weight:800">인증 시간 초과</span>
+              <span style="font-size:12.5px;color:#8FAAD0;line-height:1.6">인증 시간이 초과되어 다음 대기자에게 순서가 넘어갑니다. 이용을 원하실 경우 다시 줄서기해주세요.</span>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end">
+              <button onclick="{{ closeExpired }}" style="border:none;cursor:pointer;color:#fff;background:#4C86D8;border-radius:12px;padding:10px 18px;font-size:13px;font-weight:700">확인</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ toastVisible }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;left:50%;bottom:64px;transform:translateX(-50%);z-index:110;background:#17233C;color:#EEF4FD;border-radius:14px;padding:10px 16px;font-size:12.5px;font-weight:600;box-shadow:0px 10px 24px -8px rgba(20,42,84,.85);display:flex;align-items:center;gap:8px;max-width:88%">
+          <div style="width:7px;height:7px;border-radius:50%;background:#5BD39A;flex-shrink:0"></div>
+          <span>{{ toastMessage }}</span>
+        </div>
+      </sc-if>
+
+    </div>
+  </x-import></div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const READY_MS = 10 * 60 * 1000;
+const RUN_MS_WASHER = 60 * 60 * 1000;
+const RUN_MS_DRYER = 45 * 60 * 1000;
+const GRACE_MS = 3 * 60 * 1000;
+const runMsFor = (type) => (type === 'dryer' ? RUN_MS_DRYER : RUN_MS_WASHER);
+
+const MY_USER_KEY = '원병찬·302호';
+const BAN_DAYS = 3;
+
+class Component extends DCLogic {
+  state = {
+    toastVisible: false,
+    typeFilter: 'all',
+    now: Date.now(),
+    scanningId: null, warningId: null,
+    warningCount: 0,
+    queue: {}, typeQueue: {},
+    extraWaiters: { washer: 2, dryer: 1 },
+  };
+
+  get hasUnread() { try { return parseInt(localStorage.getItem('washed_unread') || '0', 10) > 0; } catch (e) { return false; } }
+
+  componentDidMount() {
+    this._tick = setInterval(() => this._reconcile(), 1000);
+  }
+  componentWillUnmount() { clearTimeout(this._toastTimer); clearInterval(this._tick); }
+
+  _addWarningToStore(reason) {
+    try {
+      const store = JSON.parse(localStorage.getItem('washed_warnings') || '{}');
+      const cur = store[MY_USER_KEY] || { count: 0, suspendedUntil: null };
+      const nextCount = cur.count + 1;
+      store[MY_USER_KEY] = nextCount >= 3
+        ? { count: 3, suspendedUntil: Date.now() + BAN_DAYS * 86400000 }
+        : { count: nextCount, suspendedUntil: null };
+      localStorage.setItem('washed_warnings', JSON.stringify(store));
+      const log = JSON.parse(localStorage.getItem('washed_warnlog') || '[]');
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      log.unshift({
+        id: `w${d.getTime()}`, key: MY_USER_KEY, reason,
+        date: `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`,
+        time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      });
+      localStorage.setItem('washed_warnlog', JSON.stringify(log));
+    } catch (e) {}
+  }
+
+  _toast(message) {
+    this.setState({ toastVisible: true, toastMessage: message });
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => this.setState({ toastVisible: false }), 3000);
+  }
+
+  _reconcile() {
+    const now = Date.now();
+    let msg = null;
+    const q = { ...this.state.queue };
+    const tq = { ...this.state.typeQueue };
+    let changed = false;
+
+    if (Math.random() < 0.12) {
+      const type = Math.random() < 0.5 ? 'washer' : 'dryer';
+      const delta = Math.random() < 0.5 ? -1 : 1;
+      this.setState((s) => ({ extraWaiters: { ...s.extraWaiters, [type]: Math.min(6, Math.max(0, s.extraWaiters[type] + delta)) } }));
+    }
+
+    Object.keys(tq).forEach((type) => {
+      const tEntry = tq[type];
+      if (!tEntry || now < tEntry.turnAt) return;
+      const busy = this._raw.filter((r) => r.type === type && r.status === 'inuse' && !q[r.id]);
+      if (busy.length === 0) return;
+      const target = busy.reduce((a, b) => (a.remaining <= b.remaining ? a : b));
+      q[target.id] = { phase: 'ready', name: target.name, readyDeadline: now + READY_MS };
+      delete tq[type];
+      changed = true;
+      msg = `${target.name} 차례가 됐어요! 10분 안에 QR을 찍어 시작해주세요.`;
+    });
+
+    Object.keys(q).forEach((id) => {
+      const e = q[id];
+      if (!e) return;
+      if (e.phase === 'waiting') return;
+      if (e.phase === 'ready' && now >= e.readyDeadline) {
+        delete q[id];
+        changed = true;
+        this._expiredNotice = true;
+        this._warnAfter = true;
+        this._addWarningToStore(`${e.name} · 배정 후 10분 안에 QR 인증을 하지 않아 경고를 받았어요`);
+        msg = `${e.name} 배정 시간 10분이 지나 경고가 1회 누적됐어요.`;
+      } else if (e.phase === 'running' && now >= e.runDeadline) {
+        q[id] = { ...e, phase: 'grace', graceDeadline: now + GRACE_MS };
+        changed = true;
+        msg = `${e.name} 이용 시간이 끝났어요. 3분 안에 "다했어요"를 눌러주세요.`;
+      } else if (e.phase === 'grace' && now >= e.graceDeadline) {
+        delete q[id];
+        changed = true;
+        msg = `${e.name}에서 시간 내 "다했어요"를 누르지 않아 경고가 1회 누적됐어요.`;
+        this._warnAfter = true;
+        this._addWarningToStore(`${e.name} · "다했어요" 버튼을 누르지 않아 경고를 받았어요`);
+        const raw = this._raw.find((r) => r.id === id);
+        if (raw) raw.status = 'available';
+      }
+    });
+    if (changed) {
+      this.setState((s) => ({ queue: q, typeQueue: tq, now, warningCount: this._warnAfter ? s.warningCount + 1 : s.warningCount, expiredOpen: this._expiredNotice ? true : s.expiredOpen }));
+      this._warnAfter = false;
+      this._expiredNotice = false;
+      if (msg) this._toast(msg);
+    } else {
+      this.setState({ now });
+    }
+  }
+
+  join(id, name) {
+    const now = Date.now();
+    this.setState((s) => ({ queue: { ...s.queue, [id]: { phase: 'ready', name, readyDeadline: now + READY_MS } } }));
+    this._toast(`${name}를 바로 이용할 수 있어요. 10분 안에 QR을 찍어주세요.`);
+  }
+
+  autoJoin(type, label) {
+    const now = Date.now();
+    let maintenanceOn = false;
+    try { maintenanceOn = localStorage.getItem('washed_maintenance') === '1'; } catch (e) {}
+    if (maintenanceOn) { this._toast('세탁실 점검 중이라 잠시 이용할 수 없어요.'); return; }
+    let adminFaults = {};
+    try { adminFaults = JSON.parse(localStorage.getItem('washed_admin_faults') || '{}'); } catch (e) {}
+    const list = this._raw.filter((r) => r.type === type && !adminFaults[r.id]);
+    const free = list.filter((r) => r.status === 'available');
+    if (free.length > 0) { this.join(free[0].id, free[0].name); return; }
+    const busy = list.filter((r) => r.status === 'inuse');
+    if (busy.length === 0) { this._toast(`지금은 대기할 수 있는 ${label}가 없어요.`); return; }
+    if (this.state.typeQueue[type]) { this._toast(`이미 ${label} 대기열에 참여 중이에요.`); return; }
+    const soonest = busy.reduce((a, b) => (a.remaining <= b.remaining ? a : b));
+    const othersWaiting = Object.values(this.state.typeQueue).filter((t) => t.type === type).length;
+    this.setState((s) => ({ typeQueue: { ...s.typeQueue, [type]: { type, turnAt: now + Math.max(soonest.remaining, 1) * 60000, othersWaiting } } }));
+    this._toast(`${label} 대기열에 참여했어요. 먼저 끝나는 기기로 자동 배정돼요.`);
+  }
+
+  leaveType(type, label) {
+    this.setState((s) => { const tq = { ...s.typeQueue }; delete tq[type]; return { typeQueue: tq }; });
+    this._toast(`${label} 대기열에서 나갔어요.`);
+  }
+
+  leave(id, name) {
+    this.setState((s) => { const q = { ...s.queue }; delete q[id]; return { queue: q }; });
+    this._toast(`${name} 대기열에서 나갔어요. 다시 신청하면 맨 뒤로 들어가요.`);
+  }
+
+  openScanner(id) { this.setState({ warningId: id }); }
+  proceedToScan() { this.setState((s) => ({ warningId: null, scanningId: s.warningId })); }
+  closeScanner() { this.setState({ scanningId: null, warningId: null }); }
+
+  start(id) {
+    this.setState({ scanningId: null });
+    const m = this._raw.find((r) => r.id === id);
+    this.setState((s) => ({ queue: { ...s.queue, [id]: { ...s.queue[id], phase: 'running', runDeadline: Date.now() + runMsFor(m.type) } } }));
+    this._toast(`${m.name} QR 인증 완료! 타이머가 시작됐어요.`);
+  }
+
+  finish(id, name) {
+    this.setState((s) => { const q = { ...s.queue }; delete q[id]; return { queue: q }; });
+    this._toast(`${name} 이용을 완료했어요. 다음 분이 이용할 수 있어요.`);
+  }
+
+  renderVals() {
+    const now = this.state.now || Date.now();
+    const primaryBtn = 'border:none;cursor:pointer;color:#fff;background:#4C86D8;border-radius:10px;padding:9px;font-size:12px;font-weight:700;box-shadow:0px 6px 14px -6px rgba(47,99,184,.9);';
+    const leaveBtn = 'border:none;cursor:pointer;color:#E0554E;background:transparent;box-shadow:inset 0 0 0 1px #F0B6B2;border-radius:10px;padding:8px;font-size:12px;font-weight:700;';
+    const disabledBtn = 'border:none;cursor:default;color:#A8BCD9;background:#EDF2FA;border-radius:10px;padding:8px;font-size:12px;font-weight:700;';
+
+    const raw = this._raw || (this._raw = [
+      { id: 'w1', type: 'washer', name: '세탁기 1호기', status: 'inuse', remaining: 20, othersWaiting: 0 },
+      { id: 'w2', type: 'washer', name: '세탁기 2호기', status: 'available', othersWaiting: 0 },
+      { id: 'w3', type: 'washer', name: '세탁기 3호기', status: 'inuse', remaining: 20, othersWaiting: 0 },
+      { id: 'w4', type: 'washer', name: '세탁기 4호기', status: 'available', othersWaiting: 0 },
+      { id: 'w5', type: 'washer', name: '세탁기 5호기', status: 'inuse', remaining: 20, othersWaiting: 0 },
+      { id: 'w6', type: 'washer', name: '세탁기 6호기', status: 'available', othersWaiting: 0 },
+      { id: 'w7', type: 'washer', name: '세탁기 7호기', status: 'inuse', remaining: 20, othersWaiting: 0 },
+      { id: 'w8', type: 'washer', name: '세탁기 8호기', status: 'fault', othersWaiting: 0 },
+      { id: 'd1', type: 'dryer', name: '건조기 1호기', status: 'inuse', remaining: 15, othersWaiting: 0 },
+      { id: 'd2', type: 'dryer', name: '건조기 2호기', status: 'inuse', remaining: 15, othersWaiting: 0 },
+      { id: 'd3', type: 'dryer', name: '건조기 3호기', status: 'inuse', remaining: 15, othersWaiting: 0 },
+      { id: 'd4', type: 'dryer', name: '건조기 4호기', status: 'inuse', remaining: 15, othersWaiting: 0 },
+    ]);
+
+    const fmt = (ms) => {
+      const s = Math.max(0, Math.ceil(ms / 1000));
+      const m = Math.floor(s / 60);
+      const sec = s % 60;
+      return `${m}:${sec.toString().padStart(2, '0')}`;
+    };
+
+    let adminFaults = {};
+    try { adminFaults = JSON.parse(localStorage.getItem('washed_admin_faults') || '{}'); } catch (e) {}
+    let maintenanceOn = false;
+    try { maintenanceOn = localStorage.getItem('washed_maintenance') === '1'; } catch (e) {}
+    const effectiveStatus = (r) => (adminFaults[r.id] ? 'fault' : (this.state.queue[r.id] ? 'inuse' : r.status));
+
+    try {
+      const snapshot = {};
+      raw.forEach((r) => { snapshot[r.id] = { status: effectiveStatus(r), remaining: r.remaining }; });
+      localStorage.setItem('washed_machines', JSON.stringify(snapshot));
+      // 대기열은 내가 줄을 섰는지와 무관하게 항상 기록한다 (관리자 실시간 대기열 현황과 연동)
+      const queueSnapshot = {};
+      ['washer', 'dryer'].forEach((type) => {
+        const t = this.state.typeQueue[type];
+        const list = raw.filter((r) => r.type === type);
+        const others = this.state.extraWaiters[type] || 0;
+        const busy = list.filter((r) => effectiveStatus(r) === 'inuse');
+        const availableCount = list.filter((r) => effectiveStatus(r) === 'available').length;
+        const soonestMin = busy.length ? Math.min.apply(null, busy.map((r) => r.remaining || 0)) : 0;
+        // 바로 쓸 수 있는 기기가 있으면 줄을 설 이유가 없으므로 대기 인원은 0
+        queueSnapshot[type] = {
+          count: availableCount > 0 ? 0 : others + (t ? 1 : 0),
+          mine: !!t,
+          waitLeftMs: t ? Math.max(0, t.turnAt - now) : soonestMin * 60000,
+          total: list.length,
+          available: list.filter((r) => effectiveStatus(r) === 'available').length,
+        };
+      });
+      localStorage.setItem('washed_typequeue', JSON.stringify(queueSnapshot));
+    } catch (e) {}
+
+    const filtered = this.state.typeFilter === 'all' ? raw : raw.filter((r) => r.type === this.state.typeFilter);
+    const machines = filtered.map((r) => {
+      const status = effectiveStatus(r);
+      const isInUse = status === 'inuse';
+      const isFault = status === 'fault';
+      let badgeFg, badgeDot, badgeLabel;
+      if (status === 'fault') { badgeFg = '#E52222'; badgeDot = '#E52222'; badgeLabel = '고장'; }
+      else if (status === 'inuse') { badgeFg = '#3B76CC'; badgeDot = '#5B93E0'; badgeLabel = '사용중'; }
+      else { badgeFg = '#4A5F82'; badgeDot = '#B9C9DF'; badgeLabel = '사용가능'; }
+
+      const e = this.state.queue[r.id];
+      let actionLabel = null, actionOnClick = () => {}, actionDisabled = false;
+      const smallLeave = 'border:none;cursor:pointer;color:#E0554E;background:transparent;box-shadow:inset 0 0 0 1px #F0B6B2;border-radius:10px;padding:6px 4px;font-size:10.5px;font-weight:700;width:100%';
+      const smallDisabled = 'border:none;cursor:default;color:#A8BCD9;background:#EDF2FA;border-radius:10px;padding:6px 4px;font-size:10.5px;font-weight:700;width:100%';
+      let actionStyle = smallLeave;
+
+      if (e && e.phase === 'waiting') {
+        actionLabel = '줄 빠지기'; actionOnClick = () => this.leave(r.id, r.name); actionStyle = smallLeave;
+      } else if (e) {
+        actionLabel = '이용 중'; actionDisabled = true; actionStyle = smallDisabled;
+      }
+
+      let showProgress = false, progressPct = 0, remaining = null;
+      if (e && e.phase === 'running') {
+        const msLeft = Math.max(0, e.runDeadline - now);
+        remaining = Math.ceil(msLeft / 60000);
+        progressPct = Math.min(100, Math.max(4, 100 - (msLeft / runMsFor(r.type)) * 100));
+        showProgress = true;
+      } else if (e && e.phase === 'grace') {
+        remaining = 0; progressPct = 100; showProgress = true;
+      }
+
+      return {
+        ...r, badgeFg, badgeDot, badgeLabel, remaining,
+        iconInuse: isInUse, iconAvailable: !isInUse && !isFault, iconFault: isFault,
+        showProgress,
+        progress: progressPct + '%',
+        actionLabel, actionOnClick, actionDisabled, actionStyle,
+      };
+    });
+
+    const filterDefs = [{ key: 'all', label: '전체' }, { key: 'washer', label: '세탁기' }, { key: 'dryer', label: '건조기' }];
+    const typeFilters = filterDefs.map((f) => ({
+      label: f.label,
+      bg: this.state.typeFilter === f.key ? '#fff' : 'transparent',
+      color: this.state.typeFilter === f.key ? '#1E3557' : '#8FAAD0',
+      onClick: () => this.setState({ typeFilter: f.key }),
+    }));
+
+    let warnStore = {};
+    try { warnStore = JSON.parse(localStorage.getItem('washed_warnings') || '{}'); } catch (e) {}
+    let mySuspend = warnStore[MY_USER_KEY];
+    if (mySuspend && mySuspend.suspendedUntil && now >= mySuspend.suspendedUntil) {
+      mySuspend = { count: 0, suspendedUntil: null };
+      warnStore[MY_USER_KEY] = mySuspend;
+      try { localStorage.setItem('washed_warnings', JSON.stringify(warnStore)); } catch (e) {}
+    }
+    const isSuspended = !!(mySuspend && mySuspend.suspendedUntil && now < mySuspend.suspendedUntil);
+    const suspendRemainLabel = isSuspended ? (() => {
+      const ms = mySuspend.suspendedUntil - now;
+      const days = Math.floor(ms / 86400000);
+      const hours = Math.floor((ms % 86400000) / 3600000);
+      return days > 0 ? `${days}일 ${hours}시간` : `${hours}시간`;
+    })() : '';
+
+    const summarize = (type, label, color) => {
+      const list = raw.filter((r) => r.type === type);
+      const total = list.length;
+      const available = list.filter((r) => effectiveStatus(r) === 'available').length;
+      const inuse = total - available;
+      const assignedId = list.map((r) => r.id).find((id) => this.state.queue[id]);
+      const assigned = assignedId ? { ...list.find((r) => r.id === assignedId), ...this.state.queue[assignedId] } : null;
+      const waitingType = this.state.typeQueue[type];
+      const hasFreeSlot = list.length > 0;
+      const waitingCount = available > 0 ? 0 : (this.state.extraWaiters[type] || 0) + (waitingType ? 1 : 0);
+
+      let actionLabel, actionOnClick, actionDisabled, actionStyle, actionInfo;
+      if (maintenanceOn) {
+        actionLabel = '점검 중'; actionOnClick = () => {}; actionDisabled = true; actionStyle = disabledBtn;
+        actionInfo = '세탁실 점검 중이라 잠시 이용할 수 없어요';
+      } else if (isSuspended) {
+        actionLabel = '이용 제한 중'; actionOnClick = () => {}; actionDisabled = true; actionStyle = disabledBtn;
+        actionInfo = `경고 누적으로 ${suspendRemainLabel} 동안 이용이 제한돼요`;
+      } else if (assigned) {
+        actionLabel = null; actionOnClick = () => {}; actionDisabled = false; actionStyle = primaryBtn;
+        actionInfo = `${assigned.name} 이용 중`;
+      } else if (waitingType) {
+        actionLabel = null; actionOnClick = () => {}; actionDisabled = false; actionStyle = disabledBtn;
+        actionInfo = `현재 ${waitingCount}명 대기 중이에요`;
+      } else if (!hasFreeSlot) {
+        actionLabel = '잠시만요'; actionOnClick = () => {}; actionDisabled = true; actionStyle = disabledBtn;
+        actionInfo = '곧 다시 신청할 수 있어요';
+      } else {
+        actionLabel = '줄서기'; actionOnClick = () => this.autoJoin(type, label); actionDisabled = false; actionStyle = primaryBtn;
+        actionInfo = available > 0 ? '바로 배정돼요' : `현재 ${waitingCount}명 대기 중이에요`;
+      }
+
+      return {
+        label, total, available, inuse,
+        availablePct: `${(available / total) * 100}%`,
+        inusePct: `${(inuse / total) * 100}%`,
+        availableColor: '#DCE6F3',
+        inuseColor: color,
+        actionLabel, actionOnClick, actionDisabled, actionStyle, actionInfo,
+      };
+    };
+    const typeSummaries = [
+      summarize('washer', '세탁기', '#5B93E0'),
+      summarize('dryer', '건조기', '#F0913F'),
+    ];
+
+    const iconFor = (type) => ({ isWasher: type === 'washer', isDryer: type === 'dryer' });
+
+    const myWaiting = Object.values(this.state.typeQueue).map((t) => ({
+      ...iconFor(t.type), name: t.type === 'washer' ? '세탁기' : '건조기',
+      othersWaiting: t.othersWaiting,
+      waitLeft: fmt(Math.max(0, t.turnAt - now)),
+      leave: () => this.leaveType(t.type, t.type === 'washer' ? '세탁기' : '건조기'),
+    }));
+    const myCurrent = [];
+    raw.forEach((r) => {
+      const e = this.state.queue[r.id];
+      if (!e) return;
+      const icon = iconFor(r.type);
+      if (e.phase === 'ready') {
+        myCurrent.push({
+          ...icon, name: r.name,
+          timeLeft: fmt(e.readyDeadline - now), timeColor: '#5B93E0',
+          message: '10분이 지나면 다음 대기자에게 순서가 넘어가므로 시간 내에 QR 인증해 주세요.',
+          msgColor: '#8FAAD0',
+          btnLabel: 'QR 인증', btnStyle: primaryBtn + 'width:100%',
+          onClick: () => this.openScanner(r.id),
+        });
+      } else if (e.phase === 'running') {
+        myCurrent.push({
+          ...icon, name: r.name,
+          timeLeft: `약 ${fmt(e.runDeadline - now)}`, timeColor: '#5B93E0',
+          message: '\n빨리 끝나면 다음 사람을 위해\n"다했어요"를 눌러주세요. \n\n',
+          msgColor: '#8FAAD0',
+          btnLabel: '다했어요', btnStyle: leaveBtn + 'width:100%',
+          onClick: () => this.finish(r.id, r.name),
+        });
+      } else if (e.phase === 'grace') {
+        myCurrent.push({
+          ...icon, name: r.name,
+          timeLeft: fmt(e.graceDeadline - now), timeColor: '#E0554E',
+          message: '시간이 끝났어요! 지금 누르지 않으면 경고가 쌓여요.',
+          msgColor: '#E0554E',
+          btnLabel: '다했어요', btnStyle: leaveBtn + 'width:100%',
+          onClick: () => this.finish(r.id, r.name),
+        });
+      }
+    });
+
+    const fullyIdle = myWaiting.length === 0 && myCurrent.length === 0;
+
+    const washerMachines = machines.filter((m) => m.type === 'washer');
+    const dryerMachines = machines.filter((m) => m.type === 'dryer');
+
+    return {
+      typeSummaries, machines, typeFilters,
+      washerMachines, dryerMachines,
+      hasWasherMachines: washerMachines.length > 0,
+      hasDryerMachines: dryerMachines.length > 0,
+      showDivider: washerMachines.length > 0 && dryerMachines.length > 0,
+      myWaiting, hasMyWaiting: myWaiting.length > 0, noWaiting: myWaiting.length === 0,
+      myCurrent, hasMyCurrent: myCurrent.length > 0,
+      currentTitleColor: myCurrent.some((c) => c.timeColor === '#E0554E') ? '#E0554E' : '#5B93E0',
+      waitCardAlign: (myWaiting.length > 0 && myCurrent.length > 0) ? 'stretch' : 'start',
+      currentCardAlign: (myWaiting.length > 0 && myCurrent.length > 0) ? 'stretch' : 'start',
+      fullyIdle, hasActivity: !fullyIdle,
+      toastVisible: this.state.toastVisible, toastMessage: this.state.toastMessage,
+      warningOpen: !!this.state.warningId,
+      proceedToScan: () => this.proceedToScan(),
+      scannerOpen: !!this.state.scanningId,
+      scannerName: this.state.scanningId ? (raw.find((r) => r.id === this.state.scanningId) || {}).name : '',
+      closeScanner: () => this.closeScanner(),
+      confirmScan: () => { if (this.state.scanningId) this.start(this.state.scanningId); },
+      expiredOpen: !!this.state.expiredOpen,
+      closeExpired: () => this.setState({ expiredOpen: false }),
+      bellIconSrc: this.hasUnread ? './icons/bell-active.svg' : './icons/bell.svg',
+    };
+  }
+}
+
+</script>
+</body>
+</html>

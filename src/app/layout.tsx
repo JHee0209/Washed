@@ -1,24 +1,43 @@
-import type { Metadata } from "next";
-import { Noto_Sans_KR } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+
+import RegisterServiceWorker from "@/components/register-sw";
+import AuthSessionProvider from "@/components/session-provider";
+
 import "./globals.css";
 
-/* 토큰 --font-sans 의 첫 글꼴. .dc.html 은 구글 폰트 링크로 불러오지만
-   여기서는 next/font 로 같은 글꼴을 직접 담아 쓴다(한글 subset 포함 · 외부 요청 없음). */
-const notoSansKR = Noto_Sans_KR({
-  weight: ["400", "500", "700", "900"],
-  variable: "--font-noto-sans-kr",
-  display: "swap",
-  preload: false,
-});
-
 export const metadata: Metadata = {
-  title: "팀 일정 관리",
+  title: "Washed",
+  description: "기숙사 세탁기 · 건조기 원격 줄서기",
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "Washed" },
+};
+
+// 폰에서 앱처럼 보이게 하는 값들 (PWA).
+// themeColor 는 상단 상태바 색, viewportFit 은 아이폰 노치 아래까지 채우는 설정이다.
+export const viewport: Viewport = {
+  themeColor: "#2F63B8",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" className={`${notoSansKR.variable} antialiased`}>
-      <body className="min-h-dvh bg-bg text-text">{children}</body>
+    <html lang="ko" className="antialiased">
+      <head>
+        {/* 화면 원본(docs/design/*.dc.html)이 쓰는 글꼴. globals.css 의 --font-sans 첫 글꼴과 같다. */}
+        <link
+          rel="stylesheet"
+          as="style"
+          crossOrigin="anonymous"
+          href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css"
+        />
+      </head>
+      <body className="min-h-dvh bg-bg text-text">
+        <AuthSessionProvider>{children}</AuthSessionProvider>
+        <RegisterServiceWorker />
+      </body>
     </html>
   );
 }

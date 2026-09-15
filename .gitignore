@@ -30,6 +30,8 @@ yarn-error.log*
 
 # env files
 .env*
+# 값이 비어 있는 본보기는 올린다 — 어떤 키가 필요한지가 문서다
+!.env.local.example
 
 # vercel
 .vercel

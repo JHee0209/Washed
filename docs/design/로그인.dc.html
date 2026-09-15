@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased;background:#EAEBEC}
+*{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;box-sizing:border-box}
+
+@keyframes riseIn{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:translateY(0)}}
+@keyframes markSettle{0%{opacity:0;transform:scale(.86)}60%{opacity:1;transform:scale(1.03)}100%{opacity:1;transform:scale(1)}}
+
+.field{
+  width:100%;height:52px;padding:0 16px;border-radius:14px;
+  border:1.5px solid #E3EBF7;background:#F6F9FE;
+  font-size:15px;font-weight:500;color:#1E3557;
+  transition:border-color .18s ease,background .18s ease,box-shadow .18s ease;
+}
+.field::placeholder{color:#A8BCD9;font-weight:400}
+.field:focus{outline:none;border-color:#5B93E0;background:#fff;box-shadow:0 0 0 4px rgba(91,147,224,.14)}
+
+.primary{
+  width:100%;height:54px;border:0;border-radius:14px;cursor:pointer;
+  background:linear-gradient(180deg,#5B93E0 0%,#3B76CC 100%);
+  color:#fff;font-size:16px;font-weight:700;letter-spacing:-.2px;
+  box-shadow:0 8px 20px rgba(47,99,184,.28);
+  transition:transform .12s ease,box-shadow .18s ease;
+}
+.primary:active{transform:translateY(1px);box-shadow:0 4px 12px rgba(47,99,184,.24)}
+
+.google{
+  width:100%;height:52px;border:1.5px solid #E3EBF7;border-radius:14px;background:#fff;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  font-size:15px;font-weight:600;color:#33456B;
+  transition:background .18s ease,border-color .18s ease;
+}
+.google:active{background:#F6F9FE;border-color:#CFDDF2}
+
+.check{position:absolute;opacity:0;width:0;height:0}
+.check + span{
+  width:20px;height:20px;border-radius:6px;border:1.5px solid #CFDDF2;background:#fff;
+  display:inline-flex;align-items:center;justify-content:center;flex:none;transition:all .15s ease;
+}
+.check + span svg{opacity:0;transition:opacity .15s ease}
+.check:checked + span{background:#5B93E0;border-color:#5B93E0}
+.check:checked + span svg{opacity:1}
+.check:focus-visible + span{box-shadow:0 0 0 4px rgba(91,147,224,.18)}
+
+@media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important}}
+</style>
+<script src="./i18n.js"></script>
+<!-- 태극기 교체 (lang-picker 의 한국어 국기) -->
+<style>
+.washed-flag-kr{width:20px;height:14px;border-radius:3px;object-fit:cover;display:inline-block;vertical-align:-2px;box-shadow:0 0 0 1px rgba(47,99,184,.14)}
+</style>
+<script>
+(function(){
+  var SRC = './icons/flag-kr.png';
+  var KR  = /\uD83C\uDDF0\uD83C\uDDF7/g;           // 🇰🇷
+  function mkImg(){
+    var i = document.createElement('img');
+    i.src = SRC; i.alt = '\ub300\ud55c\ubbfc\uad6d'; i.className = 'washed-flag-kr';
+    return i;
+  }
+  function fix(){
+    document.querySelectorAll('lang-picker img').forEach(function(img){
+      var s = img.getAttribute('src') || '';
+      if (s.indexOf('flag-kr.png') > -1) return;
+      if (/kr|ko|korea/i.test(s) || /\ud55c\uad6d|korea/i.test(img.getAttribute('alt') || '')) {
+        img.src = SRC; img.classList.add('washed-flag-kr');
+      }
+    });
+    document.querySelectorAll('lang-picker').forEach(function(p){
+      var w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, null), n, hits = [];
+      while ((n = w.nextNode())) { KR.lastIndex = 0; if (KR.test(n.nodeValue)) hits.push(n); }
+      hits.forEach(function(node){
+        KR.lastIndex = 0;
+        var parts = node.nodeValue.split(KR), frag = document.createDocumentFragment();
+        parts.forEach(function(t, i){
+          if (i) frag.appendChild(mkImg());
+          if (t) frag.appendChild(document.createTextNode(t));
+        });
+        node.parentNode.replaceChild(frag, node);
+      });
+    });
+  }
+  function boot(){
+    fix();
+    new MutationObserver(fix).observe(document.body, { childList: true, subtree: true });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</helmet>
+
+<div style="width:390px;height:844px;margin:40px auto">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="390" height="844" hint-size="390,844">
+    <div style="position:relative;height:840px;width:100%;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 24px;background:linear-gradient(180deg,#FFFFFF 0%,#F4F8FE 46%,#E4EDFA 100%)">
+
+  <div style="position:absolute;top:-190px;left:50%;transform:translateX(-50%);width:620px;height:620px;border-radius:50%;background:radial-gradient(circle,rgba(91,147,224,.16) 0%,rgba(91,147,224,0) 62%);pointer-events:none"></div>
+
+  <div style="position:absolute;top:58px;right:20px;z-index:20">
+    <lang-picker variant="compact" align="right"></lang-picker>
+  </div>
+
+  <div style="position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;margin-bottom:26px">
+    <div style="width:76px;height:76px;border-radius:22px;background:#fff;box-shadow:0 10px 24px rgba(47,99,184,.14),0 2px 6px rgba(47,99,184,.06);display:flex;align-items:center;justify-content:center;animation:markSettle .8s cubic-bezier(.22,1,.36,1) both">
+      <img src="./icons/logo-mark.png" alt="Washed" style="width:50px;height:50px;object-fit:contain">
+    </div>
+    <div style="margin-top:16px;font-size:30px;font-weight:800;color:#2F63B8;letter-spacing:-1px;line-height:1;animation:riseIn .7s cubic-bezier(.22,1,.36,1) .2s both">Washed</div>
+    <div style="margin-top:9px;font-size:13px;font-weight:600;color:#8FAAD0;letter-spacing:-.2px;animation:riseIn .7s ease-out .32s both">세탁기 · 건조기 원격 줄서기</div>
+  </div>
+
+  <div style="position:relative;z-index:1;width:100%;background:#fff;border-radius:24px;padding:26px 22px 22px;box-shadow:0 14px 36px rgba(47,99,184,.12),0 2px 8px rgba(47,99,184,.05);animation:riseIn .8s cubic-bezier(.22,1,.36,1) .42s both">
+
+    <label style="display:block;font-size:13px;font-weight:700;color:#33456B;margin-bottom:8px">아이디</label>
+    <input class="field" type="text" placeholder="아이디를 입력해 주세요">
+
+    <label style="display:block;font-size:13px;font-weight:700;color:#33456B;margin:18px 0 8px">비밀번호</label>
+    <input class="field" type="password" placeholder="비밀번호를 입력해 주세요">
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 20px">
+      <label style="display:flex;align-items:center;gap:9px;font-size:13px;font-weight:500;color:#5A6E8F;cursor:pointer;position:relative">
+        <input class="check" type="checkbox" defaultChecked="{{ true }}">
+        <span><svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2.5 6.3L4.8 8.6L9.5 3.7" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        자동 로그인
+      </label>
+      <a href="비밀번호찾기.dc.html" style="font-size:13px;font-weight:500;color:#8FAAD0;text-decoration:none">비밀번호 찾기</a>
+    </div>
+
+    <button class="primary">로그인</button>
+
+    <div style="display:flex;align-items:center;gap:12px;margin:22px 0">
+      <div style="flex:1;height:1px;background:#EAF0FA"></div>
+      <div style="font-size:12px;font-weight:500;color:#A8BCD9">또는</div>
+      <div style="flex:1;height:1px;background:#EAF0FA"></div>
+    </div>
+
+    <button class="google">
+      <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2045c0-.6381-.0573-1.2518-.1636-1.8409H9v3.4814h4.8436c-.2086 1.125-.8427 2.0782-1.7959 2.7164v2.2581h2.9087c1.7018-1.5668 2.6836-3.874 2.6836-6.615z"></path><path fill="#34A853" d="M9 18c2.43 0 4.4673-.806 5.9564-2.1805l-2.9087-2.2581c-.8059.54-1.8368.859-3.0477.859-2.344 0-4.3282-1.5831-5.036-3.7104H.9574v2.3318C2.4382 15.9832 5.4818 18 9 18z"></path><path fill="#FBBC05" d="M3.964 10.71c-.18-.54-.2822-1.1168-.2822-1.71s.1023-1.17.2823-1.71V4.9582H.9573A8.9965 8.9965 0 0 0 0 9c0 1.4523.3477 2.8268.9573 4.0418L3.964 10.71z"></path><path fill="#EA4335" d="M9 3.5795c1.3214 0 2.5077.4541 3.4405 1.346l2.5813-2.5814C13.4632.8918 11.426 0 9 0 5.4818 0 2.4382 2.0168.9573 4.9582L3.964 7.29C4.6718 5.1627 6.6559 3.5795 9 3.5795z"></path></svg>
+      학교 구글 계정으로 계속하기
+    </button>
+    <div style="margin-top:10px;font-size:11.5px;color:#A8BCD9;text-align:center;line-height:1.5">학교 이메일(@school.ac.kr) 구글 계정만 이용할 수 있어요</div>
+  </div>
+
+  <div style="position:relative;z-index:1;margin-top:22px;font-size:13px;font-weight:500;color:#8FAAD0;animation:riseIn .7s ease-out .6s both">
+    아직 계정이 없나요? <a href="회원가입.dc.html" style="color:#2F63B8;font-weight:700;text-decoration:none;margin-left:2px">회원가입</a>
+  </div>
+
+    </div>
+  </x-import>
+</div>
+
+</x-dc>
+</body>
+</html>

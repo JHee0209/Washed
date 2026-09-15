@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased;background:#EAEBEC;overflow:hidden}
+html{overflow:hidden}
+*{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;box-sizing:border-box}
+a{color:#2F63B8;text-decoration:none}
+a:hover{color:#1F4E9C}
+.no-scrollbar{scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+.card{background:#fff;border-radius:16px;border:1px solid #E6EDF7;overflow:hidden}
+.pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;font-size:10.5px;font-weight:700;flex-shrink:0}
+</style>
+<script src="./i18n.js"></script>
+</helmet>
+
+<div style="width:390px;height:844px;margin:40px auto">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="390" height="844" hint-size="390,844">
+    <div style="position:relative;height:840px;width:100%;display:flex;flex-direction:column;background:#F3F6FB;color:#1E3557;overflow:hidden">
+
+      <div style="flex-shrink:0;display:flex;align-items:center;gap:10px;padding:63px 20px 12px;background:#fff;border-bottom:1px solid #EAF0FA;width:396px;height:96px">
+        <a href="홈.dc.html" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0">
+          <svg width="11" height="18" viewBox="0 0 11 18" fill="none"><path d="M9.5 1.5 1.5 9l8 7.5" stroke="#1E3557" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </a>
+        <span style="font-size:16px;font-weight:800;color:#1E3557;letter-spacing:-0.3px">알림</span>
+      </div>
+
+      <div style="flex-shrink:0;padding:18px 16px 12px;background:#F3F6FB">
+        <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px">
+          <span style="font-size:13px;color:#8FAAD0">읽지 않은 알림 {{ unreadCount }}개</span>
+          <button onclick="{{ markAllRead }}" style="{{ markAllStyle }}">모두 읽음</button>
+        </div>
+
+        <div class="no-scrollbar" style="margin-top:14px;overflow-x:auto">
+          <div style="display:flex;gap:6px;width:max-content;padding-bottom:2px">
+            <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="5">
+              <div onclick="{{ t.onClick }}" style="{{ t.style }}">{{ t.label }}</div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div class="no-scrollbar" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch">
+        <div style="padding:6px 16px 28px;display:flex;flex-direction:column;gap:16px">
+
+          <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:70px 20px;display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center">
+              <div style="width:52px;height:52px;border-radius:50%;background:#E8EFF8;display:flex;align-items:center;justify-content:center">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.4 5.4 1.4 5.4H4.6S6 13 6 9Z" stroke="#A8BCD9" stroke-width="1.8" stroke-linejoin="round"></path><path d="M10 18a2 2 0 0 0 4 0" stroke="#A8BCD9" stroke-width="1.8" stroke-linecap="round"></path></svg>
+              </div>
+              <div style="font-size:14px;font-weight:700;color:#5A7CA8">{{ emptyTitle }}</div>
+              <div style="font-size:12.5px;color:#A8BCD9">새 알림이 오면 여기에 쌓여요</div>
+            </div>
+          </sc-if>
+
+          <sc-for list="{{ groups }}" as="grp" hint-placeholder-count="2">
+            <div style="display:flex;flex-direction:column;gap:9px">
+              <div style="font-size:12px;font-weight:700;color:#5A7CA8;margin-left:2px">{{ grp.date }}</div>
+              <div class="card">
+                <sc-for list="{{ grp.items }}" as="n" hint-placeholder-count="3">
+                  <div onclick="{{ n.onClick }}" style="display:flex;gap:11px;padding:14px 15px;border-bottom:1px solid #EDF2F9;cursor:pointer;background:{{ n.rowBg }}">
+                    <div style="width:6px;height:6px;border-radius:50%;background:{{ n.dotColor }};margin-top:7px;flex-shrink:0"></div>
+                    <div style="display:flex;flex-direction:column;flex:1;min-width:0;gap:5px">
+                      <div style="display:flex;align-items:center;gap:7px">
+                        <span class="pill" style="background:{{ n.pillBg }};color:{{ n.pillFg }}">{{ n.typeLabel }}</span>
+                        <span style="font-size:11px;color:#A8BCD9;margin-left:auto;flex-shrink:0">{{ n.time }}</span>
+                      </div>
+                      <span style="font-size:13.5px;font-weight:{{ n.titleWeight }};color:{{ n.titleColor }};line-height:1.4">{{ n.title }}</span>
+                      <span style="font-size:12px;color:#8FAAD0;line-height:1.5">{{ n.body }}</span>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+
+        </div>
+      </div>
+
+    </div>
+  </x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = {
+    filter: '전체',
+    read: { n3: true, n6: true, n7: true, n8: true, n9: true },
+  };
+
+  renderVals() {
+    const TYPES = {
+      공지:   { pillBg: '#EEF2F8', pillFg: '#5A7CA8', dot: '#B4C2D6' },
+      배정:   { pillBg: 'rgba(47,99,184,.1)', pillFg: '#2F63B8', dot: '#2F63B8' },
+      종료:   { pillBg: 'rgba(0,191,64,.1)', pillFg: '#006E25', dot: '#00BF40' },
+      경고:   { pillBg: 'rgba(255,146,0,.12)', pillFg: '#9C5800', dot: '#FF9200' },
+      신고:   { pillBg: '#F1EAFB', pillFg: '#6B3FA0', dot: '#9B6FD1' },
+    };
+
+    const midnightTs = (() => { const d = new Date(); d.setHours(0, 0, 0, 0); return d.getTime(); })();
+    let liveNotices = [];
+    try { liveNotices = JSON.parse(localStorage.getItem('washed_notices') || '[]'); } catch (e) {}
+    const noticeNotifs = liveNotices.map((n, i) => {
+      const parts = String(n.date || '').split('.').map((x) => parseInt(x, 10));
+      let offset = 0;
+      if (parts.length === 3 && !isNaN(parts[0])) {
+        const d = new Date(parts[0], parts[1] - 1, parts[2]);
+        offset = Math.max(0, Math.round((midnightTs - d.getTime()) / 86400000));
+      }
+      return { id: `notice-${i}-${n.date}`, type: '공지', offset, time: n.time || '', title: n.title, body: n.body, ts: n.ts || 0 };
+    });
+
+    let liveReports = [];
+    try { liveReports = JSON.parse(localStorage.getItem('washed_reports') || '[]'); } catch (e) {}
+    const resultNotifs = liveReports.filter((r) => r.status && r.status !== '접수됨').map((r) => {
+      const statusMsg = r.status === '처리완료' ? '처리가 완료됐어요.' : r.status === '반려' ? '사실이 아닌 것으로 확인되어 반려됐어요.' : '확인 중이에요.';
+      return {
+        id: `report-${r.id}`, type: '신고', offset: 0, time: r.datetime.split(' ')[1] || '',
+        title: `신고 결과: ${r.reason}`,
+        body: `접수하신 신고가 ${statusMsg}`,
+      };
+    });
+
+    const all = [
+      ...resultNotifs,
+      ...noticeNotifs,
+      { id: 'n1', type: '배정', offset: 0, time: '09:41', title: '세탁기 3호기에 배정됐어요', body: '10분 안에 QR 코드를 찍어주세요. 그렇지 않으면 다음 사람에게 넘어가요' },
+      { id: 'n2', type: '종료', offset: 0, time: '09:05', title: '세탁기 3호기 사용이 끝났어요', body: '3분 안에 세탁물을 수거해주세요' },
+      { id: 'n3', type: '공지', offset: 0, time: '08:20', title: '1층 세탁실 점검 안내', body: '9월 12일 오전 10시부터 2시간 동안 이용할 수 없어요' },
+      { id: 'n4', type: '경고', offset: 1, time: '21:34', title: '경고가 1회 추가됐어요', body: '건조기 1호기 · "다했어요" 버튼을 누르지 않아 경고를 받았어요' },
+      { id: 'n5', type: '종료', offset: 1, time: '21:04', title: '건조기 1호기 사용이 끝났어요', body: '3분 안에 세탁물을 수거해주세요' },
+      { id: 'n6', type: '배정', offset: 1, time: '20:58', title: '건조기 2호기에 배정됐어요', body: '10분 안에 QR 코드를 찍어주세요. 그렇지 않으면 다음 사람에게 넘어가요' },
+      { id: 'n7', type: '종료', offset: 5, time: '18:33', title: '건조기 2호기 사용이 끝났어요', body: '3분 안에 세탁물을 수거해주세요' },
+      { id: 'n8', type: '경고', offset: 5, time: '18:02', title: '경고가 1회 추가됐어요', body: '건조기 2호기 · 배정 후 미이용' },
+      { id: 'n9', type: '공지', offset: 12, time: '11:00', title: '이용 규칙이 업데이트됐어요', body: '경고 3회 시 3일 동안 줄서기가 제한됩니다' },
+    ];
+
+    const midnight = new Date();
+    midnight.setHours(0, 0, 0, 0);
+    const dateLabel = (offset) => {
+      if (offset === 0) return '오늘';
+      if (offset === 1) return '어제';
+      const d = new Date(midnight);
+      d.setDate(d.getDate() - offset);
+      const weekday = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+      return `${d.getMonth() + 1}월 ${d.getDate()}일 (${weekday})`;
+    };
+
+    const TABS = ['전체', '공지', '배정', '종료', '경고', '신고'];
+    const filter = this.state.filter;
+    // 알림은 받은 지 30일이 지나면 사라진다 (05 P14).
+    // 「공지」만 예외로 3개월이다 — 공지 항목 자체를 3개월 보관하므로(05 P18),
+    // 30일로 자르면 아직 살아 있는 공지를 사생만 못 보게 된다.
+    // 공지는 관리자가 쓴 공용 글이라 개인정보가 늘지도 않는다.
+    const KEEP_DAYS = (type) => (type === '공지' ? 90 : 30);
+    const notExpiredEarly = all.filter((n) => n.offset < KEEP_DAYS(n.type));
+
+    const tabs = TABS.map((label) => {
+      const on = filter === label;
+      const count = label === '전체'
+        ? notExpiredEarly.filter((n) => !this.state.read[n.id]).length
+        : notExpiredEarly.filter((n) => n.type === label && !this.state.read[n.id]).length;
+      const base = 'display:flex;align-items:center;gap:5px;padding:8px 14px;border-radius:999px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;';
+      return {
+        label: count > 0 ? `${label} ${count}` : label,
+        style: base + (on
+          ? 'background:#4C86D8;color:#fff'
+          : 'background:#fff;color:#5A7CA8;box-shadow:inset 0 0 0 1px #E6EDF7'),
+        onClick: () => this.setState({ filter: label }),
+      };
+    });
+
+    const visible = notExpiredEarly.filter((n) => filter === '전체' || n.type === filter);
+
+    const offsets = [];
+    visible.forEach((n) => { if (offsets.indexOf(n.offset) === -1) offsets.push(n.offset); });
+    offsets.sort((a, b) => a - b);
+
+    const groups = offsets.map((offset) => ({
+      date: dateLabel(offset),
+      items: visible.filter((n) => n.offset === offset).sort((a, b) => (b.ts || 0) - (a.ts || 0)).map((n) => {
+        const t = TYPES[n.type];
+        const isRead = !!this.state.read[n.id];
+        return {
+          ...n,
+          typeLabel: n.type,
+          pillBg: t.pillBg,
+          pillFg: t.pillFg,
+          dotColor: isRead ? 'transparent' : t.dot,
+          rowBg: isRead ? '#fff' : '#FBFDFF',
+          titleColor: isRead ? '#5A6E8F' : '#1E3557',
+          titleWeight: isRead ? '600' : '700',
+          onClick: () => this.setState((s) => ({ read: { ...s.read, [n.id]: true } })),
+        };
+      }),
+    }));
+
+    const unreadCount = all.filter((n) => !this.state.read[n.id]).length;
+    if (this._lastUnread !== unreadCount) {
+      this._lastUnread = unreadCount;
+      try { localStorage.setItem('washed_unread', String(unreadCount)); } catch (e) {}
+    }
+
+    return {
+      tabs,
+      groups,
+      unreadCount,
+      isEmpty: groups.length === 0,
+      emptyTitle: filter === '전체' ? '받은 알림이 없어요' : filter === '배정' ? '배정된 알림이 없어요' : filter === '신고' ? '신고에 대한 결과가 없어요' : `${filter} 알림이 없어요`,
+      markAllRead: () => {
+        const read = {};
+        all.forEach((n) => { read[n.id] = true; });
+        this.setState({ read });
+      },
+      markAllStyle: unreadCount > 0
+        ? 'border:none;cursor:pointer;background:#fff;color:#2F63B8;box-shadow:inset 0 0 0 1px #E6EDF7;border-radius:999px;padding:7px 13px;font-size:12px;font-weight:700'
+        : 'border:none;cursor:default;background:transparent;color:#C3D2E6;border-radius:999px;padding:7px 13px;font-size:12px;font-weight:700',
+    };
+  }
+}
+
+</script>
+</body>
+</html>

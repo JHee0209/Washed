@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased}
+*{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;box-sizing:border-box}
+a{color:#2F63B8;text-decoration:none}
+a:hover{color:#1F4E9C}
+input::placeholder,textarea::placeholder{color:#A8BCD9}
+input:focus,textarea:focus{background:#fff}
+.no-scrollbar{scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+</style>
+</helmet>
+
+<div style="min-height:100vh;background:#F3F6FB;color:#171719;display:flex">
+
+  <div style="width: 260px; flex-shrink: 0; background: #fff; border-right: 1px solid rgba(112,115,124,.12); display: flex; flex-direction: column; padding: 16px 12px; gap: 4px">
+    <div style="display: flex; align-items: center; gap: 8px; padding: 8px 10px 16px">
+      <img src="./icons/logo-mark.png" alt="Washed" style="width: 34px; height: 34px; object-fit: contain">
+      <div style="font-size: 15px; font-weight: 800; color: #2F63B8; white-space: nowrap">Washed&nbsp;<span style="color: #171719">관리자</span></div>
+    </div>
+    <sc-for list="{{ navTabs }}" as="t" hint-placeholder-count="6">
+      <div onclick="{{ t.onClick }}" style="cursor: pointer; padding: 10px 12px; border-radius: 10px; font-size: 18px; font-weight: 600; background: {{ t.bg }}; color: {{ t.color }}; margin: 10px 0 0 10px; white-space: nowrap">{{ t.label }}</div>
+    </sc-for>
+  </div><div style="flex: 1; min-width: 0; padding: 28px 32px; display: flex; flex-direction: column; gap: 24px; position: relative; overflow-x: auto">
+
+    <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        
+        <h1 style="margin: 0; font-size: 20px; font-weight: 800; width: 135px; height: 21px; margin-bottom: 13px; white-space: nowrap">실시간 기기 현황</h1>
+        <sc-if value="{{ maintenanceOn }}" hint-placeholder-val="{{ false }}">
+          <div style="background:rgba(229,34,34,.08);border-radius:12px;padding:12px 16px;font-size:13px;font-weight:600;color:#E52222">점검 모드가 켜져 있어요. 모든 사용자가 줄서기를 이용할 수 없어요.</div>
+        </sc-if>
+        <div style="display: flex; align-items: center; gap: 16px; width: 200px">
+          <div onclick="{{ toggleMaintenance }}" style="display: flex; align-items: center; gap: 9px; cursor: pointer; background: #fff; border-radius: 12px; padding: 10px 14px; box-shadow: 0px 1px 2px -1px rgba(23,23,23,.1)">
+            <span style="font-size:13px;font-weight:700;color:{{ maintenanceLabelColor }};white-space:nowrap">세탁실 점검 모드</span>
+            <div style="width:40px;height:24px;border-radius:999px;background:{{ maintenanceTrackColor }};position:relative;flex-shrink:0;transition:background .2s ease">
+              <div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:{{ maintenanceKnobLeft }};box-shadow:0 1px 3px rgba(20,42,84,.22);transition:left .2s ease"></div>
+            </div>
+          </div>
+        </div><div style="display: grid; grid-template-columns: repeat(auto-fit,minmax(100px,1fr)); width: 641px; height: 80px">
+          <sc-for list="{{ summaryCards }}" as="c" hint-placeholder-count="4">
+            <div style="background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0px 1px 2px -1px rgba(23,23,23,.1); display: flex; flex-direction: column; gap: 4px; width: 120px">
+              <span style="font-size:12px;color:rgba(55,56,60,.61)">{{ c.label }}</span>
+              <span style="font-size:24px;font-weight:800;color:{{ c.color }}">{{ c.value }}</span>
+            </div>
+          </sc-for>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px; width: 1020px; position: relative">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px">
+            <div style="font-size: 16px; font-weight: 700; white-space: nowrap">기기 목록</div>
+          </div>
+          <div style="background: #fff; border-radius: 14px; box-shadow: 0px 1px 2px -1px rgba(23,23,23,.1); overflow: hidden; width: 890px">
+            <div style="display: grid; grid-template-columns: minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,0.8fr) minmax(0,1fr) 200px; gap: 8px; padding: 12px 16px; font-size: 16px; font-weight: 700; color: rgba(55,56,60,.61); border-bottom: 1px solid rgba(112,115,124,.1)">
+              <span style="width: 125px; height: 16px; white-space: nowrap">기기</span><span style="justify-self: left; width: fit-content; margin-left: -100px; white-space: nowrap">&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;상태</span><span style="justify-self: left; width: fit-content; margin-left: 20px; font-weight: 700; white-space: nowrap">&nbsp; &nbsp; &nbsp;남은 시간</span><span style="justify-self: start; width: fit-content; margin-left: 100px; white-space: nowrap">관리</span>
+            </div>
+            <sc-for list="{{ machines }}" as="m" hint-placeholder-count="6">
+              <div style="display: grid; grid-template-columns: minmax(0,1.4fr) minmax(0,0.8fr) minmax(0,0.8fr) minmax(0,1fr) 200px; gap: 8px; padding: 12px 16px; align-items: center; border-bottom: 1px solid rgba(112,115,124,.08); font-size: 13px">
+                <span style="font-weight: 700; width: fit-content; font-size: 15px; white-space: nowrap">{{ m.name }}</span>
+                
+                <span style="display: flex; align-items: center; justify-content: left; gap: 5px; justify-self: center; width: 65px; margin-left: -100px; height: 16px; white-space: nowrap"><span style="width:6px;height:6px;border-radius:50%;background:{{ m.dot }};flex-shrink:0"></span><span style="color: {{ m.statusColor }}; font-weight: 600; font-size: 15px; white-space: nowrap">{{ m.statusLabel }}</span></span>
+                <span style="color: rgba(55,56,60,.61); justify-self: center; width: 35px; margin-left: 20px; font-size: 15px; height: 13px; white-space: nowrap">{{ m.remainingLabel }}</span>
+                <div style="display: grid; grid-template-columns: 76px 64px 64px; gap: 6px; justify-self: start; margin-left: 100px">
+                  <button onclick="{{ m.toggleFault }}" style="{{ m.faultBtnStyle }} white-space:nowrap">{{ m.faultBtnLabel }}</button>
+                  <sc-if value="{{ m.showForceReset }}" hint-placeholder-val="{{ false }}">
+                    <button onclick="{{ m.forceReset }}" style="border:none;cursor:pointer;color:#171719;background:transparent;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;white-space:nowrap">초기화</button>
+                  </sc-if>
+                  <sc-if value="{{ m.hideForceReset }}" hint-placeholder-val="{{ false }}">
+                    <div></div>
+                  </sc-if>
+                  <button onclick="{{ m.remove }}" style="border:none;cursor:pointer;color:#E52222;background:transparent;box-shadow:inset 0 0 0 1px rgba(255,66,66,.32);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;white-space:nowrap">삭제</button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:12px">
+          <div style="font-size: 16px; font-weight: 700; margin-top: 10px">기기 추가</div>
+          <div style="background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0px 1px 2px -1px rgba(23,23,23,.1); display: flex; gap: 8px; width: 892px; height: 61px">
+            <input value="{{ newMachineName }}" oninput="{{ setNewMachineName }}" placeholder="{{ newMachinePlaceholder }}" style="border:none;outline:none;border-radius:10px;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);padding:8px 12px;font-size:13px;width:160px">
+            <div style="display:flex;gap:4px;background:#EAEBEC;border-radius:10px;padding:3px">
+              <sc-for list="{{ newMachineTypeOptions }}" as="o" hint-placeholder-count="2">
+                <div onclick="{{ o.onClick }}" style="cursor:pointer;padding:6px 10px;border-radius:8px;font-size:12px;font-weight:700;background:{{ o.bg }};color:{{ o.color }}">{{ o.label }}</div>
+              </sc-for>
+            </div>
+            <button onclick="{{ addMachine }}" disabled="{{ addMachineDisabled }}" style="border:none;cursor:pointer;color:#fff;background:#2F63B8;border-radius:10px;padding:8px 16px;font-size:13px;font-weight:700;white-space:nowrap;opacity:{{ addMachineOpacity }}">기기 추가</button>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isQueue }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <h1 style="margin:0;font-size:20px;font-weight:800">실시간 대기열 현황</h1>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <sc-for list="{{ typeQueues }}" as="tq" hint-placeholder-count="2">
+            <div style="background:#fff;border-radius:16px;padding:20px;box-shadow:0px 1px 2px -1px rgba(23,23,23,.1);display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <span style="font-size:15px;font-weight:800">{{ tq.label }} 대기열</span>
+                <span style="font-size:12px;font-weight:700;color:{{ tq.badgeColor }};background:{{ tq.badgeBg }};padding:4px 10px;border-radius:999px">{{ tq.badgeLabel }}</span>
+              </div>
+
+              <sc-if value="{{ tq.hasWaiting }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;align-items:baseline;gap:6px">
+                  <span style="font-size:30px;font-weight:800;color:#2F63B8;line-height:1">{{ tq.count }}</span>
+                  <span style="font-size:13px;color:rgba(55,56,60,.61)">명 대기 중</span>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:6px">
+                  <div style="display:flex;align-items:center;justify-content:space-between;font-size:12px;color:rgba(55,56,60,.61)">
+                    <span>대기 혼잡도</span>
+                    <span>{{ tq.loadLabel }}</span>
+                  </div>
+                  <div style="height:7px;border-radius:4px;background:#EDEEF0;overflow:hidden">
+                    <div style="height:100%;border-radius:4px;background:{{ tq.barColor }};width:{{ tq.loadPct }}"></div>
+                  </div>
+                </div>
+
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                  <div style="background:#F7F7F8;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:3px">
+                    <span style="font-size:11px;color:rgba(55,56,60,.5)">다음 배정까지</span>
+                    <span style="font-size:15px;font-weight:700">{{ tq.waitLabel }}</span>
+                  </div>
+                  <div style="background:#F7F7F8;border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:3px">
+                    <span style="font-size:11px;color:rgba(55,56,60,.5)">1인당 평균 대기</span>
+                    <span style="font-size:15px;font-weight:700">{{ tq.avgWaitLabel }}</span>
+                  </div>
+                </div>
+
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <span style="font-size:12px;font-weight:700;color:rgba(55,56,60,.61)">대기 순번</span>
+                  <div style="display:flex;flex-direction:column;gap:6px">
+                    <sc-for list="{{ tq.rows }}" as="row" hint-placeholder-count="3">
+                      <div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;background:{{ row.rowBg }}">
+                        <span style="width:20px;height:20px;border-radius:50%;background:{{ row.badgeBg }};color:{{ row.badgeFg }};font-size:11px;font-weight:800;display:flex;align-items:center;justify-content:center;flex-shrink:0">{{ row.pos }}</span>
+                        <span style="font-size:12.5px;color:#37383C;flex:1">{{ row.text }}</span>
+                        <span style="font-size:11.5px;color:rgba(55,56,60,.5);flex-shrink:0">{{ row.eta }}</span>
+                      </div>
+                    </sc-for>
+                    <sc-if value="{{ tq.hasMore }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size:11.5px;color:rgba(55,56,60,.45);padding-left:2px">외 {{ tq.moreCount }}명 대기 중</span>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-if>
+
+              <sc-if value="{{ tq.noWaiting }}" hint-placeholder-val="{{ true }}">
+                <div style="padding:20px 0;display:flex;flex-direction:column;align-items:center;gap:8px">
+                  <span style="font-size:13px;color:rgba(55,56,60,.5)">대기 중인 사람이 없어요</span>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isReports }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <h1 style="margin:0;font-size:20px;font-weight:800">신고 내역</h1>
+        <div style="display:flex;gap:6px;width:max-content">
+          <sc-for list="{{ reportFilters }}" as="f" hint-placeholder-count="4">
+            <div onclick="{{ f.onClick }}" style="{{ f.style }}">{{ f.label }}</div>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <sc-if value="{{ reportsEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="background: #fff; border-radius: 14px; box-shadow: 0px 1px 2px -1px rgba(23,23,23,.1); padding: 40px; text-align: center; font-size: 13px; color: rgba(55,56,60,.5); width: 1190px; height: 71px">{{ reportsEmptyText }}</div>
+          </sc-if>
+          <sc-for list="{{ reportGroups }}" as="grp" hint-placeholder-count="3">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font-size:12px;font-weight:700;color:rgba(55,56,60,.5)">{{ grp.label }}</span>
+              <div style="background:#fff;border-radius:14px;box-shadow:0px 1px 2px -1px rgba(23,23,23,.1);overflow:hidden">
+                <sc-for list="{{ grp.items }}" as="r" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;border-bottom:1px solid rgba(112,115,124,.08)">
+                    <div style="width:36px;height:36px;border-radius:10px;background:rgba(47,99,184,.08);display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                      <sc-if value="{{ r.isFault }}" hint-placeholder-val="{{ false }}">
+                        <div style="position:relative;width:24px;height:24px">
+                          <img src="icons/washer-fault.svg" alt="" style="width:24px;height:24px">
+                          <div style="position:absolute;top:-4px;right:-4px;width:14px;height:14px;border-radius:50%;background:#E52222;color:#fff;font-size:10px;font-weight:800;display:flex;align-items:center;justify-content:center;line-height:1">!</div>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ r.isOrder }}" hint-placeholder-val="{{ false }}">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2F63B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="3.5" width="14" height="18" rx="2"></rect><rect x="9" y="1.8" width="6" height="3.2" rx="1"></rect><line x1="8.5" y1="10" x2="13.5" y2="10"></line><line x1="8.5" y1="13.2" x2="12" y2="13.2"></line><circle cx="16.2" cy="15.8" r="3.3"></circle><line x1="14.5" y1="17.5" x2="17.9" y2="14.1"></line></svg>
+                      </sc-if>
+                      <sc-if value="{{ r.isLaundry }}" hint-placeholder-val="{{ false }}">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2F63B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5v3"></path><path d="M9 3.5l1 2.3"></path><path d="M15 3.5l-1 2.3"></path><path d="M6.2 9h11.6l-1.3 10.2a2 2 0 0 1-2 1.8H9.5a2 2 0 0 1-2-1.8L6.2 9Z"></path><path d="M4.5 9h15"></path><path d="M9.5 12.5v5"></path><path d="M14.5 12.5v5"></path></svg>
+                      </sc-if>
+                      <sc-if value="{{ r.isEtc }}" hint-placeholder-val="{{ false }}">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2F63B8" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5.5h13a2 2 0 0 1 2 2V13a2 2 0 0 1-2 2h-6l-4 3v-3H4a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2Z"></path><circle cx="7.3" cy="9.6" r=".6" fill="#2F63B8" stroke="none"></circle><circle cx="10.3" cy="9.6" r=".6" fill="#2F63B8" stroke="none"></circle><circle cx="13.3" cy="9.6" r=".6" fill="#2F63B8" stroke="none"></circle><circle cx="19.5" cy="5" r="3.2" fill="#fff"></circle><line x1="19.5" y1="3.5" x2="19.5" y2="6.5"></line><line x1="18" y1="5" x2="21" y2="5"></line></svg>
+                      </sc-if>
+                    </div>
+                    <div style="display:flex;flex-direction:column;flex:1;min-width:0;gap:2px">
+                      <span style="font-size:13px;font-weight:700">{{ r.reason }}<sc-if value="{{ r.hasDetail }}" hint-placeholder-val="{{ false }}"> · {{ r.detail }}</sc-if></span>
+                      <span style="font-size:12px;color:rgba(55,56,60,.61)">{{ r.datetime }} · 신고자: {{ r.reporter }}</span>
+                    </div>
+                    <div onclick="{{ r.advance }}" style="display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:{{ r.statusBg }};cursor:{{ r.statusCursor }}">
+                      <span style="width:6px;height:6px;border-radius:50%;background:{{ r.statusDot }}"></span>
+                      <span style="font-size:12px;font-weight:600;color:{{ r.statusFg }}">{{ r.statusLabel }}</span>
+                    </div>
+                    <sc-if value="{{ r.showReject }}" hint-placeholder-val="{{ false }}">
+                      <button onclick="{{ r.reject }}" style="border:none;cursor:pointer;color:#E52222;background:transparent;box-shadow:inset 0 0 0 1px rgba(229,34,34,.32);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;flex-shrink:0">반려</button>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isHistory }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <h1 style="margin:0;font-size:20px;font-weight:800">이용 내역</h1>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <div style="position:relative;min-width:150px">
+            <select onchange="{{ setHistoryMachine }}" style="width:100%;border:none;outline:none;border-radius:10px;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);padding:10px 34px 10px 14px;font-size:13px;font-weight:600;background:#fff;color:#171719;-webkit-appearance:none;-moz-appearance:none;appearance:none;cursor:pointer">
+              <sc-for list="{{ historyMachineOptions }}" as="mo" hint-placeholder-count="12">
+                <option value="{{ mo.value }}" selected="{{ mo.selected }}">{{ mo.label }}</option>
+              </sc-for>
+            </select>
+            <svg width="12" height="8" viewBox="0 0 12 8" fill="none" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="M1.2 1.6 6 6.2l4.8-4.6" stroke="#5A7CA8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          </div>
+          <div style="position:relative;min-width:130px">
+            <select onchange="{{ setHistoryMonth }}" style="width:100%;border:none;outline:none;border-radius:10px;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);padding:10px 34px 10px 14px;font-size:13px;font-weight:600;background:#fff;color:#171719;-webkit-appearance:none;-moz-appearance:none;appearance:none;cursor:pointer">
+              <sc-for list="{{ historyMonthOptions }}" as="mo" hint-placeholder-count="4">
+                <option value="{{ mo.value }}" selected="{{ mo.selected }}">{{ mo.label }}</option>
+              </sc-for>
+            </select>
+            <svg width="12" height="8" viewBox="0 0 12 8" fill="none" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="M1.2 1.6 6 6.2l4.8-4.6" stroke="#5A7CA8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px">
+          <sc-for list="{{ machineGroups }}" as="mg" hint-placeholder-count="4">
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font-size:14px;font-weight:700">{{ mg.machine }}</span>
+              <div style="background:#fff;border-radius:14px;box-shadow:0px 1px 2px -1px rgba(23,23,23,.1);overflow:hidden">
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 0.8fr;gap:8px;padding:12px 16px;font-size:12px;font-weight:700;color:rgba(55,56,60,.61);border-bottom:1px solid rgba(112,115,124,.1)">
+                  <span>사용자</span><span>학번</span><span>소속·호실</span><span>시작</span><span>종료</span><span>상태</span>
+                </div>
+                <sc-for list="{{ mg.items }}" as="h" hint-placeholder-count="2">
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 0.8fr;gap:8px;padding:12px 16px;align-items:center;border-bottom:1px solid rgba(112,115,124,.08);font-size:13px">
+                    <span style="font-weight:700">{{ h.name }}</span>
+                    <span style="color:rgba(55,56,60,.61)">{{ h.studentId }}</span>
+                    <span style="color:rgba(55,56,60,.61)">{{ h.school }} · {{ h.room }}</span>
+                    <span style="color:rgba(55,56,60,.61)">{{ h.start }}</span>
+                    <span style="color:rgba(55,56,60,.61)">{{ h.end }}</span>
+                    <span style="font-weight:600;color:{{ h.statusColor }}">{{ h.statusLabel }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ historyEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:32px;text-align:center;font-size:13px;color:rgba(55,56,60,.5)">검색 결과가 없어요</div>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isWarnings }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <h1 style="margin:0;font-size:20px;font-weight:800">경고 누적 사용자</h1>
+        <div style="position:relative;width:max-content;z-index:20">
+          <div onclick="{{ toggleWarnMonthMenu }}" style="display:flex;align-items:center;gap:10px;background:#fff;border-radius:12px;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);padding:10px 14px;cursor:pointer;min-width:150px">
+            <span style="font-size:13px;font-weight:700;color:#171719;flex:1;white-space:nowrap">{{ warnMonthLabel }}</span>
+            <svg width="12" height="8" viewBox="0 0 12 8" fill="none" style="flex-shrink:0;transform:{{ warnMonthArrow }};transition:transform .18s ease"><path d="M1.2 1.6 6 6.2l4.8-4.6" stroke="#5A7CA8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          </div>
+          <sc-if value="{{ warnMonthMenuOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;top:calc(100% + 6px);left:0;min-width:100%;background:#fff;border-radius:12px;box-shadow:0 8px 24px -6px rgba(23,23,23,.22),inset 0 0 0 1px rgba(112,115,124,.12);padding:6px;display:flex;flex-direction:column;gap:2px;max-height:260px;overflow-y:auto">
+              <sc-for list="{{ warnMonthOptions }}" as="mo" hint-placeholder-count="6">
+                <div onclick="{{ mo.onClick }}" style="padding:9px 12px;border-radius:9px;font-size:13px;font-weight:{{ mo.weight }};color:{{ mo.color }};background:{{ mo.bg }};cursor:pointer;white-space:nowrap">{{ mo.label }}</div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </div>
+        <div style="background:#fff;border-radius:14px;box-shadow:0px 1px 2px -1px rgba(23,23,23,.1);overflow:hidden">
+          <sc-if value="{{ warningsEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:40px;text-align:center;font-size:13px;color:rgba(55,56,60,.5)">해당 월에 경고 누적 사용자가 없습니다.</div>
+          </sc-if>
+          <sc-for list="{{ warningUsers }}" as="w" hint-placeholder-count="3">
+            <div style="display:flex;align-items:center;gap:14px;padding:13px 16px;border-bottom:1px solid rgba(112,115,124,.08);background:{{ w.rowBg }}">
+              <div style="display:flex;flex-direction:column;flex:1;min-width:0;gap:3px">
+                <div style="display:flex;align-items:center;gap:7px">
+                  <span style="font-size:13px;font-weight:700">{{ w.name }}</span>
+                  <sc-if value="{{ w.showBanInfo }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-size:10.5px;font-weight:800;color:#fff;background:#E52222;border-radius:5px;padding:2px 6px">이용정지</span>
+                  </sc-if>
+                </div>
+                <span style="font-size:12px;color:rgba(55,56,60,.61)">{{ w.school }} · {{ w.studentId }} · {{ w.room }}</span>
+                <sc-if value="{{ w.hasReasons }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:11.5px;color:rgba(55,56,60,.5);margin-top:3px">{{ w.recentLine }}<sc-if value="{{ w.hasMore }}" hint-placeholder-val="{{ false }}"> <span onclick="{{ w.toggleMore }}" style="color:#2F63B8;font-weight:700;cursor:pointer">{{ w.moreLabel }}</span></sc-if></span>
+                </sc-if>
+                <sc-if value="{{ w.expanded }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;gap:3px;margin-top:4px">
+                    <sc-for list="{{ w.restReasons }}" as="rs" hint-placeholder-count="2">
+                      <span style="font-size:11.5px;color:rgba(55,56,60,.5)">{{ rs.when }} · {{ rs.text }}</span>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+              <div style="flex:none;display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+                <div style="display:flex;gap:3px">
+                  <sc-for list="{{ w.steps }}" as="st" hint-placeholder-count="3">
+                    <span style="width:22px;height:6px;border-radius:3px;background:{{ st.bg }}"></span>
+                  </sc-for>
+                </div>
+                <span style="font-size:11.5px;font-weight:700;color:{{ w.color }}">{{ w.gaugeLabel }}</span>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isNotice }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <h1 style="margin:0;font-size:20px;font-weight:800">공지사항</h1>
+        <div style="background: #fff; border-radius: 14px; padding: 18px; box-shadow: 0px 1px 2px -1px rgba(23,23,23,.1); display: flex; flex-direction: column; gap: 12px; width: 586px; height: 214px">
+          <input value="{{ noticeTitle }}" oninput="{{ setNoticeTitle }}" placeholder="공지 제목" style="border:none;outline:none;border-radius:14px;box-shadow:inset 0 0 0 1px #E3EBF7;background:#F6F9FE;padding:13px 14px;font-size:14px;color:#1E3557">
+          <textarea value="{{ noticeBody }}" oninput="{{ setNoticeBody }}" placeholder="공지 내용" style="border:none;outline:none;border-radius:14px;box-shadow:inset 0 0 0 1px #E3EBF7;background:#F6F9FE;padding:13px 14px;font-size:14px;color:#1E3557;min-height:80px;resize:none;font-family:inherit"></textarea>
+          <button onclick="{{ postNotice }}" style="align-self:flex-start;border:none;cursor:pointer;color:#fff;background:#2F63B8;border-radius:10px;padding:9px 18px;font-size:13px;font-weight:700">등록</button>
+        </div>
+        <div style="position: relative; min-width: 150px; width: 140px; height: 37px">
+          <select onchange="{{ setNoticeMonth }}" style="width: 100%; border: none; outline: none; border-radius: 10px; box-shadow: inset 0 0 0 1px rgba(112,115,124,.16); padding: 10px 34px 10px 14px; font-size: 13px; font-weight: 600; background: #fff; color: #171719; -webkit-appearance: none; -moz-appearance: none; appearance: none; cursor: pointer">
+            <sc-for list="{{ noticeMonthOptions }}" as="mo" hint-placeholder-count="4">
+              <option value="{{ mo.value }}" selected="{{ mo.selected }}">{{ mo.label }}</option>
+            </sc-for>
+          </select>
+          <svg width="12" height="8" viewBox="0 0 12 8" fill="none" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="M1.2 1.6 6 6.2l4.8-4.6" stroke="#8FAAD0" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <sc-if value="{{ noticesEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="grid-column:1 / -1;background:#fff;border-radius:14px;box-shadow:0px 1px 2px -1px rgba(23,23,23,.1);padding:40px;text-align:center;font-size:13px;color:rgba(55,56,60,.5)">해당 월에 등록된 공지사항이 없습니다.</div>
+          </sc-if>
+          <sc-for list="{{ noticeCards }}" as="n" hint-placeholder-count="2">
+            <div style="background:#fff;border-radius:14px;padding:18px;box-shadow:0px 1px 2px -1px rgba(23,23,23,.1);display:flex;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px">
+                <span style="font-size:14px;font-weight:800;line-height:1.4">{{ n.title }}</span>
+                <button onclick="{{ n.remove }}" style="border:none;cursor:pointer;background:transparent;padding:2px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E52222" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16"></path><path d="M9.5 7V4.5h5V7"></path><path d="M6.5 7l1 13h9l1-13"></path><path d="M10.5 10.5v6"></path><path d="M13.5 10.5v6"></path></svg>
+                </button>
+              </div>
+              <span style="font-size:12.5px;color:rgba(55,56,60,.61);line-height:1.6">{{ n.body }}</span>
+              <span style="font-size:11px;color:rgba(55,56,60,.4);margin-top:2px">{{ n.date }}<sc-if value="{{ n.time }}" hint-placeholder-val="{{ false }}"> {{ n.time }}</sc-if></span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isUsers }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <h1 style="margin:0;font-size:20px;font-weight:800">사용자 목록</h1>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <input value="{{ userSearch }}" oninput="{{ setUserSearch }}" placeholder="이름으로 검색" style="border:none;outline:none;border-radius:10px;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);padding:10px 14px;font-size:13px;width:220px">
+          <div style="position:relative;min-width:130px">
+            <select onchange="{{ setUserRoomFilter }}" style="width:100%;border:none;outline:none;border-radius:10px;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);padding:10px 34px 10px 14px;font-size:13px;font-weight:600;background:#fff;color:#171719;-webkit-appearance:none;-moz-appearance:none;appearance:none;cursor:pointer">
+              <sc-for list="{{ userRoomOptions }}" as="ro" hint-placeholder-count="5">
+                <option value="{{ ro.value }}" selected="{{ ro.selected }}">{{ ro.label }}</option>
+              </sc-for>
+            </select>
+            <svg width="12" height="8" viewBox="0 0 12 8" fill="none" style="position:absolute;right:14px;top:50%;transform:translateY(-50%);pointer-events:none"><path d="M1.2 1.6 6 6.2l4.8-4.6" stroke="#5A7CA8" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+          </div>
+        </div>
+        <div style="background:#fff;border-radius:14px;box-shadow:0px 1px 2px -1px rgba(23,23,23,.1);overflow:hidden">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 0.8fr 1fr;gap:8px;padding:12px 16px;font-size:12px;font-weight:700;color:rgba(55,56,60,.61);border-bottom:1px solid rgba(112,115,124,.1)">
+            <span>이름</span><span>소속</span><span>학번</span><span>호실</span><span>경고</span><span>관리</span>
+          </div>
+          <sc-for list="{{ userList }}" as="u" hint-placeholder-count="4">
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 0.8fr 1fr;gap:8px;padding:12px 16px;align-items:center;border-bottom:1px solid rgba(112,115,124,.08);font-size:13px">
+              <span style="font-weight:700">{{ u.name }}</span>
+              <span style="color:rgba(55,56,60,.61)">{{ u.school }}</span>
+              <span style="color:rgba(55,56,60,.61)">{{ u.studentId }}</span>
+              <span style="color:rgba(55,56,60,.61)">{{ u.room }}</span>
+              <span style="font-weight:700;color:{{ u.warnColor }}">{{ u.warnCount }}회<sc-if value="{{ u.suspended }}" hint-placeholder-val="{{ false }}"> · {{ u.suspendLabel }}</sc-if></span>
+              <div style="display:flex;gap:6px;justify-self:start">
+                <button onclick="{{ u.addWarning }}" style="border:none;cursor:pointer;color:#9C5800;background:transparent;box-shadow:inset 0 0 0 1px rgba(217,131,36,.35);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700">경고 +1</button>
+                <button onclick="{{ u.removeWarning }}" disabled="{{ !u.canRemoveWarning }}" style="border:none;cursor:pointer;color:#5A7CA8;background:transparent;box-shadow:inset 0 0 0 1px rgba(112,115,124,.2);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700">경고 -1</button>
+              </div>
+            </div>
+          </sc-for>
+          <sc-if value="{{ userListEmpty }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:32px;text-align:center;font-size:13px;color:rgba(55,56,60,.5)">검색 결과가 없어요</div>
+          </sc-if>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+
+  
+</div>
+
+<sc-if value="{{ confirmPostOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:200;background:rgba(20,20,22,.42);display:flex;align-items:center;justify-content:center">
+    <div style="width:340px;background:#fff;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:16px;box-shadow:0px 20px 40px -12px rgba(20,20,22,.4)">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:16px;font-weight:600;text-align:center">공지사항을 등록하시겠습니까?</span>
+        <span style="font-size:13px;color:rgba(55,56,60,.61);line-height:1.5;text-align:center">"{{ confirmPostTitle }}" 공지가 모든 사용자에게 게시됩니다.</span>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="{{ cancelPost }}" style="border:none;cursor:pointer;color:#171719;background:transparent;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700">취소</button>
+        <button onclick="{{ confirmPost }}" style="border:none;cursor:pointer;color:#fff;background:#2F63B8;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700">등록</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ confirmNoticeOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:200;background:rgba(20,20,22,.42);display:flex;align-items:center;justify-content:center">
+    <div style="width:340px;background:#fff;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:16px;box-shadow:0px 20px 40px -12px rgba(20,20,22,.4)">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size:16px;font-weight:600;text-align:center">해당 공지사항을 삭제하시겠습니까?</span>
+        <span style="font-size:13px;color:rgba(55,56,60,.61);line-height:1.5;text-align:center">"{{ confirmNoticeTitle }}" 공지가 목록에서 삭제됩니다.</span>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="{{ cancelNoticeRemove }}" style="border:none;cursor:pointer;color:#171719;background:transparent;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700">취소</button>
+        <button onclick="{{ confirmNoticeRemove }}" style="border:none;cursor:pointer;color:#fff;background:#E52222;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700">삭제</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ confirmAddOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:200;background:rgba(20,20,22,.42);display:flex;align-items:center;justify-content:center">
+    <div style="width:340px;background:#fff;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:16px;box-shadow:0px 20px 40px -12px rgba(20,20,22,.4)">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size: 16px; font-weight: 600; text-align: center">{{ confirmAddName }}을(를) 추가하시겠습니까?</span>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="{{ cancelAdd }}" style="border:none;cursor:pointer;color:#171719;background:transparent;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700">취소</button>
+        <button onclick="{{ confirmAdd }}" style="border:none;cursor:pointer;color:#fff;background:#2F63B8;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700">추가</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+<sc-if value="{{ confirmRemoveOpen }}" hint-placeholder-val="{{ false }}">
+  <div style="position:fixed;inset:0;z-index:200;background:rgba(20,20,22,.42);display:flex;align-items:center;justify-content:center">
+    <div style="width:340px;background:#fff;border-radius:16px;padding:22px;display:flex;flex-direction:column;gap:16px;box-shadow:0px 20px 40px -12px rgba(20,20,22,.4)">
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <span style="font-size: 16px; font-weight: 600; text-align: center">기기를 삭제하시겠습니까?</span>
+        <span style="font-size: 13px; color: rgba(55,56,60,.61); line-height: 1.5">{{ confirmRemoveName }}을(를) 목록에서 삭제합니다.</span>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="{{ cancelRemove }}" style="border:none;cursor:pointer;color:#171719;background:transparent;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700">취소</button>
+        <button onclick="{{ confirmRemove }}" style="border:none;cursor:pointer;color:#fff;background:#E52222;border-radius:10px;padding:9px 16px;font-size:13px;font-weight:700">삭제</button>
+      </div>
+    </div>
+  </div>
+</sc-if>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  componentDidMount() {
+    this._syncTick = setInterval(() => this.forceUpdate(), 1000);
+    try {
+      const saved = JSON.parse(localStorage.getItem('washed_notices') || 'null');
+      if (saved && saved.length) this.setState({ notices: saved });
+      else localStorage.setItem('washed_notices', JSON.stringify(this.state.notices));
+    } catch (e) {}
+  }
+
+  _pushWarnLog(key, reason) {
+    try {
+      const log = JSON.parse(localStorage.getItem('washed_warnlog') || '[]');
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      log.unshift({
+        id: `w${d.getTime()}`, key, reason,
+        date: `${d.getFullYear()}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`,
+        time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      });
+      localStorage.setItem('washed_warnlog', JSON.stringify(log));
+    } catch (e) {}
+  }
+
+  _popWarnLog(key) {
+    try {
+      const log = JSON.parse(localStorage.getItem('washed_warnlog') || '[]');
+      const idx = log.findIndex((w) => w.key === key);
+      if (idx >= 0) log.splice(idx, 1);
+      localStorage.setItem('washed_warnlog', JSON.stringify(log));
+    } catch (e) {}
+  }
+
+  _saveNotices(list) {
+    try { localStorage.setItem('washed_notices', JSON.stringify(list)); } catch (e) {}
+  }
+  componentWillUnmount() {
+    clearInterval(this._syncTick);
+  }
+  state = {
+    tab: 'dashboard',
+    faults: {},
+    reportsResolved: {},
+    reportsInProgress: {},
+    reportsStatus: {},
+    extraMachines: [],
+    forcedAvailable: {},
+    removedIds: {},
+    newMachineName: '', newMachineType: 'washer',
+    noticeTitle: '', noticeBody: '', historyType: '전체', historyMachine: '전체',
+    confirmRemoveId: null, confirmRemoveName: '',
+    notices: [
+      { title: '9월 정기 점검 안내', body: '여자 기숙사 세탁실은 9/11(금) 오전 9시~11시 점검으로 이용이 제한됩니다.', date: '2026.09.09' },
+    ],
+  };
+
+  renderVals() {
+    const s = this.state;
+    const now = Date.now();
+    let maintenanceOn = false;
+    try { maintenanceOn = localStorage.getItem('washed_maintenance') === '1'; } catch (e) {}
+    const toggleMaintenance = () => {
+      try { localStorage.setItem('washed_maintenance', maintenanceOn ? '0' : '1'); } catch (e) {}
+      this.forceUpdate();
+    };
+    const tabs = [
+      { key: 'dashboard', label: '실시간 기기 현황' },
+      { key: 'queue', label: '실시간 대기열 현황' },
+      { key: 'reports', label: '신고 내역' },
+      { key: 'history', label: '이용 내역' },
+      { key: 'warnings', label: '경고 누적 사용자' },
+      { key: 'notice', label: '공지사항' },
+      { key: 'users', label: '사용자 목록' },
+    ];
+    const navTabs = tabs.map((t) => ({
+      label: t.label,
+      bg: s.tab === t.key ? 'rgba(47,99,184,.08)' : 'transparent',
+      color: s.tab === t.key ? '#2F63B8' : '#37383C',
+      onClick: () => this.setState({ tab: t.key }),
+    }));
+
+    const baseRaw = [
+      { id: 'w1', type: 'washer', name: '세탁기 1호기', status: 'inuse', remaining: 8 },
+      { id: 'w2', type: 'washer', name: '세탁기 2호기', status: 'inuse', remaining: 18 },
+      { id: 'w3', type: 'washer', name: '세탁기 3호기', status: 'inuse', remaining: 22 },
+      { id: 'w4', type: 'washer', name: '세탁기 4호기', status: 'inuse', remaining: 5 },
+      { id: 'w5', type: 'washer', name: '세탁기 5호기', status: 'inuse', remaining: 27 },
+      { id: 'w6', type: 'washer', name: '세탁기 6호기', status: 'inuse', remaining: 12 },
+      { id: 'w7', type: 'washer', name: '세탁기 7호기', status: 'inuse', remaining: 40 },
+      { id: 'w8', type: 'washer', name: '세탁기 8호기', status: 'inuse', remaining: 30 },
+      { id: 'd1', type: 'dryer', name: '건조기 1호기', status: 'available' },
+      { id: 'd2', type: 'dryer', name: '건조기 2호기', status: 'available' },
+      { id: 'd3', type: 'dryer', name: '건조기 3호기', status: 'available' },
+      { id: 'd4', type: 'dryer', name: '건조기 4호기', status: 'available' },
+    ];
+    let liveOverrides = {};
+    try { liveOverrides = JSON.parse(localStorage.getItem('washed_machines') || '{}'); } catch (e) {}
+    baseRaw.forEach((r) => {
+      const o = liveOverrides[r.id];
+      if (o) { r.status = o.status; r.remaining = o.remaining; }
+    });
+    let raw = baseRaw.filter((r) => !s.removedIds[r.id]);
+    s.extraMachines.filter((x) => !s.removedIds[x.id]).forEach((x) => {
+      const idx = raw.findIndex((r) => r.id === x.insertAfter);
+      if (idx === -1) raw.push(x);
+      else raw.splice(idx + 1, 0, x);
+    });
+
+    const machines = raw.map((r) => {
+      const faulted = s.faults[r.id] !== undefined ? !!s.faults[r.id] : r.status === 'fault';
+      const status = faulted ? 'fault' : (s.forcedAvailable && s.forcedAvailable[r.id] ? 'available' : (r.status === 'fault' ? 'available' : r.status));
+      let statusLabel, statusColor, dot;
+      if (status === 'fault') { statusLabel = '고장'; statusColor = '#E52222'; dot = '#FF4242'; }
+      else if (status === 'inuse') { statusLabel = '사용중'; statusColor = '#2F63B8'; dot = '#2F63B8'; }
+      else { statusLabel = '사용가능'; statusColor = '#96D16F'; dot = '#96D16F'; }
+
+      return {
+        name: r.name, typeLabel: r.type === 'washer' ? '세탁기' : '건조기',
+        statusLabel, statusColor, dot,
+        remainingLabel: status === 'inuse' && Number.isFinite(r.remaining) ? `${r.remaining}분` : '-',
+        faultBtnLabel: faulted ? '고장 해제' : '고장 처리',
+        faultBtnStyle: faulted
+          ? 'border:none;cursor:pointer;color:#171719;background:transparent;box-shadow:inset 0 0 0 1px rgba(112,115,124,.16);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0'
+          : 'border:none;cursor:pointer;color:#E52222;background:transparent;box-shadow:inset 0 0 0 1px rgba(255,66,66,.32);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:700;white-space:nowrap;flex-shrink:0',
+        toggleFault: () => {
+          const next = !faulted;
+          this.setState((st) => ({ faults: { ...st.faults, [r.id]: next } }));
+          try {
+            const store = JSON.parse(localStorage.getItem('washed_admin_faults') || '{}');
+            store[r.id] = next;
+            localStorage.setItem('washed_admin_faults', JSON.stringify(store));
+          } catch (e) {}
+        },
+        showForceReset: status === 'inuse',
+        hideForceReset: status !== 'inuse',
+        forceReset: () => {
+          this.setState((st) => ({ faults: { ...st.faults, [r.id]: false }, forcedAvailable: { ...st.forcedAvailable, [r.id]: true } }));
+          try {
+            const store = JSON.parse(localStorage.getItem('washed_admin_faults') || '{}');
+            store[r.id] = false;
+            localStorage.setItem('washed_admin_faults', JSON.stringify(store));
+          } catch (e) {}
+        },
+        remove: () => this.setState({ confirmRemoveId: r.id, confirmRemoveName: r.name }),
+      };
+    });
+
+    const typeOptDefs = [{ key: 'washer', label: '세탁기' }, { key: 'dryer', label: '건조기' }];
+    const newMachineTypeOptions = typeOptDefs.map((o) => ({
+      label: o.label,
+      bg: s.newMachineType === o.key ? '#fff' : 'transparent',
+      color: s.newMachineType === o.key ? '#171719' : 'rgba(55,56,60,.61)',
+      onClick: () => this.setState({ newMachineType: o.key }),
+    }));
+
+    const washerTotal = raw.filter((r) => r.type === 'washer').length;
+    const dryerTotal = raw.filter((r) => r.type === 'dryer').length;
+    const summaryCards = [
+      { label: '세탁기 사용중', value: `${raw.filter((r) => r.type === 'washer' && r.status === 'inuse' && !(s.faults[r.id] !== undefined ? s.faults[r.id] : r.status === 'fault')).length}/${washerTotal}`, color: '#2F63B8' },
+      { label: '건조기 사용중', value: `${raw.filter((r) => r.type === 'dryer' && r.status === 'inuse' && !(s.faults[r.id] !== undefined ? s.faults[r.id] : r.status === 'fault')).length}/${dryerTotal}`, color: '#FF4955' },
+      { label: '고장 기기', value: `${raw.filter((r) => (s.faults[r.id] !== undefined ? !!s.faults[r.id] : r.status === 'fault')).length}대`, color: '#E52222' },
+    ];
+
+    let liveQueue = {};
+    try { liveQueue = JSON.parse(localStorage.getItem('washed_typequeue') || '{}'); } catch (e) {}
+    const fmtWait = (ms) => {
+      const sec = Math.max(0, Math.ceil(ms / 1000));
+      const m = Math.floor(sec / 60), r = sec % 60;
+      return `${m}분 ${r}초`;
+    };
+    const typeQueues = [
+      { key: 'washer', label: '세탁기', mockCount: 1, mockTotal: 8 },
+      { key: 'dryer', label: '건조기', mockCount: 5, mockTotal: 4 },
+    ].map((t) => {
+      const q = liveQueue[t.key];
+      const count = q ? q.count : 0;
+      const total = (q && q.total) || t.mockTotal;
+      if (!count) return { label: t.label, hasWaiting: false, noWaiting: true, count: 0 };
+
+      const loadPctNum = Math.min(100, Math.round((count / (total * 1.5)) * 100));
+      const loadLabel = loadPctNum >= 70 ? '혼잡' : loadPctNum >= 35 ? '보통' : '여유';
+      const barColor = loadPctNum >= 70 ? '#E52222' : loadPctNum >= 35 ? '#D98324' : '#34B37E';
+      const badgeBg = loadPctNum >= 70 ? 'rgba(229,34,34,.1)' : loadPctNum >= 35 ? 'rgba(217,131,36,.12)' : 'rgba(52,179,126,.12)';
+      const badgeColor = loadPctNum >= 70 ? '#E52222' : loadPctNum >= 35 ? '#9C5800' : '#188A5E';
+      const badgeLabel = `${loadLabel} · ${count}명`;
+
+      const firstWaitMin = Math.max(1, Math.round(((q && q.waitLeftMs) || 0) / 60000));
+      const avgWaitMin = Math.max(1, Math.round((firstWaitMin * count) / Math.max(count, 1)) + Math.round(count * 1.2));
+      const rows = Array.from({ length: Math.min(count, 3) }, (_, i) => ({
+        pos: i + 1,
+        text: (q && q.mine && i === count - 1) ? '병찬 · 302호 (앱 사용자)' : (i === 0 ? '다음 차례' : `${i + 1}번째 대기`),
+        eta: `약 ${firstWaitMin + i * 4}분 후`,
+        rowBg: i === 0 ? 'rgba(47,99,184,.06)' : '#F7F7F8',
+        badgeBg: i === 0 ? '#2F63B8' : '#DADCE0',
+        badgeFg: i === 0 ? '#fff' : '#5A5C63',
+      }));
+
+      return {
+        label: t.label, hasWaiting: true, noWaiting: false, count,
+        loadPct: `${loadPctNum}%`, loadLabel, barColor, badgeBg, badgeColor, badgeLabel,
+        waitLabel: q ? fmtWait(q.waitLeftMs) : `${firstWaitMin}분 0초`,
+        avgWaitLabel: `${avgWaitMin}분`,
+        rows, hasMore: count > 3, moreCount: count - 3,
+      };
+    });
+
+    const parseReportDate = (str) => {
+      const [md, hm] = str.split(' ');
+      const [mo, da] = md.split('/').map(Number);
+      const [hh, mi] = hm.split(':').map(Number);
+      const d = new Date(2026, mo - 1, da, hh, mi);
+      if (d > new Date()) d.setFullYear(d.getFullYear() - 1);
+      return d;
+    };
+    const dayLabel = (date) => {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const d0 = new Date(date); d0.setHours(0, 0, 0, 0);
+      const days = Math.round((today - d0) / 86400000);
+      if (days <= 0) return '오늘';
+      if (days === 1) return '어제';
+      if (days < 7) return `${days}일 전`;
+      const weeks = Math.floor(days / 7);
+      if (days < 28) return `${weeks}주일 전`;
+      const months = Math.floor(days / 30);
+      return months <= 1 ? '한달 전' : `${months}개월 전`;
+    };
+
+    let liveReports = [];
+    try { liveReports = JSON.parse(localStorage.getItem('washed_reports') || '[]'); } catch (e) {}
+    const reportDefsAll = [
+      ...liveReports,
+      { id: 'r1', reason: '기기가 고장났어요', datetime: '09/09 14:20', reporter: '병찬 · 302호', resolved: false },
+      { id: 'r2', reason: '순서를 지키지 않았어요', datetime: '09/08 21:03', reporter: '정주희 · 210호', resolved: false },
+      { id: 'r3', reason: '세탁물이 있어요', datetime: '09/06 18:40', reporter: '서수영 · 115호', resolved: true },
+      { id: 'r4', reason: '기타', datetime: '09/05 10:15', reporter: '조성원 · 306호', resolved: false },
+      { id: 'r5', reason: '기기가 고장났어요', datetime: '09/07 16:45', reporter: '이태연 · 412호', status: '처리중' },
+    ];
+    // 신고와 증거 사진은 3개월만 보관한다 (05 P23 · SP4) — 그보다 오래된 신고는 목록에 없다.
+    // 이용 내역(historyCutoff) · 공지(noticeCutoff) · 경고 월 목록과 같은 3개월이다.
+    const reportCutoff = new Date();
+    reportCutoff.setMonth(reportCutoff.getMonth() - 3);
+    const reportDefs = reportDefsAll.filter((r) => parseReportDate(r.datetime) >= reportCutoff);
+    const persistLiveStatus = (id, status) => {
+      try {
+        const list = JSON.parse(localStorage.getItem('washed_reports') || '[]');
+        const idx = list.findIndex((x) => x.id === id);
+        if (idx !== -1) { list[idx].status = status; localStorage.setItem('washed_reports', JSON.stringify(list)); }
+      } catch (e) {}
+    };
+    const reportList = reportDefs.map((r) => {
+      const override = s.reportsStatus[r.id];
+      const status = override || r.status || (r.resolved ? '처리완료' : '접수됨');
+      const rejected = status === '반려';
+      const resolved = status === '처리완료';
+      const inProgress = status === '처리중';
+      const machineOrEtc = r.machine || r.etc || '';
+      return {
+        reason: r.reason, datetime: r.datetime, reporter: r.reporter, detail: machineOrEtc,
+        hasDetail: !!machineOrEtc,
+        isFault: r.reason === '기기가 고장났어요',
+        isOrder: r.reason === '순서를 지키지 않았어요',
+        isLaundry: r.reason === '세탁물이 있어요',
+        isEtc: !['기기가 고장났어요', '순서를 지키지 않았어요', '세탁물이 있어요'].includes(r.reason),
+        statusLabel: status,
+        statusBg: resolved ? 'rgba(0,191,64,.1)' : inProgress ? 'rgba(255,146,0,.12)' : rejected ? 'rgba(229,34,34,.1)' : 'rgba(47,99,184,.1)',
+        statusFg: resolved ? '#006E25' : inProgress ? '#9C5800' : rejected ? '#E52222' : '#2F63B8',
+        statusDot: resolved ? '#00BF40' : inProgress ? '#FF9200' : rejected ? '#E52222' : '#2F63B8',
+        showResolve: false,
+        advance: () => {
+          if (resolved || rejected) return;
+          const next = inProgress ? '처리완료' : '처리중';
+          this.setState((st) => ({ reportsStatus: { ...st.reportsStatus, [r.id]: next } }));
+          persistLiveStatus(r.id, next);
+        },
+        showReject: !resolved && !rejected,
+        reject: () => {
+          this.setState((st) => ({ reportsStatus: { ...st.reportsStatus, [r.id]: '반려' } }));
+          persistLiveStatus(r.id, '반려');
+        },
+        statusCursor: (resolved || rejected) ? 'default' : 'pointer',
+        _label: dayLabel(parseReportDate(r.datetime)),
+      };
+    });
+    const reportFilter = s.reportFilter || '전체';
+    const reportFilters = ['전체', '접수됨', '처리중', '처리완료', '반려'].map((label) => {
+      const on = reportFilter === label;
+      const base = 'display:flex;align-items:center;padding:8px 14px;border-radius:999px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;';
+      return {
+        label,
+        style: base + (on ? 'background:#2F63B8;color:#fff' : 'background:#fff;color:#2F63B8;box-shadow:inset 0 0 0 1px rgba(47,99,184,.28)'),
+        onClick: () => this.setState({ reportFilter: label }),
+      };
+    });
+    const unsortedReports = reportFilter === '전체' ? reportList : reportList.filter((r) => r.statusLabel === reportFilter);
+    const filteredReports = [...unsortedReports].sort((a, b) => parseReportDate(b.datetime) - parseReportDate(a.datetime));
+    const reportGroupOrder = [];
+    filteredReports.forEach((r) => { if (!reportGroupOrder.includes(r._label)) reportGroupOrder.push(r._label); });
+    const reportGroups = reportGroupOrder.map((label) => ({
+      label, items: filteredReports.filter((r) => r._label === label),
+    }));
+
+    const BAN_DAYS = 3;
+    const warningDefs = [
+      { name: '이태연', school: '을지대', studentId: '20224120', room: '412호', count: 3, month: '2026.09', bannedSince: new Date('2026-09-09T10:00:00'), seedReasons: ['다했어요 버튼 미클릭', '배정 후 10분 내 미시작', '세탁물 미수거 30분 초과'] },
+      { name: '이서연', school: '을지대', studentId: '20221080', room: '108호', count: 1, month: '2026.09', bannedSince: null, seedReasons: ['배정 후 10분 내 미시작'] },
+      { name: '조성원', school: '을지대', studentId: '20220630', room: '306호', count: 2, month: '2026.08', bannedSince: null, seedReasons: ['다했어요 버튼 미클릭', '순서를 지키지 않음 (신고 확인)'] },
+      { name: '정주희', school: '을지대', studentId: '20230210', room: '210호', count: 3, month: '2026.07', bannedSince: null, seedReasons: ['세탁물 미수거 30분 초과', '배정 후 10분 내 미시작', '다했어요 버튼 미클릭'] },
+    ];
+    const warnMonths = [];
+    const nowD = new Date();
+    // 경고 기록은 3개월만 보관하므로(05 SP4) 고를 수 있는 달도 현재 달부터 3개월이다.
+    // 매달 1일이 지나면 그 달이 맨 위에 붙고 가장 오래된 달이 빠진다.
+    // 3개월 밖의 달은 데이터가 이미 지워져 있으므로 목록에 넣지 않는다.
+    for (let i = 0; i < 3; i++) {
+      const d = new Date(nowD.getFullYear(), nowD.getMonth() - i, 1);
+      warnMonths.push(`${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    warnMonths.sort().reverse();
+    // 사용자가 고른 달이 목록에서 사라졌다면(달이 바뀐 경우) 현재 달로 되돌림
+    const warnMonth = warnMonths.includes(s.warnMonth) ? s.warnMonth : warnMonths[0];
+    const monthLabel = (m) => `${m.split('.')[0]}년 ${Number(m.split('.')[1])}월`;
+    const warnMonthOptions = warnMonths.map((m) => {
+      const on = warnMonth === m;
+      return {
+        label: monthLabel(m),
+        bg: on ? 'rgba(47,99,184,.08)' : 'transparent',
+        color: on ? '#2F63B8' : '#37383C',
+        weight: on ? '700' : '500',
+        onClick: () => this.setState({ warnMonth: m, warnMonthMenuOpen: false }),
+      };
+    });
+    let warnLogAll = [];
+    try { warnLogAll = JSON.parse(localStorage.getItem('washed_warnlog') || '[]'); } catch (e) {}
+    // 경고 기록도 3개월만 보관한다 (05 SP4) — 월 목록과 같은 기간으로 사유도 자른다
+    const warnLogCutoff = new Date();
+    warnLogCutoff.setMonth(warnLogCutoff.getMonth() - 3);
+    warnLogAll = warnLogAll.filter((l) => new Date(String(l.date).replace(/\./g, '-')) >= warnLogCutoff);
+    const warningUsers = warningDefs.filter((w) => w.month === warnMonth).map((w) => {
+      const color = w.count >= 3 ? '#E52222' : '#9C5800';
+      let banInfo = null;
+      if (w.count >= 3 && w.bannedSince) {
+        const daysLeft = BAN_DAYS - Math.floor((Date.now() - w.bannedSince.getTime()) / 86400000);
+        if (daysLeft > 0) banInfo = `${daysLeft}일 뒤 사용 가능`;
+      }
+      const key = `${w.name}·${w.room}`;
+      const liveReasons = warnLogAll.filter((l) => l.key === key).map((l) => ({ text: l.reason, when: `${l.date} ${l.time}` }));
+      const reasons = liveReasons.length > 0 ? liveReasons : (w.seedReasons || []).slice(0, w.count).map((text) => ({ text, when: '' }));
+
+      const LIMIT = 3;
+      const on = w.count >= 3 ? '#E52222' : (w.count === 2 ? '#D98324' : '#5A7CA8');
+      const off = 'rgba(112,115,124,.16)';
+      const steps = [0, 1, 2].map((i) => ({ bg: i < w.count ? on : off }));
+      const rowBg = w.count >= 3 ? 'rgba(229,34,34,.035)' : 'transparent';
+      const gaugeLabel = w.count + ' / ' + LIMIT + ' · ' +
+        (banInfo ? banInfo.replace(' 사용 가능', ' 남음')
+                 : Math.max(LIMIT - w.count, 0) + '회 남음');
+
+      const recent = reasons[0];
+      const recentLine = recent ? ('최근 ' + (recent.when || '') + ' · ' + recent.text) : '';
+      const rest = reasons.slice(1);
+
+      const expanded = (s.warnOpen || {})[key] === true;
+      const moreLabel = expanded ? '접기 ⌃' : '외 ' + rest.length + '건 ⌄';
+      const toggleMore = () => this.setState({
+        warnOpen: { ...(s.warnOpen || {}), [key]: !expanded },
+      });
+
+      return { ...w, color: on, banInfo, showBanInfo: !!banInfo,
+               reasons, hasReasons: reasons.length > 0,
+               steps, rowBg, gaugeLabel, recentLine,
+               restReasons: rest, hasMore: rest.length > 0,
+               expanded, moreLabel, toggleMore };
+    });
+
+    // 등록 후 3개월이 지난 공지는 목록에서 자동으로 사라진다
+    const noticeCutoff = new Date();
+    noticeCutoff.setMonth(noticeCutoff.getMonth() - 3);
+    const liveNotices = s.notices.filter((n) => new Date(n.date.replace(/\./g, '-')) >= noticeCutoff);
+
+    const noticeMonths = [];
+    const nowN = new Date();
+    for (let i = 0; i < 6; i++) {
+      const d = new Date(nowN.getFullYear(), nowN.getMonth() - i, 1);
+      noticeMonths.push(`${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    liveNotices.forEach((n) => { const m = n.date.slice(0, 7); if (!noticeMonths.includes(m)) noticeMonths.push(m); });
+    noticeMonths.sort().reverse();
+    const noticeMonth = s.noticeMonth || '전체';
+    const noticeMonthOptions = [{ value: '전체', label: '전체' }, ...noticeMonths.map((m) => ({ value: m, label: `${m.split('.')[0]}년 ${Number(m.split('.')[1])}월` }))].map((o) => ({
+      ...o, selected: noticeMonth === o.value,
+    }));
+    const filteredNotices = noticeMonth === '전체' ? liveNotices : liveNotices.filter((n) => n.date.slice(0, 7) === noticeMonth);
+
+    const userDefs = [
+      { name: '원병찬', school: '을지대', studentId: '20231234', room: '302호', baseWarn: 0 },
+      { name: '정주희', school: '을지대', studentId: '20230210', room: '210호', baseWarn: 0 },
+      { name: '이태연', school: '을지대', studentId: '20224120', room: '412호', baseWarn: 2 },
+      { name: '이서연', school: '을지대', studentId: '20221080', room: '108호', baseWarn: 1 },
+    ];
+    const userKey = (u) => `${u.name}·${u.room}`;
+    let warnStore = {};
+    try { warnStore = JSON.parse(localStorage.getItem('washed_warnings') || '{}'); } catch (e) {}
+    let warnStoreChanged = false;
+    userDefs.forEach((u) => {
+      if (!warnStore[userKey(u)]) { warnStore[userKey(u)] = { count: u.baseWarn, suspendedUntil: null }; warnStoreChanged = true; }
+      const entry = warnStore[userKey(u)];
+      if (entry.suspendedUntil && now >= entry.suspendedUntil) {
+        warnStore[userKey(u)] = { count: 0, suspendedUntil: null };
+        warnStoreChanged = true;
+      }
+    });
+    if (warnStoreChanged) { try { localStorage.setItem('washed_warnings', JSON.stringify(warnStore)); } catch (e) {} }
+    const userRoomOptions = [{ value: '전체', label: '전체 호실' }, ...userDefs.map((u) => ({ value: u.room, label: u.room }))].map((o) => ({
+      ...o, selected: (s.userRoomFilter || '전체') === o.value,
+    }));
+    const uq = (s.userSearch || '').trim().toLowerCase();
+    const uRoom = s.userRoomFilter || '전체';
+    const userListFiltered = userDefs.filter((u) =>
+      (uRoom === '전체' || u.room === uRoom) &&
+      (!uq || u.name.toLowerCase().includes(uq))
+    );
+    const userList = userListFiltered.map((u) => {
+      const entry = warnStore[userKey(u)] || { count: 0, suspendedUntil: null };
+      const warnCount = entry.count;
+      const suspended = !!(entry.suspendedUntil && now < entry.suspendedUntil);
+      return {
+        name: u.name, school: u.school, studentId: u.studentId, room: u.room, warnCount,
+        warnColor: warnCount >= 3 ? '#E52222' : warnCount >= 1 ? '#9C5800' : '#37383C',
+        suspended,
+        suspendLabel: suspended ? '이용 제한 중' : '',
+        addWarning: () => {
+          try {
+            const store = JSON.parse(localStorage.getItem('washed_warnings') || '{}');
+            const cur = store[userKey(u)] || { count: 0, suspendedUntil: null };
+            const nextCount = cur.count + 1;
+            const nextEntry = nextCount >= 3
+              ? { count: 3, suspendedUntil: Date.now() + 3 * 86400000 }
+              : { count: nextCount, suspendedUntil: null };
+            store[userKey(u)] = nextEntry;
+            localStorage.setItem('washed_warnings', JSON.stringify(store));
+            this._pushWarnLog(userKey(u), '신고 확인 · 관리자 부여');
+          } catch (e) {}
+          this.forceUpdate();
+        },
+        removeWarning: () => {
+          try {
+            const store = JSON.parse(localStorage.getItem('washed_warnings') || '{}');
+            const cur = store[userKey(u)] || { count: 0, suspendedUntil: null };
+            const nextCount = Math.max(0, cur.count - 1);
+            store[userKey(u)] = { count: nextCount, suspendedUntil: nextCount >= 3 ? cur.suspendedUntil : null };
+            localStorage.setItem('washed_warnings', JSON.stringify(store));
+            this._popWarnLog(userKey(u));
+          } catch (e) {}
+          this.forceUpdate();
+        },
+        canRemoveWarning: warnCount > 0,
+      };
+    });
+
+    const machineOrder = [
+      '세탁기 1호기', '세탁기 2호기', '세탁기 3호기', '세탁기 4호기', '세탁기 5호기', '세탁기 6호기', '세탁기 7호기', '세탁기 8호기',
+      '건조기 1호기', '건조기 2호기', '건조기 3호기', '건조기 4호기',
+    ];
+    const historyCutoff = new Date();
+    historyCutoff.setMonth(historyCutoff.getMonth() - 3);
+    const parseHistoryDate = (str) => {
+      const [md] = str.split(' ');
+      const [mo, da] = md.split('/').map(Number);
+      const d = new Date(2026, mo - 1, da);
+      if (d > new Date()) d.setFullYear(d.getFullYear() - 1);
+      return d;
+    };
+    const historyDefsAll = [
+      { name: '원병찬', school: '을지대', studentId: '20231234', room: '302호', machine: '세탁기 1호기', start: '09/10 09:12', end: '09/10 10:04', status: 'done' },
+      { name: '정주희', school: '을지대', studentId: '20230210', room: '210호', machine: '세탁기 2호기', start: '09/08 19:30', end: '09/08 20:22', status: 'done' },
+      { name: '이서연', school: '을지대', studentId: '20221080', room: '108호', machine: '세탁기 3호기', start: '09/07 13:05', end: '09/07 13:58', status: 'done' },
+      { name: '원병찬', school: '을지대', studentId: '20231234', room: '302호', machine: '세탁기 4호기', start: '09/09 20:10', end: '09/09 20:59', status: 'done' },
+      { name: '서수영', school: '을지대', studentId: '20220915', room: '115호', machine: '세탁기 5호기', start: '09/06 22:14', end: '09/06 23:05', status: 'done' },
+      { name: '이태연', school: '을지대', studentId: '20224120', room: '412호', machine: '세탁기 6호기', start: '09/05 11:20', end: '09/05 12:15', status: 'done' },
+      { name: '정주희', school: '을지대', studentId: '20230210', room: '210호', machine: '세탁기 7호기', start: '09/04 08:02', end: '09/04 08:55', status: 'done' },
+      { name: '이서연', school: '을지대', studentId: '20221080', room: '108호', machine: '세탁기 8호기', start: '09/02 17:40', end: '09/02 18:33', status: 'done' },
+      { name: '이태연', school: '을지대', studentId: '20224120', room: '412호', machine: '건조기 1호기', start: '09/09 21:04', end: '09/09 21:42', status: 'warning' },
+      { name: '이서연', school: '을지대', studentId: '20221080', room: '108호', machine: '건조기 2호기', start: '09/06 18:33', end: '09/06 19:11', status: 'warning' },
+      { name: '서수영', school: '을지대', studentId: '20220915', room: '115호', machine: '건조기 3호기', start: '09/03 08:40', end: '09/03 09:18', status: 'done' },
+      { name: '원병찬', school: '을지대', studentId: '20231234', room: '302호', machine: '건조기 4호기', start: '09/01 15:10', end: '09/01 15:48', status: 'done' },
+    ];
+    const historyDefs = historyDefsAll.filter((h) => parseHistoryDate(h.start) >= historyCutoff);
+
+    const historyMonthKey = (str) => {
+      const d = parseHistoryDate(str);
+      return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+    const monthsPresent = [];
+    historyDefs.forEach((h) => { const k = historyMonthKey(h.start); if (!monthsPresent.includes(k)) monthsPresent.push(k); });
+    monthsPresent.sort().reverse();
+    const historyMonth = s.historyMonth || '전체';
+    const historyMonthOptions = [{ value: '전체', label: '전체 기간' }, ...monthsPresent.map((m) => ({ value: m, label: `${m.split('.')[0]}년 ${Number(m.split('.')[1])}월` }))].map((o) => ({
+      ...o, selected: historyMonth === o.value,
+    }));
+
+    const historyMachine = s.historyMachine || '전체';
+    const historyMachineOptions = [{ value: '전체', label: '전체 기기' }, ...machineOrder.map((m) => ({ value: m, label: m }))].map((o) => ({
+      ...o, selected: historyMachine === o.value,
+    }));
+
+    const monthFilteredDefs = historyMonth === '전체' ? historyDefs : historyDefs.filter((h) => historyMonthKey(h.start) === historyMonth);
+    const visibleMachines = historyMachine === '전체' ? machineOrder : [historyMachine];
+    const machineGroups = visibleMachines
+      .map((machine) => ({
+        machine,
+        items: monthFilteredDefs.filter((h) => h.machine === machine).map((h) => ({
+          ...h,
+          statusLabel: h.status === 'warning' ? '경고' : '완료',
+          statusColor: h.status === 'warning' ? '#E52222' : '#37383C',
+        })),
+      }))
+      .filter((g) => g.items.length > 0);
+
+    return {
+      navTabs,
+      isDashboard: s.tab === 'dashboard', isQueue: s.tab === 'queue', isReports: s.tab === 'reports',
+      isHistory: s.tab === 'history',
+      historyMachineOptions, setHistoryMachine: (e) => this.setState({ historyMachine: e.target.value }),
+      historyMonthOptions, setHistoryMonth: (e) => this.setState({ historyMonth: e.target.value }),
+      machineGroups, historyEmpty: machineGroups.length === 0,
+      isWarnings: s.tab === 'warnings', isNotice: s.tab === 'notice', isUsers: s.tab === 'users',
+      summaryCards, machines, typeQueues, reportList, reportGroups, reportFilters, warningUsers, userList,
+      maintenanceOn, toggleMaintenance,
+      maintenanceTrackColor: maintenanceOn ? '#E52222' : '#DFE7F1',
+      maintenanceKnobLeft: maintenanceOn ? '18px' : '2px',
+      maintenanceLabelColor: maintenanceOn ? '#E52222' : '#37383C',
+      userSearch: s.userSearch || '', setUserSearch: (e) => this.setState({ userSearch: e.target.value }),
+      userRoomOptions, setUserRoomFilter: (e) => this.setState({ userRoomFilter: e.target.value }),
+      userListEmpty: userList.length === 0,
+      warnMonthOptions,
+      warnMonthLabel: monthLabel(warnMonth),
+      warnMonthMenuOpen: !!s.warnMonthMenuOpen,
+      warnMonthArrow: s.warnMonthMenuOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+      toggleWarnMonthMenu: () => this.setState((st) => ({ warnMonthMenuOpen: !st.warnMonthMenuOpen })),
+      warningsEmpty: warningUsers.length === 0,
+      reportsEmpty: reportGroups.length === 0,
+      reportsEmptyText: reportFilter === '접수됨' ? '현재 접수된 신고 내역이 없습니다.'
+        : reportFilter === '처리중' ? '현재 처리중인 신고 내역이 없습니다.'
+        : reportFilter === '처리완료' ? '현재 처리완료된 신고 내역이 없습니다.'
+        : '현재 신고 내역이 없습니다.',
+      confirmRemoveOpen: !!s.confirmRemoveId, confirmRemoveName: s.confirmRemoveName,
+      cancelRemove: () => this.setState({ confirmRemoveId: null, confirmRemoveName: '' }),
+      confirmRemove: () => this.setState((st) => ({ removedIds: { ...st.removedIds, [st.confirmRemoveId]: true }, confirmRemoveId: null, confirmRemoveName: '' })),
+      newMachineName: s.newMachineName, setNewMachineName: (e) => this.setState({ newMachineName: e.target.value }),
+      newMachineTypeOptions,
+      newMachinePlaceholder: s.newMachineType === 'dryer' ? '예: 건조기 5호기' : '예: 세탁기 9호기',
+      addMachineDisabled: !s.newMachineName.trim() || !s.newMachineName.includes(s.newMachineType === 'dryer' ? '건조기' : '세탁기'),
+      addMachineOpacity: (!s.newMachineName.trim() || !s.newMachineName.includes(s.newMachineType === 'dryer' ? '건조기' : '세탁기')) ? 0.5 : 1,
+      addMachine: () => {
+        if (!s.newMachineName.trim()) return;
+        if (!s.newMachineName.includes(s.newMachineType === 'dryer' ? '건조기' : '세탁기')) return;
+        this.setState({ confirmAddOpen: true });
+      },
+      confirmAddOpen: !!s.confirmAddOpen,
+      confirmAddName: s.newMachineName.trim(),
+      cancelAdd: () => this.setState({ confirmAddOpen: false }),
+      confirmAdd: () => {
+        if (!s.newMachineName.trim()) return;
+        this.setState((st) => {
+          const lastOfType = [...baseRaw, ...st.extraMachines].filter((r) => !st.removedIds[r.id] && r.type === st.newMachineType).pop();
+          return {
+            extraMachines: [...st.extraMachines, { id: `x${Date.now()}`, type: st.newMachineType, name: st.newMachineName.trim(), status: 'available', insertAfter: lastOfType ? lastOfType.id : null }],
+            newMachineName: '', confirmAddOpen: false,
+          };
+        });
+      },
+      noticeTitle: s.noticeTitle, setNoticeTitle: (e) => this.setState({ noticeTitle: e.target.value }),
+      noticeBody: s.noticeBody, setNoticeBody: (e) => this.setState({ noticeBody: e.target.value }),
+      notices: liveNotices,
+      noticeMonthOptions, setNoticeMonth: (e) => this.setState({ noticeMonth: e.target.value }),
+      noticeCards: filteredNotices.map((n) => ({
+        title: n.title, body: n.body, date: n.date, time: n.time || '',
+        remove: () => this.setState({ confirmNotice: n }),
+      })),
+      noticesEmpty: filteredNotices.length === 0,
+      confirmNoticeOpen: !!s.confirmNotice,
+      confirmNoticeTitle: s.confirmNotice ? s.confirmNotice.title : '',
+      cancelNoticeRemove: () => this.setState({ confirmNotice: null }),
+      confirmNoticeRemove: () => this.setState((st) => {
+        const next = st.notices.filter((x) => x !== st.confirmNotice);
+        this._saveNotices(next);
+        return { notices: next, confirmNotice: null };
+      }),
+      postNotice: () => {
+        if (!s.noticeTitle.trim()) return;
+        this.setState({ confirmPostOpen: true });
+      },
+      confirmPostOpen: !!s.confirmPostOpen,
+      confirmPostTitle: s.noticeTitle,
+      cancelPost: () => this.setState({ confirmPostOpen: false }),
+      confirmPost: () => {
+        const d = new Date();
+        const dateStr = `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+        const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+        this.setState((st) => {
+          const next = [{ title: st.noticeTitle, body: st.noticeBody, date: dateStr, time: timeStr, ts: d.getTime() }, ...st.notices];
+          this._saveNotices(next);
+          return { notices: next, noticeTitle: '', noticeBody: '', confirmPostOpen: false };
+        });
+      },
+    };
+  }
+
+  _toastNote() {}
+}
+
+</script>
+</body>
+</html>

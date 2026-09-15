@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased;background:#EAEBEC;overflow:hidden}
+html{overflow:hidden}
+*{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;box-sizing:border-box}
+a{color:#2F63B8;text-decoration:none}
+a:hover{color:#1F4E9C}
+.no-scrollbar{scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+.group{background:#fff;border-radius:14px;border:1px solid #E6EDF7;overflow:hidden}
+.ghead{font-size:12.5px;font-weight:600;color:#8FAAD0;margin:0 0 7px 16px;letter-spacing:.1px}
+.cell{display:flex;align-items:center;gap:12px;min-height:48px;padding:10px 16px;position:relative}
+.cell + .cell::before{content:"";position:absolute;left:16px;right:0;top:0;height:1px;background:#EDF2F9}
+.ctitle{font-size:14.5px;font-weight:500;color:#1E3557;flex:1;min-width:0}
+.cdesc{margin-top:2px;font-size:12px;color:#9AAFCC}
+.cval{font-size:14px;color:#9AAFCC;flex-shrink:0}
+</style>
+<script src="./i18n.js"></script>
+<!-- 태극기 교체 (lang-picker 의 한국어 국기) -->
+<style>
+.washed-flag-kr{width:20px;height:14px;border-radius:3px;object-fit:cover;display:inline-block;vertical-align:-2px;box-shadow:0 0 0 1px rgba(47,99,184,.14)}
+</style>
+<script>
+(function(){
+  var SRC = './icons/flag-kr.png';
+  var KR  = /\uD83C\uDDF0\uD83C\uDDF7/g;           // 🇰🇷
+  function mkImg(){
+    var i = document.createElement('img');
+    i.src = SRC; i.alt = '\ub300\ud55c\ubbfc\uad6d'; i.className = 'washed-flag-kr';
+    return i;
+  }
+  function fix(){
+    document.querySelectorAll('lang-picker img').forEach(function(img){
+      var s = img.getAttribute('src') || '';
+      if (s.indexOf('flag-kr.png') > -1) return;
+      if (/kr|ko|korea/i.test(s) || /\ud55c\uad6d|korea/i.test(img.getAttribute('alt') || '')) {
+        img.src = SRC; img.classList.add('washed-flag-kr');
+      }
+    });
+    document.querySelectorAll('lang-picker').forEach(function(p){
+      var w = document.createTreeWalker(p, NodeFilter.SHOW_TEXT, null), n, hits = [];
+      while ((n = w.nextNode())) { KR.lastIndex = 0; if (KR.test(n.nodeValue)) hits.push(n); }
+      hits.forEach(function(node){
+        KR.lastIndex = 0;
+        var parts = node.nodeValue.split(KR), frag = document.createDocumentFragment();
+        parts.forEach(function(t, i){
+          if (i) frag.appendChild(mkImg());
+          if (t) frag.appendChild(document.createTextNode(t));
+        });
+        node.parentNode.replaceChild(frag, node);
+      });
+    });
+  }
+  function boot(){
+    fix();
+    new MutationObserver(fix).observe(document.body, { childList: true, subtree: true });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+</script>
+</helmet>
+
+<div style="width:390px;height:844px;margin:40px auto">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="390" height="844" hint-size="390,844">
+    <div style="position: relative; height: 840px; width: 100%; display: flex; flex-direction: column; background: #F3F6FB; color: #1E3557; overflow: hidden">
+
+      <div style="flex-shrink:0;display:flex;align-items:center;gap:8px;padding:63px 20px 12px;background:#fff;border-bottom:1px solid #EAF0FA;width:396px;height:96px;position:relative">
+        <img src="./icons/logo-mark.png" alt="Washed" style="width:34px;height:34px;object-fit:contain;margin-left:-3px;margin-top:2px">
+        <span style="font-size:16px;font-weight:800;color:#2F63B8;letter-spacing:-0.3px;margin-left:-7px;margin-top:2px">Washed</span>
+        <a href="알림.dc.html" style="box-sizing:border-box;width:25px;height:25px;border-radius:8px;position:absolute;left:337px;top:63px;background:url(&quot;{{ bellIconSrc }}&quot;) center / cover no-repeat"></a>
+      </div>
+
+      <div class="no-scrollbar" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch">
+        <div style="padding:18px 16px 28px;display:flex;flex-direction:column;gap:22px">
+
+          <h1 style="margin: 0; font-size: 25px; font-weight: 800; letter-spacing: -0.8px; margin-left: 5px; margin-bottom: -10px">설정</h1>
+
+          <div class="group" style="background:#EDF1F7;border-color:#E1E8F2">
+            <a href="프로필수정.dc.html" class="cell" style="padding:16px;gap:14px">
+              <div style="width:56px;height:56px;border-radius:50%;background:#B7C6E0;display:flex;align-items:center;justify-content:center;overflow:hidden;flex-shrink:0"><svg width="56" height="56" viewBox="-7 -5.25 38 38" fill="#fff"><circle cx="12" cy="8.6" r="4.2"></circle><path d="M3.5 22c0-5 3.8-8 8.5-8s8.5 3 8.5 8"></path></svg></div>
+              <div style="display:flex;flex-direction:column;gap:3px;flex:1;min-width:0">
+                <span style="font-size:18px;font-weight:700;letter-spacing:-0.3px">병찬</span>
+                <span style="font-size:13px;color:#7C8CA6">{{ studentId }}</span>
+              </div>
+              <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style="flex-shrink:0"><path d="M1.2 1.2 6.6 7l-5.4 5.8" stroke="#B4C2D6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            </a>
+          </div>
+
+          <div>
+            <div class="ghead">알림</div>
+            <div class="group">
+              <sc-for list="{{ notifSettings }}" as="n" hint-placeholder-count="2">
+                <div class="cell">
+                  <div style="flex:1;min-width:0">
+                    <div class="ctitle">{{ n.label }}</div>
+                    <div class="cdesc">{{ n.desc }}</div>
+                  </div>
+                  <div onclick="{{ n.toggle }}" style="width:40px;height:24px;border-radius:999px;background:{{ n.trackColor }};position:relative;cursor:pointer;flex-shrink:0;transition:background .22s ease">
+                    <div style="width:20px;height:20px;border-radius:50%;background:#fff;position:absolute;top:2px;left:{{ n.knobLeft }};box-shadow:0 1px 3px rgba(20,42,84,.22);transition:left .22s ease"></div>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div>
+            <div class="ghead">신고하기</div>
+            <div class="group" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+              <span style="font-size:12.5px;color:#8FAAD0">어떤 문제가 있었는지 알려주세요.</span>
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <sc-for list="{{ reportReasons }}" as="r" hint-placeholder-count="3">
+                  <div onclick="{{ r.onClick }}" style="display:flex;align-items:center;gap:10px;padding:13px 14px;border-radius:12px;cursor:pointer;background:{{ r.bg }};box-shadow:inset 0 0 0 1px {{ r.line }}">
+                    <div style="width:18px;height:18px;border-radius:50%;box-shadow:inset 0 0 0 {{ r.dotRing }} {{ r.dotColor }};flex-shrink:0"></div>
+                    <span style="font-size:14px;font-weight:500;color:{{ r.textColor }}">{{ r.label }}</span>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ showLaundryFilter }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;gap:8px;padding:12px;border-radius:12px;background:#F7FAFE;box-shadow:inset 0 0 0 1px #E6EDF7">
+                    <span style="font-size:11.5px;font-weight:700;color:#5A7CA8">기기 종류</span>
+                    <div style="display:flex;gap:6px">
+                      <sc-for list="{{ laundryTypeOptions }}" as="lt" hint-placeholder-count="2">
+                        <div onclick="{{ lt.onClick }}" style="{{ lt.style }}">{{ lt.label }}</div>
+                      </sc-for>
+                    </div>
+                    <sc-if value="{{ showMachineNumbers }}" hint-placeholder-val="{{ false }}">
+                      <span style="font-size:11.5px;font-weight:700;color:#5A7CA8;margin-top:4px">호기 선택</span>
+                      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+                        <sc-for list="{{ machineNumberOptions }}" as="mn" hint-placeholder-count="8">
+                          <div onclick="{{ mn.onClick }}" style="{{ mn.style }}">{{ mn.label }}</div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ showEtcInput }}" hint-placeholder-val="{{ false }}">
+                  <textarea placeholder="의견을 입력해주세요" onchange="{{ setEtcText }}" style="border:none;outline:none;border-radius:12px;box-shadow:inset 0 0 0 1px #E6EDF7;background:#F7FAFE;padding:12px;font-size:13.5px;color:#1E3557;resize:none;min-height:64px;font-family:inherit"></textarea>
+                </sc-if>
+                <sc-if value="{{ showEvidenceSlot }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;flex-direction:column;gap:8px">
+                    <span style="font-size:11.5px;font-weight:700;color:#5A7CA8">증거 사진 (필수)</span>
+                    <image-slot id="report-evidence" shape="rounded" radius="12" placeholder="사진을 첨부해 주세요" style="width:100%;height:140px"></image-slot>
+                  </div>
+                </sc-if>
+              </div>
+              <button onclick="{{ submitReport }}" disabled="{{ submitDisabled }}" style="{{ submitStyle }}">신고 접수</button>
+            </div>
+          </div>
+
+          <div>
+            <div class="ghead">언어</div>
+            <div style="background:#fff;border-radius:14px;border:1px solid #E6EDF7;position:relative;z-index:5">
+              <div class="cell">
+                <span class="ctitle">언어 설정</span>
+                <lang-picker variant="compact" align="right"></lang-picker>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div class="ghead">도움말</div>
+            <div class="group">
+              <div class="cell" onclick="{{ openFaq }}" style="cursor:pointer">
+                <span class="ctitle">FAQ</span>
+                <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style="flex-shrink:0"><path d="M1.2 1.2 6.6 7l-5.4 5.8" stroke="#B4C2D6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
+              <a href="문의하기.dc.html" class="cell">
+                <span class="ctitle">문의하기</span>
+                <svg width="8" height="14" viewBox="0 0 8 14" fill="none" style="flex-shrink:0"><path d="M1.2 1.2 6.6 7l-5.4 5.8" stroke="#B4C2D6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </a>
+            </div>
+          </div>
+
+          <div>
+            <div class="ghead">정보</div>
+            <div class="group">
+              <div class="cell">
+                <span class="ctitle">버전 정보</span>
+                <span class="cval">v1.0.0</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="group">
+            <a href="로그인.dc.html" class="cell" style="justify-content:center;font-size:14.5px;font-weight:600;color:#2F63B8;cursor:pointer">로그아웃</a>
+            <button onclick="{{ openWithdraw }}" class="cell" style="width:100%;justify-content:center;border:none;background:transparent;cursor:pointer;font-size:14.5px;font-weight:600;color:#E0554E">회원탈퇴</button>
+          </div>
+
+          <div style="text-align:center;font-size:11.5px;color:#A8BCD9">Washed · 버전 1.0.0</div>
+
+        </div>
+
+        <sc-if value="{{ withdrawOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;inset:0;z-index:120;background:rgba(20,42,84,.42);display:flex;align-items:center;justify-content:center;padding:0 40px">
+            <div style="background:#fff;border-radius:16px;padding:22px 20px 0;width:100%;display:flex;flex-direction:column;gap:8px;align-items:center;text-align:center;overflow:hidden">
+              <span style="font-size:16px;font-weight:700;color:#1E3557">탈퇴하시겠습니까?</span>
+              <span style="font-size:13px;color:#8FAAD0;line-height:1.55;padding-bottom:18px">탈퇴 후 <b style="color:#2F63B8">14일</b> 안에 다시 로그인하면<br>되돌릴 수 있어요. 14일이 지나면 이용 내역 · 경고 ·<br>신고 기록이 모두 영구 삭제됩니다.</span>
+              <div style="display:flex;width:calc(100% + 40px);border-top:1px solid #EDF2F9">
+                <button onclick="{{ closeWithdraw }}" style="flex:1;border:none;cursor:pointer;color:#2F63B8;background:transparent;padding:14px;font-size:15px;font-weight:600">취소</button>
+                <div style="width:1px;background:#EDF2F9"></div>
+                <button onclick="{{ confirmWithdraw }}" style="flex:1;border:none;cursor:pointer;color:#E0554E;background:transparent;padding:14px;font-size:15px;font-weight:700">탈퇴하기</button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <sc-if value="{{ faqOpen }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;inset:0;z-index:120;background:rgba(23,23,23,.45);display:flex;align-items:flex-end">
+          <div style="background:#fff;width:100%;height:86%;border-radius:20px 20px 0 0;display:flex;flex-direction:column;overflow:hidden">
+            <div style="flex:none;display:flex;align-items:center;justify-content:space-between;padding:16px 18px 12px;border-bottom:1px solid rgba(112,115,124,.12)">
+              <span style="font-size:16px;font-weight:800">자주 묻는 질문</span>
+              <div onclick="{{ closeFaq }}" style="cursor:pointer;color:rgba(55,56,60,.5);font-size:20px;line-height:1;padding:2px 6px">×</div>
+            </div>
+            <div class="no-scrollbar" style="flex:1;min-height:0;overflow-y:auto;padding:16px 16px 24px;display:flex;flex-direction:column;gap:20px">
+              <sc-for list="{{ faqSections }}" as="sec" hint-placeholder-count="4">
+                <div>
+                  <div class="ghead">{{ sec.title }}</div>
+                  <div class="group">
+                    <sc-for list="{{ sec.items }}" as="q" hint-placeholder-count="2">
+                      <div>
+                        <div onclick="{{ q.onClick }}" style="display:flex;align-items:flex-start;gap:10px;padding:15px 16px;cursor:pointer;position:relative;{{ q.sep }}">
+                          <span style="font-size:13.5px;font-weight:800;color:#5B93E0;flex-shrink:0;line-height:1.45">Q</span>
+                          <span style="flex:1;min-width:0;font-size:13.5px;font-weight:600;color:{{ q.qColor }};line-height:1.45">{{ q.question }}</span>
+                          <svg width="12" height="8" viewBox="0 0 12 8" fill="none" style="flex-shrink:0;margin-top:5px;transform:{{ q.arrow }};transition:transform .2s ease"><path d="M1.2 1.6 6 6.2l4.8-4.6" stroke="#B4C2D6" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                        </div>
+                        <sc-if value="{{ q.isOpen }}" hint-placeholder-val="{{ false }}">
+                          <div style="padding: 0 16px 16px 38px; font-size: 13px; color: #5A6E8F; line-height: 1.65; white-space: pre-line; font-weight: 400; text-decoration-line: none; font-style: normal">{{ q.answer }}</div>
+                        </sc-if>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+              </sc-for>
+              
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <div style="flex-shrink: 0; display: flex; justify-content: center; padding: 8px 0; background: rgba(255,255,255,.92); backdrop-filter: blur(16px); border-top: 1px solid rgba(112,115,124,.12); height: 60px">
+        <div style="display: flex; gap: 28px; justify-content: center">
+          <a href="홈.dc.html" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 16px;border-radius:10px">
+            <div style="width:7px;height:7px;border-radius:50%;background:#B5B5B5"></div>
+            <span style="font-size:10.5px;font-weight:600;color:#70737C">홈</span>
+          </a>
+          <a href="기록.dc.html" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 16px;border-radius:10px">
+            <div style="width:7px;height:7px;border-radius:50%;background:#B5B5B5"></div>
+            <span style="font-size:10.5px;font-weight:600;color:#70737C">기록</span>
+          </a>
+          <a href="설정.dc.html" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 16px;border-radius:10px;background:rgba(0,102,255,.08)">
+            <div style="width:7px;height:7px;border-radius:50%;background:#0066FF"></div>
+            <span style="font-size:10.5px;font-weight:600;color:#0066FF">설정</span>
+          </a>
+        </div>
+      </div>
+
+      <sc-if value="{{ toastVisible }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;left:50%;bottom:74px;transform:translateX(-50%);z-index:110;background:#17233C;color:#EEF4FD;border-radius:14px;padding:11px 17px;font-size:12.5px;font-weight:600;box-shadow:0 4px 12px rgba(20,42,84,.22);display:flex;align-items:center;gap:8px;max-width:88%">
+          <div style="width:7px;height:7px;border-radius:50%;background:#5BD39A;flex-shrink:0"></div>
+          <span>신고가 접수됐어요. 관리자가 확인 후 조치할게요.</span>
+        </div>
+      </sc-if>
+
+    </div>
+  </x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const FAQ_KO = [
+  { title: '줄서기 · 배정', items: [
+    { id: 'q1', question: '배정은 어떻게 정해지나요?', answer: '· 줄을 선 순서대로 자동 배정됩니다. \n  앞사람이 줄을 빠지거나 사용을 끝내면 순서가 당겨져요. \n· 같은 종류의 기기 중 가장 먼저 비는 기기에 배정되기 때문\n  에 특정 호기를 지정할 수는 없습니다. \n· 내 차례가 오기 10분 전에 미리 알림을 보내드립니다.' },
+    { id: 'q2', question: '여러 대에 동시에 줄 설 수 있나요?', answer: '· 세탁기와 건조기에 각각 한 번씩, 최대 두 줄까지 설 수 있습 \n  니다. \n· 세탁 후 건조까지 하실 계획이라면, 건조기 줄에도 미리 함 \n  께 서두는 편이 좋습니다.' },
+    { id: 'q3', question: '줄을 뺐다가 다시 설 수 있나요?', answer: '· 가능합니다. \n  다만, 다시 설 때는 맨 뒤에서 시작합니다.\n· 이미 배정된 상태에서 줄을 빼면 그 기기는 바로 다음 사람  \n  에게 넘어갑니다.\n' },
+  ]},
+  { title: '이용 중', items: [
+    { id: 'q4', question: '세탁기에 이전 사용자의 세탁물이 남아 있어요', answer: '· 설정 > 신고하기 > 해당 사유를 선택해 접수해 주세요. \n· 확인되면 이전 사용자에게 경고가 부여되고, 경고가 3회가\n  쌓이면 3일 동안 줄서기가 제한됩니다. \n· 이전 사용자는 분실이나 훼손 문제로 이어질 수 있으니,\n  주의 부탁드립니다.' },
+    { id: 'q5', question: '세탁이 일찍 끝났어요', answer: '· 홈 화면에서 "다했어요"를 눌러주세요. \n  남은 시간과 관계없이 이용이 종료되고 다음 사람에게 바로 \n  배정됩니다.\n· 모든 사용자들은 세탁이 끝남과 동시에 항상 "다했어요"  \n  버튼을 눌러주세요. ' },
+    { id: 'q6', question: 'QR이 인식되지 않아요', answer: '· 기기 문에 붙은 QR을 화면 가운데에 맞추고, 손 그림자가 \n  지지 않게 해주세요. \n· 코드가 찢어졌거나 오염되어 인식되지 않으면 설정 화면의 \n  신고하기에서 "기기가 고장났어요"로 접수해 주세요. \n· 배정 후 10분이 지나기 전에 접수하면 경고가 부여되지 않\n  습니다.' },
+  ]},
+  { title: '경고', items: [
+    { id: 'q7', question: '경고는 언제 받나요?', answer: '네 가지 경우에 부여됩니다.\n· 배정 후 10분 안에 사용을 시작하지 않은 경우 \n· 다했어요 버튼을 클릭하지 않은 경우  \n· 타이머 종료 후 3분의 세탁 수거 시간이 지났는데도\n  세탁물을 수거해 가지 않았을 경우\n· 내 차례가 아닌데 기기를 사용해 다른 사용자의 신고가\n  확인 된 경우\n경고가 3회 쌓이면 3일 동안 줄서기가 제한됩니다.\n\n단, \'다했어요\' 버튼 미클릭과 \'세탁물 미수거\'는 함께 발생하더라도 중복 적용되지 않고 통합 1회의 경고만 부여됩니다.\n' },
+    { id: 'q8', question: '경고는 사라지나요?', answer: '· 매달 1일에 0회로 초기화됩니다.\n  다만, 이미 시작된 3일 이용 제한은 초기화와 관계없이\n  기간을 모두 채워야 해제됩니다. \n· 경고 내역은 기록 화면에서 언제든 확인할 수 있습니다.' },
+  ]},
+  { title: '계정 · 알림', items: [
+    { id: 'q9', question: '알림이 오지 않아요', answer: '· 먼저 휴대폰 설정에서 Washed의 알림 권한이 켜져 있는지 \n  확인해 주세요. \n· 권한이 켜져 있다면 앱의 설정 > 알림  > "차례 10분 전 알 \n  림" 및 "이용 가능 알림"이 모두 켜져 있는지 확인해 주세요. · 방해 금지 모드나 절전 모드가 켜져 있으면 알림이 늦게 도\n  착할 수 있습니다.' },
+  ]},
+];
+
+class Component extends DCLogic {
+  componentDidMount() { this._onLang = () => this.forceUpdate(); window.addEventListener('washed-lang', this._onLang); }
+  state = { tenMin: true, ready: true, reportReason: null, etcText: '', toastVisible: false, withdrawOpen: false, faqOpen: false, openFaqId: null };
+  get hasUnread() { try { return parseInt(localStorage.getItem('washed_unread') || '0', 10) > 0; } catch (e) { return false; } }
+
+  componentWillUnmount() { clearTimeout(this._toastTimer); window.removeEventListener('washed-lang', this._onLang); }
+
+  _toast() {
+    this.setState({ toastVisible: true });
+    clearTimeout(this._toastTimer);
+    this._toastTimer = setTimeout(() => this.setState({ toastVisible: false }), 3000);
+  }
+
+  renderVals() {
+    const studentId = '20231234';
+    const notifSettings = [
+      { label: '차례 10분 전 알림', desc: '내 차례가 다가오면 미리 알려드려요', on: this.state.tenMin, toggle: () => this.setState((s) => ({ tenMin: !s.tenMin })) },
+      { label: '이용 가능 알림', desc: '기기를 바로 이용할 수 있을 때 알려드려요', on: this.state.ready, toggle: () => this.setState((s) => ({ ready: !s.ready })) },
+    ].map((n) => ({
+      ...n,
+      trackColor: n.on ? '#5B93E0' : '#DFE7F1',
+      knobLeft: n.on ? '18px' : '2px',
+    }));
+
+    const reasonDefs = ['기기가 고장났어요', '순서를 지키지 않았어요', '세탁물이 있어요', '기타'];
+    const reportReasons = reasonDefs.map((label) => {
+      const on = this.state.reportReason === label;
+      return {
+        label,
+        bg: on ? 'rgba(91,147,224,.10)' : '#fff',
+        line: on ? '#5B93E0' : '#E6EDF7',
+        dotColor: on ? '#5B93E0' : '#C3D2E6',
+        dotRing: on ? '6px' : '1.5px',
+        textColor: on ? '#2F63B8' : '#4A5F82',
+        onClick: () => this.setState({ reportReason: label, etcText: label === '기타' ? this.state.etcText : '', laundryType: null, laundryMachine: null }),
+      };
+    });
+
+    const showLaundryFilter = ['기기가 고장났어요', '순서를 지키지 않았어요', '세탁물이 있어요'].includes(this.state.reportReason);
+    const showEvidenceSlot = this.state.reportReason === '세탁물이 있어요';
+    const laundryTypeOptions = ['세탁기', '건조기'].map((t) => {
+      const on = this.state.laundryType === t;
+      return {
+        label: t,
+        style: `flex:1;text-align:center;padding:8px;border-radius:10px;cursor:pointer;font-size:12.5px;font-weight:700;background:${on ? '#4C86D8' : '#fff'};color:${on ? '#fff' : '#4A5F82'};box-shadow:inset 0 0 0 1px ${on ? '#4C86D8' : '#E6EDF7'}`,
+        onClick: () => this.setState({ laundryType: t, laundryMachine: null }),
+      };
+    });
+    const showMachineNumbers = showLaundryFilter && !!this.state.laundryType;
+    const machineCount = this.state.laundryType === '건조기' ? 4 : 8;
+    const machineNumberOptions = Array.from({ length: machineCount }, (_, i) => i + 1).map((n) => {
+      const on = this.state.laundryMachine === n;
+      return {
+        label: `${n}호기`,
+        style: `text-align:center;padding:8px 4px;border-radius:10px;cursor:pointer;font-size:12px;font-weight:700;background:${on ? '#4C86D8' : '#fff'};color:${on ? '#fff' : '#4A5F82'};box-shadow:inset 0 0 0 1px ${on ? '#4C86D8' : '#E6EDF7'}`,
+        onClick: () => this.setState({ laundryMachine: n }),
+      };
+    });
+
+    const canSubmit = !!this.state.reportReason && (!showLaundryFilter || (this.state.laundryType && this.state.laundryMachine)) && (!showEvidenceSlot || this.state.hasEvidence);
+    const submitStyle = canSubmit
+      ? 'border:none;cursor:pointer;color:#fff;background:#E0554E;border-radius:12px;padding:13px 16px;font-size:14px;font-weight:700'
+      : 'border:none;cursor:default;color:#A8BCD9;background:#EDF2FA;border-radius:12px;padding:13px 16px;font-size:14px;font-weight:700';
+
+    return {
+      studentId,
+      withdrawOpen: this.state.withdrawOpen,
+      openWithdraw: () => this.setState({ withdrawOpen: true }),
+      closeWithdraw: () => this.setState({ withdrawOpen: false }),
+      confirmWithdraw: () => { window.location.href = '로그인.dc.html'; },
+      notifSettings, reportReasons, submitStyle, submitDisabled: !canSubmit,
+      showLaundryFilter, laundryTypeOptions, showMachineNumbers, machineNumberOptions, showEvidenceSlot,
+      showEtcInput: this.state.reportReason === '기타',
+      setEtcText: (e) => this.setState({ etcText: e.target.value }),
+      toastVisible: this.state.toastVisible,
+      submitReport: () => {
+        if (!canSubmit) return;
+        try {
+          const list = JSON.parse(localStorage.getItem('washed_reports') || '[]');
+          const now = new Date();
+          const datetime = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+          const machineName = this.state.laundryType && this.state.laundryMachine ? `${this.state.laundryType} ${this.state.laundryMachine}호기` : '';
+          list.unshift({
+            id: `u${Date.now()}`, reason: this.state.reportReason, datetime,
+            reporter: '병찬 · 302호', machine: machineName, etc: this.state.etcText,
+            status: '접수됨', notified: false,
+          });
+          localStorage.setItem('washed_reports', JSON.stringify(list));
+        } catch (e) {}
+        this.setState({ reportReason: null, etcText: '', laundryType: null, laundryMachine: null });
+        this._toast();
+      },
+      bellIconSrc: this.hasUnread ? './icons/bell-active.svg' : './icons/bell.svg',
+      faqOpen: this.state.faqOpen,
+      openFaq: () => this.setState({ faqOpen: true }),
+      closeFaq: () => this.setState({ faqOpen: false }),
+      faqSections: (FAQ_BY_LANG[(window.__washedI18N && window.__washedI18N.getLang()) || 'ko'] || FAQ_KO).map((sec) => ({
+        title: sec.title,
+        items: sec.items.map((q, i) => {
+          const isOpen = this.state.openFaqId === q.id;
+          return {
+            question: q.question,
+            answer: q.answer,
+            isOpen,
+            qColor: isOpen ? '#1E3557' : '#33456B',
+            arrow: isOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+            sep: i > 0 ? 'border-top:1px solid #EDF2F9' : '',
+            onClick: () => this.setState((st) => ({ openFaqId: st.openFaqId === q.id ? null : q.id })),
+          };
+        }),
+      })),
+    };
+  }
+}
+
+const FAQ_EN = [
+  { title: 'Queue & assignment', items: [
+    { id: 'q1', question: 'How is a machine assigned?', answer: '· Machines are assigned automatically in queue order.\n  When someone ahead leaves or finishes, everyone moves up.\n· You get the machine of that type that frees up first, so you\n  cannot pick a specific unit.\n· We send a heads-up 10 minutes before your turn.' },
+    { id: 'q2', question: 'Can I queue for several machines at once?', answer: '· You can join one washer queue and one dryer queue at the same\n  time, for a maximum of two.\n· If you plan to dry after washing, it is better to join the dryer\n  queue in advance as well.' },
+    { id: 'q3', question: 'Can I leave the queue and rejoin?', answer: '· Yes.\n  However, you start again at the back of the line.\n· If you leave after a machine is already assigned to you, that\n  machine passes to the next person immediately.\n' },
+  ]},
+  { title: 'During use', items: [
+    { id: 'q4', question: 'The previous user\u2019s laundry is still inside', answer: '· Go to Settings > Report a problem and submit the matching reason.\n· Once confirmed, the previous user receives a warning. At 3\n  warnings they cannot join queues for 3 days.\n· Laundry left behind can be lost or damaged, so please take care.' },
+    { id: 'q5', question: 'My laundry finished early', answer: '· Tap "I\u2019m done" on the home screen.\n  Your session ends regardless of the remaining time and the\n  machine goes to the next person right away.\n· Please always tap "I\u2019m done" as soon as your laundry is finished.' },
+    { id: 'q6', question: 'The QR code will not scan', answer: '· Center the QR code on the machine door in the frame and make\n  sure your hand is not casting a shadow.\n· If the code is torn or dirty and cannot be read, report it under\n  Settings > Report a problem > "The machine is broken".\n· No warning is given if you report within 10 minutes of assignment.' },
+  ]},
+  { title: 'Warnings', items: [
+    { id: 'q7', question: 'When do I get a warning?', answer: 'A warning is given in four cases.\n· You do not start within 10 minutes of being assigned\n· You do not tap the "I\u2019m done" button\n· You do not collect your laundry within the 3-minute pickup\n  window after the timer ends\n· You use a machine out of turn and another user\u2019s report is confirmed\nAt 3 warnings you cannot join queues for 3 days.\n\nIf you both fail to tap "I\u2019m done" and fail to collect your laundry,\nthese are not counted twice — only one combined warning is given.\n' },
+    { id: 'q8', question: 'Do warnings ever go away?', answer: '· Warnings reset to 0 on the 1st of each month.\n  However, a 3-day restriction that has already started must run\n  its full course regardless of the reset.\n· You can check your warning history any time on the History screen.' },
+  ]},
+  { title: 'Account & notifications', items: [
+    { id: 'q9', question: 'I am not getting notifications', answer: '· First check that notification permission for Washed is enabled\n  in your phone settings.\n· If it is, open Settings > Notifications in the app and check that\n  both "10-minute heads-up" and "Availability alerts" are on.\n· Do Not Disturb or battery saver mode can delay notifications.' },
+  ]},
+];
+
+const FAQ_ZH = [
+  { title: '排队 · 分配', items: [
+    { id: 'q1', question: '设备是如何分配的？', answer: '· 按排队顺序自动分配。\n  前面的人退出排队或使用结束后，顺序会依次前移。\n· 系统会分配同类设备中最先空出的一台，\n  因此无法指定具体机号。\n· 轮到你之前10分钟会提前发送通知。' },
+    { id: 'q2', question: '可以同时排多台设备吗？', answer: '· 洗衣机和烘干机各可排一次，最多两个队列。\n· 如果洗完后还要烘干，建议提前在烘干机队列中一并排队。' },
+    { id: 'q3', question: '退出排队后可以重新排队吗？', answer: '· 可以。\n  但重新排队时将从队尾开始。\n· 如果已分配到设备后退出，该设备会立即转给下一位。\n' },
+  ]},
+  { title: '使用中', items: [
+    { id: 'q4', question: '洗衣机里还有上一位用户的衣物', answer: '· 请在 设置 > 举报 中选择相应事由提交。\n· 确认后将给上一位用户记一次警告，累计3次将3天内无法排队。\n· 遗留衣物可能导致丢失或损坏，请多加注意。' },
+    { id: 'q5', question: '洗衣提前结束了', answer: '· 请在首页点击「已完成」。\n  无论剩余时间多少，使用都会结束并立即分配给下一位。\n· 请所有用户在洗衣结束后务必点击「已完成」按钮。' },
+    { id: 'q6', question: '二维码无法识别', answer: '· 请将设备门上的二维码对准画面中央，避免手部遮挡产生阴影。\n· 如果二维码破损或污损无法识别，请在 设置 > 举报 中\n  选择「设备故障」提交。\n· 在分配后10分钟内提交则不会记录警告。' },
+  ]},
+  { title: '警告', items: [
+    { id: 'q7', question: '什么情况下会收到警告？', answer: '以下四种情况会记录警告。\n· 分配后10分钟内未开始使用\n· 未点击「已完成」按钮\n· 计时结束后超过3分钟的取衣时间仍未取走衣物\n· 未轮到自己却使用设备，且其他用户的举报被确认\n累计3次警告将3天内无法排队。\n\n但「未点击已完成」与「未取走衣物」同时发生时不重复计算，\n仅合并记录1次警告。\n' },
+    { id: 'q8', question: '警告会消除吗？', answer: '· 每月1日重置为0次。\n  但已经开始的3天使用限制不受重置影响，须满期后才解除。\n· 警告记录可随时在「记录」页面查看。' },
+  ]},
+  { title: '账号 · 通知', items: [
+    { id: 'q9', question: '收不到通知', answer: '· 请先在手机设置中确认已开启 Washed 的通知权限。\n· 如已开启，请在应用的 设置 > 通知 中确认\n  「轮到前10分钟提醒」和「可用提醒」均已开启。\n· 开启勿扰模式或省电模式可能导致通知延迟。' },
+  ]},
+];
+
+const FAQ_JA = [
+  { title: '順番待ち・割当', items: [
+    { id: 'q1', question: '割当はどのように決まりますか？', answer: '· 並んだ順に自動で割り当てられます。\n  前の方が順番を抜けたり使用を終えると繰り上がります。\n· 同じ種類の機器のうち最も早く空いた機器に割り当てられるため、\n  特定の号機を指定することはできません。\n· 順番の10分前に事前通知をお送りします。' },
+    { id: 'q2', question: '複数の機器に同時に並べますか？', answer: '· 洗濯機と乾燥機にそれぞれ1回ずつ、最大2つまで並べます。\n· 洗濯後に乾燥も予定している場合は、乾燥機の列にも\n  あらかじめ並んでおくことをおすすめします。' },
+    { id: 'q3', question: '順番を抜けてから再度並べますか？', answer: '· 可能です。\n  ただし、並び直す際は最後尾からになります。\n· すでに割り当てられた状態で抜けると、その機器は\n  すぐ次の方に移ります。\n' },
+  ]},
+  { title: '利用中', items: [
+    { id: 'q4', question: '洗濯機に前の利用者の洗濯物が残っています', answer: '· 設定 > 通報する から該当の理由を選んで送信してください。\n· 確認されると前の利用者に警告が付き、警告が3回たまると\n  3日間順番待ちが制限されます。\n· 紛失や破損につながるおそれがあるため、ご注意ください。' },
+    { id: 'q5', question: '洗濯が早く終わりました', answer: '· ホーム画面で「終わりました」を押してください。\n  残り時間に関係なく利用が終了し、すぐ次の方に割り当てられます。\n· 洗濯が終わったら必ず「終わりました」ボタンを押してください。' },
+    { id: 'q6', question: 'QRが読み取れません', answer: '· 機器の扉のQRを画面の中央に合わせ、手の影がかからないように\n  してください。\n· コードが破れたり汚れて読み取れない場合は、設定画面の\n  通報するから「機器が故障しています」で送信してください。\n· 割当から10分が過ぎる前に送信すれば警告は付きません。' },
+  ]},
+  { title: '警告', items: [
+    { id: 'q7', question: '警告はどんなときに付きますか？', answer: '次の4つの場合に付与されます。\n· 割当から10分以内に使用を開始しなかった場合\n· 「終わりました」ボタンを押さなかった場合\n· タイマー終了後、3分の受け取り時間を過ぎても\n  洗濯物を回収しなかった場合\n· 自分の順番ではないのに機器を使い、他の利用者の通報が\n  確認された場合\n警告が3回たまると3日間順番待ちが制限されます。\n\nなお「終わりました」未押下と「洗濯物の未回収」が同時に起きても\n重複適用されず、合わせて1回の警告のみとなります。\n' },
+    { id: 'q8', question: '警告は消えますか？', answer: '· 毎月1日に0回にリセットされます。\n  ただし、すでに始まった3日間の利用制限はリセットに関係なく\n  期間を満了する必要があります。\n· 警告の履歴は履歴画面でいつでも確認できます。' },
+  ]},
+  { title: 'アカウント・通知', items: [
+    { id: 'q9', question: '通知が届きません', answer: '· まず、スマートフォンの設定でWashedの通知許可が\n  オンになっているか確認してください。\n· オンの場合は、アプリの 設定 > 通知 で「順番10分前の通知」と\n  「利用可能の通知」が両方オンか確認してください。\n· おやすみモードや省電力モードがオンだと通知が遅れることがあります。' },
+  ]},
+];
+
+const FAQ_BY_LANG = { ko: FAQ_KO, en: FAQ_EN, zh: FAQ_ZH, ja: FAQ_JA };
+
+</script>
+</body>
+</html>

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased;background:#EAEBEC;overflow:hidden}
+html{overflow:hidden}
+*{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;box-sizing:border-box}
+a{color:#2F63B8;text-decoration:none}
+a:hover{color:#1F4E9C}
+.no-scrollbar{scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+.card{background:#fff;border-radius:16px;border:1px solid #E6EDF7}
+.chip{width:38px;height:38px;border-radius:12px;background:#F2F7FD;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+</style>
+<script src="./i18n.js"></script>
+</helmet>
+
+<div style="width:390px;height:844px;margin:40px auto">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="390" height="844" hint-size="390,844">
+    <div style="position:relative;height:840px;width:100%;display:flex;flex-direction:column;background:#F3F6FB;color:#1E3557;overflow:hidden">
+
+      <div style="flex-shrink:0;display:flex;align-items:center;gap:8px;padding:63px 20px 12px;background:#fff;border-bottom:1px solid #EAF0FA;width:396px;height:96px;position:relative">
+        <img src="./icons/logo-mark.png" alt="Washed" style="width:34px;height:34px;object-fit:contain;margin-left:-3px;margin-top:2px">
+        <span style="font-size:16px;font-weight:800;color:#2F63B8;letter-spacing:-0.3px;margin-left:-7px;margin-top:2px">Washed</span>
+        <a href="알림.dc.html" style="box-sizing:border-box;width:25px;height:25px;border-radius:8px;position:absolute;left:337px;top:63px;background:url(&quot;{{ bellIconSrc }}&quot;) center / cover no-repeat"></a>
+      </div>
+
+      <div class="no-scrollbar" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch">
+        <div style="padding:18px 16px 28px;display:flex;flex-direction:column;gap:18px">
+
+          <div>
+            <h1 style="margin:0;font-size:25px;font-weight:800;letter-spacing:-0.7px">기록</h1>
+            <p style="margin:6px 0 0;font-size:13px;color:#8FAAD0">최근 30일간의 세탁 · 건조 기록이에요</p>
+          </div>
+
+          <div class="card" style="display:flex;padding:16px 0">
+            <div style="flex:1;text-align:center">
+              <div style="font-size:22px;font-weight:800;color:#2F63B8;line-height:1">{{ useCount }}</div>
+              <div style="margin-top:5px;font-size:11px;color:#8FAAD0">이용 횟수</div>
+            </div>
+            <div style="width:1px;background:#EDF2F9"></div>
+            <div style="flex:1;text-align:center">
+              <div style="font-size:22px;font-weight:800;color:#2F63B8;line-height:1">{{ useHours }}</div>
+              <div style="margin-top:5px;font-size:11px;color:#8FAAD0">총 사용 시간</div>
+            </div>
+            <div style="width:1px;background:#EDF2F9"></div>
+            <div style="flex:1;text-align:center">
+              <div style="font-size:22px;font-weight:800;color:#D98324;line-height:1">{{ warningCount }}</div>
+              <div style="margin-top:5px;font-size:11px;color:#8FAAD0">받은 경고</div>
+            </div>
+          </div>
+
+          <sc-if value="{{ hasWarnings }}" hint-placeholder-val="{{ true }}">
+            <div style="border-radius:16px;padding:15px 16px;background:#FEF6EC;border:1px solid #F7E0C4;display:flex;flex-direction:column;gap:11px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <div style="width:20px;height:20px;border-radius:50%;background:#F0913F;color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0">!</div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13.5px;font-weight:700;color:#8A5220">받은 경고 {{ warningCount }}건</div>
+                  <div style="margin-top:3px;font-size:11.5px;color:#A97740;line-height:1.5">{{ suspendLabel }}</div>
+                </div>
+              </div>
+              <sc-for list="{{ warnings }}" as="w" hint-placeholder-count="2">
+                <div style="display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:12px;background:#fff;border:1px solid #F3E2CC">
+                  <span style="font-size:11.5px;font-weight:700;color:#8A5220">{{ w.date }} {{ w.time }} · {{ w.name }}</span>
+                  <span style="font-size:11.5px;color:#A97740">{{ w.warningText }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-for list="{{ groups }}" as="grp" hint-placeholder-count="3">
+            <div style="position:relative;padding-left:20px">
+              <div style="position:absolute;left:3px;top:7px;bottom:6px;width:2px;background:#E3EBF7;border-radius:1px"></div>
+              <div style="position:absolute;left:0;top:4px;width:8px;height:8px;border-radius:50%;background:#5B93E0;box-shadow:0 0 0 3px #E8F1FD"></div>
+              <div style="font-size:12px;font-weight:700;color:#5A7CA8;margin-bottom:9px">{{ grp.date }}</div>
+              <div class="card" style="overflow:hidden">
+                <sc-for list="{{ grp.items }}" as="h" hint-placeholder-count="2">
+                  <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #EDF2F9">
+                    <div class="chip"><img src="{{ h.iconSrc }}" alt="{{ h.name }}" style="width:24px;height:24px"></div>
+                    <div style="display:flex;flex-direction:column;flex:1;min-width:0">
+                      <span style="font-size:13.5px;font-weight:700">{{ h.name }}</span>
+                      <span style="font-size:11.5px;color:#8FAAD0;margin-top:3px">{{ h.time }}<sc-if value="{{ h.showDuration }}" hint-placeholder-val="{{ true }}"> · {{ h.duration }} 사용</sc-if></span>
+                      <sc-if value="{{ h.hasWarning }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size:11.5px;font-weight:600;color:#8A5220;margin-top:5px">{{ h.warningText }}</span>
+                      </sc-if>
+                    </div>
+                    <div style="display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:999px;background:{{ h.statusBg }};flex-shrink:0">
+                      <div style="width:5px;height:5px;border-radius:50%;background:{{ h.statusDot }}"></div>
+                      <span style="font-size:11px;font-weight:700;color:{{ h.statusFg }}">{{ h.statusLabel }}</span>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+
+        </div>
+      </div>
+
+      <div style="flex-shrink: 0; display: flex; justify-content: center; padding: 8px 0; background: rgba(255,255,255,.92); backdrop-filter: blur(16px); border-top: 1px solid rgba(112,115,124,.12); height: 60px">
+        <div style="display: flex; gap: 28px; justify-content: center">
+          <a href="홈.dc.html" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 16px;border-radius:10px">
+            <div style="width:7px;height:7px;border-radius:50%;background:#B5B5B5"></div>
+            <span style="font-size:10.5px;font-weight:600;color:#70737C">홈</span>
+          </a>
+          <a href="기록.dc.html" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 16px;border-radius:10px;background:rgba(0,102,255,.08)">
+            <div style="width:7px;height:7px;border-radius:50%;background:#0066FF"></div>
+            <span style="font-size:10.5px;font-weight:600;color:#0066FF">기록</span>
+          </a>
+          <a href="설정.dc.html" style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:5px 16px;border-radius:10px">
+            <div style="width:7px;height:7px;border-radius:50%;background:#B5B5B5"></div>
+            <span style="font-size:10.5px;font-weight:600;color:#70737C">설정</span>
+          </a>
+        </div>
+      </div>
+
+    </div>
+  </x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const MY_USER_KEY = '원병찬·302호';
+
+class Component extends DCLogic {
+  componentDidMount() { this._tick = setInterval(() => this.forceUpdate(), 2000); }
+  componentWillUnmount() { clearInterval(this._tick); }
+  get hasUnread() { try { return parseInt(localStorage.getItem('washed_unread') || '0', 10) > 0; } catch (e) { return false; } }
+  renderVals() {
+    const groups = [
+      { date: '오늘', items: [
+        { name: '세탁기 2호기', time: '09:12', duration: '52분', iconSrc: 'icons/washer-history.svg' },
+      ]},
+      { date: '어제', items: [
+        { name: '건조기 1호기', time: '21:04', duration: '38분', iconSrc: 'icons/dryer-history.svg', warning: '"다했어요" 버튼을 누르지 않아 경고를 받았어요' },
+        { name: '세탁기 4호기', time: '20:10', duration: '49분', iconSrc: 'icons/washer-history.svg' },
+      ]},
+      { date: '9월 6일', items: [
+        // 배정만 받고 쓰지 않았으니 사용 시간이 없다
+        { name: '건조기 2호기', time: '18:33', iconSrc: 'icons/dryer-history.svg', warning: '배정 후 미이용' },
+      ]},
+    ];
+
+    const warnings = [];
+    groups.forEach((g) => g.items.forEach((it) => {
+      if (it.warning) warnings.push({ ...it, date: g.date, warningText: it.warning });
+    }));
+
+    let warnEntry = { count: 0, suspendedUntil: null };
+    let warnLog = [];
+    try {
+      const store = JSON.parse(localStorage.getItem('washed_warnings') || '{}');
+      warnEntry = store[MY_USER_KEY] || warnEntry;
+      // 기록 화면은 최근 30일만 보여준다 (05 P21) — 경고 기록 자체는 3개월 남지만(SP4)
+      // 이 화면의 조회 범위는 30일이라 사유 목록도 같이 잘라야 한다.
+      const warnCutoff = new Date();
+      warnCutoff.setDate(warnCutoff.getDate() - 30);
+      warnLog = (JSON.parse(localStorage.getItem('washed_warnlog') || '[]'))
+        .filter((w) => w.key === MY_USER_KEY)
+        .filter((w) => new Date(String(w.date).replace(/\./g, '-')) >= warnCutoff);
+    } catch (e) {}
+    // 표와 경고 목록은 아래 이용 내역을 그대로 집계한다 — 두 수치가 어긋나지 않도록
+    const shownWarnings = warnings;
+    const warningCount = warnings.length;
+    const now = Date.now();
+    const suspended = !!(warnEntry.suspendedUntil && now < warnEntry.suspendedUntil);
+    const suspendLabel = suspended
+      ? `이용 제한 중 · ${Math.max(1, Math.ceil((warnEntry.suspendedUntil - now) / 86400000))}일 남음`
+      : '누적 3회가 되면 3일동안 줄서기를 할 수 없어요';
+
+    const decorated = groups.map((g) => ({
+      ...g,
+      items: g.items.map((it) => ({
+        ...it,
+        hasWarning: !!it.warning,
+        warningText: it.warning || '',
+        showDuration: !!it.duration,
+        statusBg: it.warning ? 'rgba(255,146,0,.12)' : 'rgba(0,191,64,.1)',
+        statusDot: it.warning ? '#FF9200' : '#00BF40',
+        statusFg: it.warning ? '#9C5800' : '#006E25',
+        statusLabel: it.warning ? '경고' : '완료',
+      })),
+    }));
+
+    const allItems = groups.reduce((acc, g) => acc.concat(g.items), []);
+    const usedItems = allItems.filter((it) => it.duration);
+    const totalMinutes = usedItems.reduce((sum, it) => sum + (parseInt(it.duration, 10) || 0), 0);
+    const useCount = usedItems.length;
+    const useHours = totalMinutes >= 60 ? `${Math.floor(totalMinutes / 60)}시간` : `${totalMinutes}분`;
+
+    return {
+      groups: decorated,
+      warnings: shownWarnings,
+      warningCount,
+      hasWarnings: warningCount > 0,
+      suspendLabel,
+      useCount, useHours,
+      bellIconSrc: this.hasUnread ? './icons/bell-active.svg' : './icons/bell.svg',
+    };
+  }
+}
+
+</script>
+</body>
+</html>

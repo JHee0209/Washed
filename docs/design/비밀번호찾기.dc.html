@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics="">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://cdn.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin="anonymous" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+body{margin:0;-webkit-font-smoothing:antialiased;background:#EAEBEC;overflow:hidden}
+html{overflow:hidden}
+*{font-family:'Pretendard',-apple-system,BlinkMacSystemFont,system-ui,'Malgun Gothic',sans-serif;box-sizing:border-box}
+a{color:#2F63B8;text-decoration:none}
+a:hover{color:#1F4E9C}
+.no-scrollbar{scrollbar-width:none}
+.no-scrollbar::-webkit-scrollbar{display:none}
+input{background:#fff;transition:box-shadow .18s ease}
+.lbl{font-size:12.5px;font-weight:700;color:#5A7CA8}
+.fld{width:100%;border:none;outline:none;border-radius:12px;box-shadow:inset 0 0 0 1px #E6EDF7;padding:13px 14px;font-size:14px;color:#1E3557}
+.fld:focus{box-shadow:inset 0 0 0 1.5px #5B93E0,0 0 0 4px rgba(91,147,224,.14)}
+.step{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:700}
+</style>
+<script src="./i18n.js"></script>
+</helmet>
+
+<div style="width:390px;height:844px;margin:40px auto">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" width="390" height="844" hint-size="390,844">
+    <div style="position:relative;height:840px;width:100%;display:flex;flex-direction:column;background:#F3F6FB;color:#1E3557;overflow:hidden">
+
+      <div style="flex-shrink:0;display:flex;align-items:center;gap:10px;padding:63px 20px 12px;background:#fff;border-bottom:1px solid #EAF0FA;width:396px;height:96px">
+        <a href="로그인.dc.html" style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;flex-shrink:0">
+          <svg width="11" height="18" viewBox="0 0 11 18" fill="none"><path d="M9.5 1.5 1.5 9l8 7.5" stroke="#1E3557" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </a>
+        <span style="font-size:16px;font-weight:800;color:#1E3557;letter-spacing:-0.3px">비밀번호 찾기</span>
+      </div>
+
+      <div class="no-scrollbar" style="flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch">
+        <div style="padding:20px 16px 28px;display:flex;flex-direction:column;gap:18px">
+
+          <div style="display:flex;align-items:center;gap:10px">
+            <sc-for list="{{ steps }}" as="st" hint-placeholder-count="3">
+              <div class="step" style="color:{{ st.color }}">
+                <span style="width:20px;height:20px;border-radius:50%;background:{{ st.bg }};color:{{ st.fg }};display:inline-flex;align-items:center;justify-content:center;font-size:11px">{{ st.no }}</span>
+                {{ st.label }}
+              </div>
+            </sc-for>
+          </div>
+
+          <sc-if value="{{ isStep1 }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:18px">
+              <p style="margin:0;font-size:12.5px;color:#8FAAD0;line-height:1.6">가입할 때 쓴 학교 이메일을 입력하면<br>인증코드를 보내드려요.</p>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label class="lbl">아이디 (학교 이메일)</label>
+                <input class="fld" value="{{ email }}" oninput="{{ setEmail }}" placeholder="name@eulji.ac.kr">
+                <sc-if value="{{ emailError }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:11.5px;color:#E0554E">학교 이메일 형식(ac.kr)으로 입력해주세요.</span>
+                </sc-if>
+              </div>
+              <button onclick="{{ sendCode }}" disabled="{{ sendDisabled }}" style="{{ sendStyle }}">인증코드 받기</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isStep2 }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:18px">
+              <p style="margin:0;font-size:12.5px;color:#8FAAD0;line-height:1.6"><span style="color:#2F63B8;font-weight:700">{{ email }}</span> 으로<br>인증코드를 보냈어요. 5분 안에 입력해주세요.</p>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label class="lbl">인증코드 6자리</label>
+                <div style="display:flex;gap:6px;align-items:center">
+                  <input class="fld" value="{{ code }}" oninput="{{ setCode }}" placeholder="000000" style="flex:1;min-width:0;letter-spacing:3px">
+                  <span style="font-size:12.5px;font-weight:700;color:#E0554E;flex-shrink:0;min-width:44px;text-align:right">{{ timeLeft }}</span>
+                </div>
+                <sc-if value="{{ codeError }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:11.5px;color:#E0554E">{{ codeErrorText }}</span>
+                </sc-if>
+              </div>
+              <div style="display:flex;gap:8px">
+                <button onclick="{{ resend }}" style="flex:1;border:none;cursor:pointer;color:#2F63B8;background:#fff;box-shadow:inset 0 0 0 1px #CFDDF2;border-radius:12px;padding:14px;font-size:14px;font-weight:700">다시 보내기</button>
+                <button onclick="{{ verify }}" disabled="{{ verifyDisabled }}" style="{{ verifyStyle }}">확인</button>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isStep3 }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:18px">
+              <p style="margin:0;font-size:12.5px;color:#8FAAD0;line-height:1.6">새로 쓸 비밀번호를 입력해주세요.<br>8자 이상이어야 해요.</p>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label class="lbl">새 비밀번호</label>
+                <input class="fld" type="password" value="{{ pw1 }}" oninput="{{ setPw1 }}" placeholder="8자 이상">
+              </div>
+              <div style="display:flex;flex-direction:column;gap:6px">
+                <label class="lbl">새 비밀번호 확인</label>
+                <input class="fld" type="password" value="{{ pw2 }}" oninput="{{ setPw2 }}" placeholder="비밀번호를 다시 입력해주세요">
+                <sc-if value="{{ pwMessage }}" hint-placeholder-val="{{ false }}">
+                  <span style="font-size:11.5px;color:{{ pwColor }}">{{ pwMessage }}</span>
+                </sc-if>
+              </div>
+              <button onclick="{{ submit }}" disabled="{{ submitDisabled }}" style="{{ submitStyle }}">비밀번호 변경</button>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:60px 20px;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center">
+              <div style="width:52px;height:52px;border-radius:50%;background:#E7F4EE;display:flex;align-items:center;justify-content:center">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M4 12.5 9.5 18 20 6" stroke="#188A5E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+              </div>
+              <div style="font-size:15px;font-weight:700">비밀번호가 변경됐어요</div>
+              <div style="font-size:12.5px;color:#8FAAD0;line-height:1.6">새 비밀번호로 다시 로그인해주세요.</div>
+              <a href="로그인.dc.html" style="margin-top:10px;background:#4C86D8;color:#fff;border-radius:12px;padding:11px 22px;font-size:13.5px;font-weight:700">로그인하러 가기</a>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ showHelp }}" hint-placeholder-val="{{ true }}">
+            <div style="margin-top:4px;background:#fff;border:1px solid #E6EDF7;border-radius:14px;padding:14px 16px;font-size:12px;color:#8FAAD0;line-height:1.6">
+              메일이 오지 않으면 스팸함을 확인해주세요.<br>그래도 받지 못했다면 관리자(031-740-7700)에게 연락주세요.
+            </div>
+          </sc-if>
+
+        </div>
+      </div>
+
+    </div>
+  </x-import>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  static CODE = '135790';
+  static LIMIT = 5 * 60 * 1000;
+
+  state = { step: 1, email: '', code: '', pw1: '', pw2: '', emailError: false, codeErrorText: '', sentAt: 0, now: Date.now() };
+
+  componentDidMount() { this._tick = setInterval(() => this.setState({ now: Date.now() }), 1000); }
+  componentWillUnmount() { clearInterval(this._tick); }
+
+  renderVals() {
+    const s = this.state;
+    const emailValid = /^[^\s@]+@[^\s@]+\.ac\.kr$/i.test(s.email.trim());
+    const remain = Math.max(0, Component.LIMIT - (s.now - s.sentAt));
+    const mm = String(Math.floor(remain / 60000)).padStart(2, '0');
+    const ss = String(Math.floor((remain % 60000) / 1000)).padStart(2, '0');
+    const pwLongEnough = s.pw1.length >= 8;
+    const pwMatch = s.pw1 !== '' && s.pw1 === s.pw2;
+
+    const stepDefs = [
+      { no: 1, label: '이메일 확인' },
+      { no: 2, label: '인증' },
+      { no: 3, label: '새 비밀번호' },
+    ];
+
+    const btn = (on) => on
+      ? 'flex:1;border:none;cursor:pointer;color:#fff;background:#4C86D8;border-radius:12px;padding:14px;font-size:14px;font-weight:700'
+      : 'flex:1;border:none;cursor:default;color:#A8BCD9;background:#EDF2FA;border-radius:12px;padding:14px;font-size:14px;font-weight:700';
+
+    return {
+      steps: stepDefs.map((d) => {
+        const done = s.step > d.no;
+        const on = s.step === d.no;
+        return {
+          no: d.no, label: d.label,
+          color: on || done ? '#2F63B8' : '#A8BCD9',
+          bg: on ? '#4C86D8' : done ? '#CFE0F7' : '#E6EDF7',
+          fg: on ? '#fff' : done ? '#2F63B8' : '#A8BCD9',
+        };
+      }),
+      isStep1: s.step === 1,
+      isStep2: s.step === 2,
+      isStep3: s.step === 3,
+      isDone: s.step === 4,
+      showHelp: s.step === 1 || s.step === 2,
+
+      email: s.email,
+      setEmail: (e) => this.setState({ email: e.target.value, emailError: false }),
+      emailError: s.emailError,
+      sendDisabled: s.email.trim() === '',
+      sendStyle: btn(s.email.trim() !== ''),
+      sendCode: () => {
+        if (s.email.trim() === '') return;
+        if (!emailValid) { this.setState({ emailError: true }); return; }
+        this.setState({ step: 2, sentAt: Date.now(), code: '', codeErrorText: '' });
+      },
+
+      code: s.code,
+      setCode: (e) => this.setState({ code: e.target.value.replace(/[^0-9]/g, '').slice(0, 6), codeErrorText: '' }),
+      timeLeft: `${mm}:${ss}`,
+      codeError: s.codeErrorText !== '',
+      codeErrorText: s.codeErrorText,
+      verifyDisabled: s.code.length !== 6,
+      verifyStyle: btn(s.code.length === 6),
+      resend: () => this.setState({ sentAt: Date.now(), code: '', codeErrorText: '' }),
+      verify: () => {
+        if (s.code.length !== 6) return;
+        if (remain <= 0) { this.setState({ codeErrorText: '인증 시간이 지났어요. 다시 보내기를 눌러주세요.' }); return; }
+        if (s.code !== Component.CODE) { this.setState({ codeErrorText: '인증코드가 올바르지 않아요.' }); return; }
+        this.setState({ step: 3 });
+      },
+
+      pw1: s.pw1, setPw1: (e) => this.setState({ pw1: e.target.value }),
+      pw2: s.pw2, setPw2: (e) => this.setState({ pw2: e.target.value }),
+      pwMessage: s.pw1 === '' ? '' : !pwLongEnough ? '비밀번호는 8자 이상이어야 해요.' : s.pw2 === '' ? '' : pwMatch ? '비밀번호가 일치해요.' : '비밀번호가 일치하지 않아요.',
+      pwColor: pwLongEnough && pwMatch ? '#188A5E' : '#E0554E',
+      submitDisabled: !(pwLongEnough && pwMatch),
+      submitStyle: btn(pwLongEnough && pwMatch),
+      submit: () => { if (pwLongEnough && pwMatch) this.setState({ step: 4 }); },
+    };
+  }
+}
+
+</script>
+</body>
+</html>
