@@ -2,9 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 
 export default function SignupPage() {
   const router = useRouter();
+
+  // 05 P11 — 구글 로그인은 가입 경로를 겸한다. 구글로 처음 들어온 사람은
+  // users 에 줄이 없어 pendingSignup 이 서고, 이 화면의 **구글 모드**로 온다.
+  //
+  // 판정은 ?google=1 이 아니라 **세션**으로 한다 — 주소는 누구나 칠 수 있지만
+  // pendingSignup 은 서버가 users 를 보고 정한다(auth.ts 의 jwt 콜백).
+  const { data: session, update } = useSession();
+  const googleMode = Boolean(session?.pendingSignup);
+  const googleEmail = session?.user?.email ?? '';
 
   // --- 상태 관리 (State) ---
   const [name, setName] = useState('');
@@ -22,6 +32,15 @@ export default function SignupPage() {
   const [codeStatus, setCodeStatus] = useState<'ok' | 'wrong' | null>(null);
   const [codeDeadline, setCodeDeadline] = useState<number | null>(null);
   const [now, setNow] = useState(Date.now());
+
+  /** verify-code 가 준 일회용 표. 가입 제출이 코드가 아니라 이것을 들고 간다. */
+  const [ticket, setTicket] = useState('');
+  /** 서버가 준 문구를 그대로 보여준다 — 화면이 따로 만들지 않는다. */
+  const [codeMessage, setCodeMessage] = useState('');
+  /** 개발(콘솔 모드)에서만 내려온다. 터미널을 보지 않아도 되게 화면에 띄운다. */
+  const [devCode, setDevCode] = useState('');
+  const [pending, setPending] = useState(false);
+  const [googleNameApplied, setGoogleNameApplied] = useState(false);
   
   const [agree, setAgree] = useState({ terms: false, privacy: false, age14: false, marketing: false });
   const [docOpen, setDocOpen] = useState<'terms' | 'privacy' | null>(null);
@@ -40,6 +59,16 @@ export default function SignupPage() {
     const tick = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(tick);
   }, []);
+
+  // 구글이 준 이름을 기본값으로 채운다 (05 P11). 사용자가 고칠 수 있으므로
+  // 한 번만 채우고 그 뒤에는 건드리지 않는다 — 입력 중인 값을 덮지 않게.
+  const googleName = session?.user?.name ?? '';
+  useEffect(() => {
+    if (googleMode && !googleNameApplied && googleName) {
+      setName(googleName);
+      setGoogleNameApplied(true);
+    }
+  }, [googleMode, googleNameApplied, googleName]);
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -63,25 +92,90 @@ export default function SignupPage() {
   const schoolOk = !!school.trim();
   const studentIdOk = !!studentId.trim();
   const roomOk = !!room.trim();
-  const canSubmit = nameOk && idVerified && pwOk && !!gender && schoolOk && studentIdOk && roomOk && requiredOk;
+  // 05 P11 — 구글 가입자는 이메일 인증도 비밀번호도 만들지 않는다.
+  // (구글이 이미 메일 소유를 확인했고, 06 「사용자」의 비밀번호 칸은 비워 둔다.)
+  const canSubmit =
+    nameOk &&
+    (googleMode || idVerified) &&
+    (googleMode || pwOk) &&
+    !!gender &&
+    schoolOk &&
+    studentIdOk &&
+    roomOk &&
+    requiredOk;
 
   // --- 핸들러 함수 ---
-  const handleSendCode = () => {
-    if (!emailValid) return;
-    setCodeSent(true);
-    setCode('');
-    setCodeStatus(null);
-    setCodeDeadline(Date.now() + 3 * 60 * 1000);
-    showToast(`${userId}로 인증번호를 보냈어요.`);
+  // 코드는 서버가 만들어 메일로 보낸다 (08 · 25줄 — 화면이 만들지 않는다).
+  // 남은 시간도 서버가 준 minutes 를 그대로 쓴다.
+  const handleSendCode = async () => {
+    if (!emailValid || pending) return;
+    setPending(true);
+    setCodeMessage('');
+    setDevCode('');
+    try {
+      const res = await fetch('/api/auth/signup/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userId.trim() }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        minutes?: number;
+        message?: string;
+        devCode?: string;
+      };
+
+      if (!data.ok) {
+        // 400 형식 · 409 이미 가입 · 429 쿨다운 · 502 발송 실패 —
+        // 문구는 서버 것을 그대로 쓴다.
+        const message = data.message ?? '인증번호를 보내지 못했어요.';
+        setCodeMessage(message);
+        showToast(message);
+        return;
+      }
+
+      setCodeSent(true);
+      setCode('');
+      setCodeStatus(null);
+      setTicket('');
+      setCodeDeadline(Date.now() + (data.minutes ?? 3) * 60 * 1000);
+      if (data.devCode) setDevCode(data.devCode);
+      showToast(`${userId.trim()}로 인증번호를 보냈어요.`);
+    } catch {
+      showToast('네트워크 오류예요. 잠시 뒤 다시 시도해주세요.');
+    } finally {
+      setPending(false);
+    }
   };
 
-  const handleVerifyCode = () => {
-    if (expired) return;
-    if (code.trim() === '123456') {
+  // 맞으면 일회용 표를 받는다. 틀림 · 만료 · 5회 초과는 서버가 갈라 준다.
+  const handleVerifyCode = async () => {
+    if (expired || idVerified || pending) return;
+    setPending(true);
+    setCodeMessage('');
+    try {
+      const res = await fetch('/api/auth/signup/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: userId.trim(), code: code.trim() }),
+      });
+      const data = (await res.json()) as { ok: boolean; ticket?: string; message?: string };
+
+      if (!data.ok || !data.ticket) {
+        setCodeStatus('wrong');
+        setCodeMessage(data.message ?? '인증번호가 일치하지 않아요.');
+        return;
+      }
+
+      setTicket(data.ticket);
       setIdVerified(true);
       setCodeStatus('ok');
-    } else {
+      setDevCode('');
+    } catch {
       setCodeStatus('wrong');
+      setCodeMessage('네트워크 오류예요. 잠시 뒤 다시 시도해주세요.');
+    } finally {
+      setPending(false);
     }
   };
 
@@ -127,14 +221,73 @@ export default function SignupPage() {
     setDocScrolledEnd(false);
   };
 
-  const handleSubmit = () => {
-    if (canSubmit) {
-      showToast('가입이 완료됐어요! 홈으로 이동합니다.');
-      setShowErrors(false);
-      setTimeout(() => router.push('/home'), 900);
-    } else {
+  const handleSubmit = async () => {
+    if (!canSubmit) {
       setShowErrors(true);
       showToast('필수 항목을 모두 입력·확인해주세요.');
+      return;
+    }
+    if (pending) return;
+
+    setPending(true);
+    setShowErrors(false);
+    try {
+      const url = googleMode ? '/api/auth/google/complete-signup' : '/api/auth/signup';
+      const body = googleMode
+        ? {
+            // 이메일은 보내지 않는다 — 서버가 세션에서 읽는다.
+            // 본문으로 받으면 남의 학교 이메일로 계정을 만들 수 있다.
+            name: name.trim(),
+            gender,
+            school: school.trim(),
+            studentId: studentId.trim(),
+            room,
+            agreed: true,
+          }
+        : {
+            email: userId.trim(),
+            ticket,
+            password,
+            name: name.trim(),
+            gender,
+            school: school.trim(),
+            studentId: studentId.trim(),
+            room,
+            agreed: true,
+          };
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json()) as { ok: boolean; message?: string; field?: string };
+
+      if (!data.ok) {
+        setShowErrors(true);
+        showToast(data.message ?? '가입에 실패했어요.');
+        return;
+      }
+
+      if (googleMode) {
+        // **세션을 먼저 갱신한다.** 토큰에 pendingSignup 이 남아 있으면
+        // proxy.ts 가 홈에서 다시 /signup 으로 돌려보낸다. auth.ts 의 jwt 콜백이
+        // 매번 users 를 다시 읽으므로 update() 한 번이면 꺼진다.
+        await update();
+        showToast('가입이 완료됐어요! 홈으로 이동합니다.');
+        setTimeout(() => {
+          router.push('/home');
+          router.refresh();
+        }, 900);
+      } else {
+        // 07 흐름표 — 이메일 가입은 로그인 화면으로 돌아간다.
+        showToast('가입이 완료됐어요! 로그인해주세요.');
+        setTimeout(() => router.push('/login'), 900);
+      }
+    } catch {
+      showToast('네트워크 오류예요. 잠시 뒤 다시 시도해주세요.');
+    } finally {
+      setPending(false);
     }
   };
 
@@ -172,7 +325,9 @@ export default function SignupPage() {
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
               <h1 style={{ margin: 0, fontSize: '24px', fontWeight: 800, letterSpacing: '-0.02em', color: '#1E3557', marginTop: '-2px' }}>회원가입</h1>
-              <p style={{ margin: 0, fontSize: '13px', fontWeight: 500, color: '#8FAAD0' }}>기숙사 세탁실을 편하게 이용해 보세요</p>
+              <p style={{ margin: 0, fontSize: '13px', fontWeight: 500, color: '#8FAAD0' }}>
+                {googleMode ? '구글 계정으로 계속하려면 남은 정보를 채워주세요' : '기숙사 세탁실을 편하게 이용해 보세요'}
+              </p>
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', background: '#fff', borderRadius: '20px', padding: '18px', boxShadow: '0px 10px 26px -8px rgba(47,99,184,.28)' }}>
@@ -184,12 +339,23 @@ export default function SignupPage() {
                 {showErrors && !nameOk && <span style={{ fontSize: '11px', color: '#E0554E' }}>이름을 입력해주세요.</span>}
               </div>
 
-              {/* 아이디 (학교 이메일) */}
+              {/* 아이디 (학교 이메일) — 구글 모드에서는 구글이 확인해 준 주소를 보여주기만 한다 */}
+              {googleMode ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#5A7CA8' }}>아이디 (학교 이메일)</label>
+                  <input
+                    value={googleEmail}
+                    readOnly
+                    style={{ border: 'none', outline: 'none', borderRadius: '14px', boxShadow: 'inset 0 0 0 1px #E3EBF7', padding: '12px 14px', fontSize: '13px', color: '#8FAAD0', background: '#F7FAFF' }}
+                  />
+                  <span style={{ fontSize: '11px', color: '#8FAAD0' }}>구글 계정으로 확인된 주소예요. 인증번호와 비밀번호는 필요하지 않아요.</span>
+                </div>
+              ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#5A7CA8' }}>아이디 (학교 이메일)</label>
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <input value={userId} onChange={(e) => { setUserId(e.target.value); setCodeSent(false); setIdVerified(false); setCodeDeadline(null); }} placeholder="name@school.ac.kr" style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', borderRadius: '14px', boxShadow: `inset 0 0 0 1px ${userId.length > 0 && !emailValid ? '#F0A9A4' : '#E3EBF7'}`, padding: '12px 14px', fontSize: '13px', color: '#1E3557' }} />
-                  <button type="button" onClick={handleSendCode} disabled={!emailValid || idVerified} style={{ border: 'none', cursor: (!emailValid || idVerified) ? 'default' : 'pointer', color: (!emailValid || idVerified) ? '#A8BCD9' : '#2F63B8', background: (!emailValid || idVerified) ? '#EDF2FA' : '#fff', boxShadow: (!emailValid || idVerified) ? 'none' : 'inset 0 0 0 1.5px #CFDDF2', borderRadius: '14px', height: '39px', padding: '0 14px', fontSize: '12px', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                  <button type="button" onClick={handleSendCode} disabled={!emailValid || idVerified || pending} style={{ border: 'none', cursor: (!emailValid || idVerified) ? 'default' : 'pointer', color: (!emailValid || idVerified) ? '#A8BCD9' : '#2F63B8', background: (!emailValid || idVerified) ? '#EDF2FA' : '#fff', boxShadow: (!emailValid || idVerified) ? 'none' : 'inset 0 0 0 1.5px #CFDDF2', borderRadius: '14px', height: '39px', padding: '0 14px', fontSize: '12px', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
                     {idVerified ? '인증완료' : (codeSent ? '재발송' : '인증하기')}
                   </button>
                 </div>
@@ -202,16 +368,29 @@ export default function SignupPage() {
                       <input value={code} onChange={(e) => { setCode(e.target.value); setCodeStatus(null); }} disabled={idVerified} placeholder="인증번호 6자리" style={{ width: '100%', border: 'none', outline: 'none', borderRadius: '14px', boxShadow: `inset 0 0 0 1px ${expired || codeStatus === 'wrong' ? '#F0A9A4' : '#E3EBF7'}`, padding: '12px 50px 12px 14px', fontSize: '13px', color: '#1E3557' }} />
                       <span style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)', fontSize: '12px', fontWeight: 700, color: expired ? '#E0554E' : '#8FAAD0' }}>{timerText}</span>
                     </div>
-                    <button type="button" onClick={handleVerifyCode} disabled={idVerified || expired} style={{ border: 'none', cursor: (idVerified || expired) ? 'default' : 'pointer', color: (idVerified || expired) ? '#A8BCD9' : '#2F63B8', background: (idVerified || expired) ? '#EDF2FA' : '#fff', boxShadow: (idVerified || expired) ? 'none' : 'inset 0 0 0 1.5px #CFDDF2', borderRadius: '14px', height: '39px', padding: '0 14px', fontSize: '12px', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    <button type="button" onClick={handleVerifyCode} disabled={idVerified || expired || pending} style={{ border: 'none', cursor: (idVerified || expired) ? 'default' : 'pointer', color: (idVerified || expired) ? '#A8BCD9' : '#2F63B8', background: (idVerified || expired) ? '#EDF2FA' : '#fff', boxShadow: (idVerified || expired) ? 'none' : 'inset 0 0 0 1.5px #CFDDF2', borderRadius: '14px', height: '39px', padding: '0 14px', fontSize: '12px', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
                       확인
                     </button>
                   </div>
                 )}
                 {expired && !idVerified && <span style={{ fontSize: '11px', color: '#E0554E' }}>인증 시간이 만료됐어요. 재발송해주세요.</span>}
-                {codeStatus === 'wrong' && <span style={{ fontSize: '11px', color: '#E0554E' }}>인증번호가 일치하지 않아요.</span>}
+                {/* 서버가 준 문구를 그대로 보여준다 — 만료 · 틀림 · 5회 초과 · 쿨다운이 여기로 온다 */}
+                {codeMessage && <span style={{ fontSize: '11px', color: '#E0554E' }}>{codeMessage}</span>}
+                {!codeMessage && codeStatus === 'wrong' && <span style={{ fontSize: '11px', color: '#E0554E' }}>인증번호가 일치하지 않아요.</span>}
+                {/*
+                  개발 전용 안내. MAIL_MODE=console 일 때만 서버가 devCode 를 내려준다
+                  (운영 빌드에서는 응답에 아예 없다 — 06 「이메일 인증코드」 · 08 · 25줄).
+                */}
+                {devCode && (
+                  <span style={{ fontSize: '11px', fontWeight: 700, color: '#2F63B8', background: '#EDF2FA', borderRadius: '8px', padding: '6px 8px' }}>
+                    개발용 인증번호: {devCode}
+                  </span>
+                )}
               </div>
+              )}
 
-              {/* 비밀번호 */}
+              {/* 비밀번호 — 05 P11: 구글 가입자는 가입할 때 비밀번호를 만들지 않는다 */}
+              {!googleMode && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#5A7CA8' }}>비밀번호</label>
                 <div style={{ position: 'relative' }}>
@@ -220,8 +399,10 @@ export default function SignupPage() {
                 </div>
                 {showErrors && password.length < 8 && <span style={{ fontSize: '11px', color: '#E0554E' }}>비밀번호는 8자 이상이어야 해요.</span>}
               </div>
+              )}
 
               {/* 비밀번호 확인 */}
+              {!googleMode && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#5A7CA8' }}>비밀번호 확인</label>
                 <div style={{ position: 'relative' }}>
@@ -231,6 +412,7 @@ export default function SignupPage() {
                 {pwMismatch && <span style={{ fontSize: '11px', color: '#E0554E' }}>비밀번호가 일치하지 않아요.</span>}
                 {pwMatch && <span style={{ fontSize: '11px', color: '#188A5E' }}>비밀번호가 일치해요.</span>}
               </div>
+              )}
 
               {/* 성별 */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -291,8 +473,8 @@ export default function SignupPage() {
             </div>
             {showErrors && !requiredOk && <span style={{ fontSize: '11px', color: '#E0554E' }}>필수 약관에 모두 동의해주세요.</span>}
 
-            <button type="button" onClick={handleSubmit} style={{ border: 'none', cursor: 'pointer', color: '#fff', background: '#4C86D8', borderRadius: '14px', padding: '16px', fontSize: '16px', fontWeight: 700, boxShadow: '0px 8px 18px -6px rgba(47,99,184,.75)' }}>
-              가입하기
+            <button type="button" onClick={handleSubmit} disabled={pending} style={{ border: 'none', cursor: pending ? 'default' : 'pointer', color: '#fff', background: pending ? '#A8BCD9' : '#4C86D8', borderRadius: '14px', padding: '16px', fontSize: '16px', fontWeight: 700, boxShadow: '0px 8px 18px -6px rgba(47,99,184,.75)' }}>
+              {pending ? '처리 중…' : '가입하기'}
             </button>
           </div>
         </div>

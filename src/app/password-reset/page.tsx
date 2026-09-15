@@ -2,9 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { signIn } from 'next-auth/react';
 
-const CODE = '135790';
-const LIMIT = 5 * 60 * 1000;
+/**
+ * 인증코드 유효 시간의 **기본값**이다 (05 P22 — 5분).
+ * 실제 값은 서버가 응답의 minutes 로 준다. 여기 값은 응답이 오기 전 눈금용이다.
+ */
+const DEFAULT_LIMIT = 5 * 60 * 1000;
 
 export default function PasswordResetPage() {
   // --- 상태 관리 ---
@@ -19,6 +23,21 @@ export default function PasswordResetPage() {
   const [sentAt, setSentAt] = useState(0);
   const [now, setNow] = useState(Date.now());
 
+  /** 서버가 준 유효 시간(ms). 05 P22 의 5분이 기본이다. */
+  const [limit, setLimit] = useState(DEFAULT_LIMIT);
+  /** verify-code 가 준 일회용 표. 새 비밀번호 저장이 이것을 들고 간다. */
+  const [ticket, setTicket] = useState('');
+  /** 개발(MAIL_MODE=console)에서만 내려온다. */
+  const [devCode, setDevCode] = useState('');
+  /**
+   * 05 P22 · 08 · 51줄 — 구글로 가입한 계정은 비밀번호를 재설정할 수 없다.
+   * 메시지만 띄우면 갈 곳이 없으므로 구글 로그인으로 가는 길을 함께 보여준다.
+   */
+  const [googleOnly, setGoogleOnly] = useState(false);
+  const [emailErrorText, setEmailErrorText] = useState('');
+  const [pwErrorText, setPwErrorText] = useState('');
+  const [pending, setPending] = useState(false);
+
   // --- 타이머 실시간 업데이트 ---
   useEffect(() => {
     const tick = setInterval(() => setNow(Date.now()), 1000);
@@ -27,7 +46,7 @@ export default function PasswordResetPage() {
 
   // --- 유효성 검사 및 계산 ---
   const emailValid = /^[^\s@]+@[^\s@]+\.ac\.kr$/i.test(email.trim());
-  const remain = Math.max(0, LIMIT - (now - sentAt));
+  const remain = Math.max(0, limit - (now - sentAt));
   const mm = String(Math.floor(remain / 60000)).padStart(2, '0');
   const ss = String(Math.floor((remain % 60000) / 1000)).padStart(2, '0');
   
@@ -41,34 +60,108 @@ export default function PasswordResetPage() {
       : { flex: 1, border: 'none', cursor: 'default', color: '#A8BCD9', background: '#EDF2FA', borderRadius: '12px', padding: '14px', fontSize: '14px', fontWeight: 700 };
 
   // --- 핸들러 함수 ---
-  const handleSendCode = () => {
-    if (email.trim() === '') return;
+  /**
+   * 가입 여부는 드러나지 않는다 — 미가입도 이메일 가입도 똑같이 ok:true 다.
+   * 갈라지는 것은 구글 전용 계정(409 google_only)뿐이고, 05 P22 가 사실대로
+   * 알리기로 정한 것이다.
+   */
+  const handleSendCode = async () => {
+    if (email.trim() === '' || pending) return;
     if (!emailValid) {
       setEmailError(true);
       return;
     }
-    setStep(2);
-    setSentAt(Date.now());
-    setCode('');
+    setPending(true);
+    setEmailErrorText('');
+    setGoogleOnly(false);
+    setDevCode('');
+    try {
+      const res = await fetch('/api/auth/password-reset/send-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        minutes?: number;
+        message?: string;
+        reason?: string;
+        devCode?: string;
+      };
+
+      if (!data.ok) {
+        if (data.reason === 'google_only') {
+          setGoogleOnly(true);
+          return;
+        }
+        setEmailErrorText(data.message ?? '인증코드를 보내지 못했어요.');
+        return;
+      }
+
+      setLimit((data.minutes ?? 5) * 60 * 1000);
+      setSentAt(Date.now());
+      setCode('');
+      setCodeErrorText('');
+      setTicket('');
+      if (data.devCode) setDevCode(data.devCode);
+      setStep(2);
+    } catch {
+      setEmailErrorText('네트워크 오류예요. 잠시 뒤 다시 시도해주세요.');
+    } finally {
+      setPending(false);
+    }
+  };
+
+  // 만료 · 틀림 · 5회 초과는 모두 서버가 갈라 문구까지 준다.
+  const handleVerify = async () => {
+    if (code.length !== 6 || pending) return;
+    setPending(true);
     setCodeErrorText('');
+    try {
+      const res = await fetch('/api/auth/password-reset/verify-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), code }),
+      });
+      const data = (await res.json()) as { ok: boolean; ticket?: string; message?: string };
+
+      if (!data.ok || !data.ticket) {
+        setCodeErrorText(data.message ?? '인증코드가 올바르지 않아요.');
+        return;
+      }
+
+      setTicket(data.ticket);
+      setDevCode('');
+      setStep(3);
+    } catch {
+      setCodeErrorText('네트워크 오류예요. 잠시 뒤 다시 시도해주세요.');
+    } finally {
+      setPending(false);
+    }
   };
 
-  const handleVerify = () => {
-    if (code.length !== 6) return;
-    if (remain <= 0) {
-      setCodeErrorText('인증 시간이 지났어요. 다시 보내기를 눌러주세요.');
-      return;
-    }
-    if (code !== CODE) {
-      setCodeErrorText('인증코드가 올바르지 않아요.');
-      return;
-    }
-    setStep(3);
-  };
+  const handleSubmit = async () => {
+    if (!(pwLongEnough && pwMatch) || pending) return;
+    setPending(true);
+    setPwErrorText('');
+    try {
+      const res = await fetch('/api/auth/password-reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), ticket, password: pw1 }),
+      });
+      const data = (await res.json()) as { ok: boolean; message?: string };
 
-  const handleSubmit = () => {
-    if (pwLongEnough && pwMatch) {
+      if (!data.ok) {
+        setPwErrorText(data.message ?? '비밀번호를 바꾸지 못했어요.');
+        return;
+      }
+
       setStep(4);
+    } catch {
+      setPwErrorText('네트워크 오류예요. 잠시 뒤 다시 시도해주세요.');
+    } finally {
+      setPending(false);
     }
   };
 
@@ -134,9 +227,31 @@ export default function PasswordResetPage() {
                   <label className="lbl">아이디 (학교 이메일)</label>
                   <input className="fld" value={email} onChange={(e) => { setEmail(e.target.value); setEmailError(false); }} placeholder="name@eulji.ac.kr" />
                   {emailError && <span style={{ fontSize: '11.5px', color: '#E0554E' }}>학교 이메일 형식(ac.kr)으로 입력해주세요.</span>}
+                  {emailErrorText && <span style={{ fontSize: '11.5px', color: '#E0554E' }}>{emailErrorText}</span>}
                 </div>
-                <button type="button" onClick={handleSendCode} disabled={email.trim() === ''} style={btnStyle(email.trim() !== '')}>
-                  인증코드 받기
+
+                {/*
+                  05 P22 (팀 확정) — 구글로 가입한 계정은 비밀번호가 없어 재설정할 수
+                  없다. 08 · 51줄: "화면은 구글 로그인으로 가는 길을 함께 보여줘야 한다 —
+                  메시지만 띄우면 사용자가 갈 곳이 없다."
+                */}
+                {googleOnly && (
+                  <div style={{ background: '#fff', border: '1px solid #E6EDF7', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <span style={{ fontSize: '12.5px', color: '#1E3557', lineHeight: 1.6, fontWeight: 600 }}>
+                      구글 간편로그인으로 가입한 계정이에요.<br />구글 계정으로 로그인해주세요.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => signIn('google', { callbackUrl: '/home' })}
+                      style={{ border: 'none', cursor: 'pointer', color: '#fff', background: '#4C86D8', borderRadius: '12px', padding: '12px', fontSize: '13.5px', fontWeight: 700 }}
+                    >
+                      구글 계정으로 로그인
+                    </button>
+                  </div>
+                )}
+
+                <button type="button" onClick={handleSendCode} disabled={email.trim() === '' || pending} style={btnStyle(email.trim() !== '' && !pending)}>
+                  {pending ? '보내는 중…' : '인증코드 받기'}
                 </button>
               </div>
             )}
@@ -144,7 +259,7 @@ export default function PasswordResetPage() {
             {/* Step 2: 인증코드 확인 */}
             {step === 2 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                <p style={{ margin: 0, fontSize: '12.5px', color: '#8FAAD0', lineHeight: 1.6 }}><span style={{ color: '#2F63B8', fontWeight: 700 }}>{email}</span> 으로<br/>인증코드를 보냈어요. 5분 안에 입력해주세요.</p>
+                <p style={{ margin: 0, fontSize: '12.5px', color: '#8FAAD0', lineHeight: 1.6 }}><span style={{ color: '#2F63B8', fontWeight: 700 }}>{email}</span> 으로<br/>인증코드를 보냈어요. {Math.round(limit / 60000)}분 안에 입력해주세요.</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label className="lbl">인증코드 6자리</label>
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
@@ -152,10 +267,17 @@ export default function PasswordResetPage() {
                     <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#E0554E', flexShrink: 0, minWidth: '44px', textAlign: 'right' }}>{mm}:{ss}</span>
                   </div>
                   {codeErrorText && <span style={{ fontSize: '11.5px', color: '#E0554E' }}>{codeErrorText}</span>}
+                  {/* 개발 전용. MAIL_MODE=console 일 때만 서버가 내려준다 */}
+                  {devCode && (
+                    <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#2F63B8', background: '#EDF2FA', borderRadius: '8px', padding: '6px 8px' }}>
+                      개발용 인증코드: {devCode}
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <button type="button" onClick={() => { setSentAt(Date.now()); setCode(''); setCodeErrorText(''); }} style={{ flex: 1, border: 'none', cursor: 'pointer', color: '#2F63B8', background: '#fff', boxShadow: 'inset 0 0 0 1px #CFDDF2', borderRadius: '12px', padding: '14px', fontSize: '14px', fontWeight: 700 }}>다시 보내기</button>
-                  <button type="button" onClick={handleVerify} disabled={code.length !== 6} style={btnStyle(code.length === 6)}>확인</button>
+                  {/* 다시 보내기도 서버를 거친다 — 60초 쿨다운 판정이 서버에 있다 */}
+                  <button type="button" onClick={handleSendCode} disabled={pending} style={{ flex: 1, border: 'none', cursor: pending ? 'default' : 'pointer', color: '#2F63B8', background: '#fff', boxShadow: 'inset 0 0 0 1px #CFDDF2', borderRadius: '12px', padding: '14px', fontSize: '14px', fontWeight: 700 }}>다시 보내기</button>
+                  <button type="button" onClick={handleVerify} disabled={code.length !== 6 || pending} style={btnStyle(code.length === 6 && !pending)}>확인</button>
                 </div>
               </div>
             )}
@@ -177,8 +299,9 @@ export default function PasswordResetPage() {
                     </span>
                   )}
                 </div>
-                <button type="button" onClick={handleSubmit} disabled={!(pwLongEnough && pwMatch)} style={btnStyle(pwLongEnough && pwMatch)}>
-                  비밀번호 변경
+                {pwErrorText && <span style={{ fontSize: '11.5px', color: '#E0554E' }}>{pwErrorText}</span>}
+                <button type="button" onClick={handleSubmit} disabled={!(pwLongEnough && pwMatch) || pending} style={btnStyle(pwLongEnough && pwMatch && !pending)}>
+                  {pending ? '변경 중…' : '비밀번호 변경'}
                 </button>
               </div>
             )}
