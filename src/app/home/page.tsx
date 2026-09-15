@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
+import { useUnreadCount } from '@/lib/use-unread-count';
+import NotificationPrompt from '@/components/notification-prompt';
 import { useRouter } from 'next/navigation';
 
 // --- 전역 상수 (타이머 시간 등) ---
@@ -44,7 +46,9 @@ export default function HomePage() {
   const [extraWaiters, setExtraWaiters] = useState({ washer: 2, dryer: 1 });
   const [rawMachines, setRawMachines] = useState(initialMachines);
   
-  const hasUnread = false; // 알림 상태 임시값
+  // 종의 점은 DB 가 센다 (F18 · 05 P14 — 보관 기간까지 서버가 건다).
+  const unreadCount = useUnreadCount();
+  const hasUnread = unreadCount > 0;
 
   // --- 알림(Toast) 함수 ---
   const showToast = (message: string) => {
@@ -258,6 +262,13 @@ export default function HomePage() {
       `}</style>
 
       <div style={{ width: '390px', height: '844px', margin: '40px auto', position: 'relative', display: 'flex', flexDirection: 'column', background: '#F3F6FB', color: '#1E3557', overflow: 'hidden', borderRadius: '40px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}>
+
+        {/*
+          05 P26 — 로그인 뒤 홈 첫 진입에서 폰 알림 허용을 한 번만 묻는다.
+          이미 물어봤거나 브라우저가 허용 · 거절을 기억하고 있으면 아무것도 그리지
+          않으므로 기존 레이아웃에는 영향이 없다(자기 자리에 떠 있는 카드다).
+        */}
+        <NotificationPrompt />
         
         {/* 헤더 바 */}
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '63px 20px 12px', background: '#fff', borderBottom: '1px solid #EAF0FA', width: '396px', height: '96px', position: 'relative' }}>

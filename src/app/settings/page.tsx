@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import { useUnreadCount } from '@/lib/use-unread-count';
+import { enablePush, permissionServerSnapshot, permissionSnapshot, subscribePushState } from '@/lib/push-client';
 import { useRouter } from 'next/navigation';
 
 // FAQ 데이터
@@ -29,7 +31,10 @@ export default function SettingsPage() {
   const router = useRouter();
 
   // --- 상태 관리 ---
-  const [hasUnread, setHasUnread] = useState(false);
+  // 종의 점은 DB 가 센다 (F18). 예전에는 알림함이 localStorage 에 적어 둔
+  // washed_unread 를 읽었는데, 알림함을 열어 보기 전에는 값이 없었다.
+  const unreadCount = useUnreadCount();
+  const hasUnread = unreadCount > 0;
   const [tenMin, setTenMin] = useState(true);
   const [ready, setReady] = useState(true);
   
@@ -58,9 +63,30 @@ export default function SettingsPage() {
 
   const studentId = '20231234';
 
-  useEffect(() => {
-    try { setHasUnread(parseInt(localStorage.getItem('washed_unread') || '0', 10) > 0); } catch (e) {}
-  }, []);
+  // 05 P26 — 폰 알림 허용은 **운영체제 단위**다. 앱이 켤 수는 있어도(요청) 끌 수는
+  // 없다 — granted 를 default 로 되돌리는 방법이 브라우저에 없기 때문이다. 그래서
+  // 이 자리는 토글이 아니라 **상태 + 켜기**다. 거절한 사람이 다시 켜는 자리이기도
+  // 하다("거절하면 설정에 「알림이 꺼져 있어요」 줄").
+  const pushPermission = useSyncExternalStore(
+    subscribePushState,
+    permissionSnapshot,
+    permissionServerSnapshot,
+  );
+  const [pushPending, setPushPending] = useState(false);
+
+  const turnOnPush = async () => {
+    if (pushPending) return;
+    setPushPending(true);
+    try {
+      const result = await enablePush();
+      if (result === 'granted') showToast('이제 폰 알림을 받아요.');
+      else showToast('브라우저에서 알림이 허용되지 않았어요.');
+    } catch {
+      showToast('알림을 켜지 못했어요. 잠시 뒤 다시 시도해주세요.');
+    } finally {
+      setPushPending(false);
+    }
+  };
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -165,10 +191,53 @@ export default function SettingsPage() {
             {/* 알림 설정 */}
             <div>
               <div className="ghead">알림</div>
+
+              {/*
+                폰 알림 허용 (05 P26 · F40 · F41).
+                아래 두 토글(P13)과 **다른 것**이다 — 이쪽은 운영체제 단위 허용이라
+                켜지 않으면 공지 · 경고 · 신고 결과까지 폰으로 오지 않는다.
+              */}
+              <div className="group" style={{ marginBottom: '10px' }}>
+                <div className="cell">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="ctitle">
+                      {pushPermission === 'granted' ? '알림을 받고 있어요' : '알림이 꺼져 있어요'}
+                    </div>
+                    <div className="cdesc">
+                      {pushPermission === 'granted'
+                        ? '배정 · 종료 · 공지 알림을 폰으로 받아요.'
+                        : pushPermission === 'denied'
+                          ? '브라우저가 알림을 차단했어요. 브라우저나 폰의 사이트 설정에서 직접 허용해주세요.'
+                          : pushPermission === 'unsupported'
+                            ? '이 브라우저는 폰 알림을 지원하지 않아요.'
+                            : '켜면 앱을 닫아 두어도 차례와 종료를 알려드려요.'}
+                    </div>
+                  </div>
+                  {pushPermission === 'default' && (
+                    <button
+                      type="button"
+                      onClick={turnOnPush}
+                      disabled={pushPending}
+                      style={{ border: 'none', cursor: pushPending ? 'default' : 'pointer', color: '#fff', background: pushPending ? '#A8BCD9' : '#4C86D8', borderRadius: '999px', padding: '8px 14px', fontSize: '12.5px', fontWeight: 700, flexShrink: 0 }}
+                    >
+                      {pushPending ? '켜는 중…' : '켜기'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/*
+                05 P13 · F19 — 종류별 알림 설정은 **v2** 다. 06 「저장하지 않는 것」이
+                "알림 수신 설정 … 지금은 항상 켜짐으로 본다" 로 저장 칸을 만들지 않았고,
+                08 · 112줄이 "사용자 설정 테이블로" 를 남은 일로 적어 두었다.
+                그래서 여기 토글은 아직 화면 상태일 뿐이며, **위의 폰 알림 허용과
+                연결하지 않는다** — 종류 하나를 끈다고 전체 푸시가 꺼지면 공지 · 경고 ·
+                신고 결과까지 함께 끊긴다.
+              */}
               <div className="group">
                 {[
-                  { label: '차례 10분 전 알림', desc: '내 차례가 다가오면 미리 알려드려요', on: tenMin, toggle: () => setTenMin(!tenMin) },
-                  { label: '이용 가능 알림', desc: '기기를 바로 이용할 수 있을 때 알려드려요', on: ready, toggle: () => setReady(!ready) }
+                  { label: '차례 10분 전 알림', desc: '내 차례가 다가오면 미리 알려드려요 (준비 중)', on: tenMin, toggle: () => setTenMin(!tenMin) },
+                  { label: '이용 가능 알림', desc: '기기를 바로 이용할 수 있을 때 알려드려요 (준비 중)', on: ready, toggle: () => setReady(!ready) }
                 ].map((n, idx) => (
                   <div key={idx} className="cell">
                     <div style={{ flex: 1, minWidth: 0 }}>

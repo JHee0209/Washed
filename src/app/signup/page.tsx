@@ -40,7 +40,8 @@ export default function SignupPage() {
   /** 개발(콘솔 모드)에서만 내려온다. 터미널을 보지 않아도 되게 화면에 띄운다. */
   const [devCode, setDevCode] = useState('');
   const [pending, setPending] = useState(false);
-  const [googleNameApplied, setGoogleNameApplied] = useState(false);
+  /** 이름 칸을 사용자가 한 번이라도 고쳤는지. 고치기 전까지는 구글 값을 보여준다. */
+  const [nameTouched, setNameTouched] = useState(false);
   
   const [agree, setAgree] = useState({ terms: false, privacy: false, age14: false, marketing: false });
   const [docOpen, setDocOpen] = useState<'terms' | 'privacy' | null>(null);
@@ -60,15 +61,11 @@ export default function SignupPage() {
     return () => clearInterval(tick);
   }, []);
 
-  // 구글이 준 이름을 기본값으로 채운다 (05 P11). 사용자가 고칠 수 있으므로
-  // 한 번만 채우고 그 뒤에는 건드리지 않는다 — 입력 중인 값을 덮지 않게.
+  // 구글이 준 이름을 기본값으로 쓴다 (05 P11). 효과로 state 에 옮겨 담지 않고
+  // 렌더에서 유도한다 — 옮겨 담으면 렌더가 한 번 더 돌고, 세션이 늦게 와서
+  // 사용자가 이미 입력한 값을 덮을 수도 있다.
   const googleName = session?.user?.name ?? '';
-  useEffect(() => {
-    if (googleMode && !googleNameApplied && googleName) {
-      setName(googleName);
-      setGoogleNameApplied(true);
-    }
-  }, [googleMode, googleNameApplied, googleName]);
+  const effectiveName = !nameTouched && googleMode && googleName ? googleName : name;
 
   const showToast = (message: string) => {
     setToastMessage(message);
@@ -87,7 +84,7 @@ export default function SignupPage() {
   
   const REQUIRED_KEYS = ['terms', 'privacy', 'age14'];
   const requiredOk = REQUIRED_KEYS.every((k) => agree[k as keyof typeof agree]);
-  const nameOk = !!name.trim();
+  const nameOk = !!effectiveName.trim();
   const pwOk = password.length >= 8 && pwMatch;
   const schoolOk = !!school.trim();
   const studentIdOk = !!studentId.trim();
@@ -237,7 +234,7 @@ export default function SignupPage() {
         ? {
             // 이메일은 보내지 않는다 — 서버가 세션에서 읽는다.
             // 본문으로 받으면 남의 학교 이메일로 계정을 만들 수 있다.
-            name: name.trim(),
+            name: effectiveName.trim(),
             gender,
             school: school.trim(),
             studentId: studentId.trim(),
@@ -248,7 +245,7 @@ export default function SignupPage() {
             email: userId.trim(),
             ticket,
             password,
-            name: name.trim(),
+            name: effectiveName.trim(),
             gender,
             school: school.trim(),
             studentId: studentId.trim(),
@@ -335,7 +332,7 @@ export default function SignupPage() {
               {/* 이름 */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <label style={{ fontSize: '12.5px', fontWeight: 700, color: '#5A7CA8' }}>이름</label>
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="이름을 입력해 주세요" style={{ border: 'none', outline: 'none', borderRadius: '14px', boxShadow: `inset 0 0 0 1px ${showErrors && !nameOk ? '#F0A9A4' : '#E3EBF7'}`, padding: '12px 14px', fontSize: '14px', color: '#1E3557' }} />
+                <input value={effectiveName} onChange={(e) => { setNameTouched(true); setName(e.target.value); }} placeholder="이름을 입력해 주세요" style={{ border: 'none', outline: 'none', borderRadius: '14px', boxShadow: `inset 0 0 0 1px ${showErrors && !nameOk ? '#F0A9A4' : '#E3EBF7'}`, padding: '12px 14px', fontSize: '14px', color: '#1E3557' }} />
                 {showErrors && !nameOk && <span style={{ fontSize: '11px', color: '#E0554E' }}>이름을 입력해주세요.</span>}
               </div>
 

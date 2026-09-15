@@ -1,140 +1,210 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+// F17 · F18 알림함 — docs/design/알림.dc.html
+//
+// 목록은 DB 가 원본이다(06 「알림」). 이 화면은 'use client' 라 server-only 인
+// lib/notifications.ts 를 직접 부를 수 없어 GET /api/notifications 로 읽는다.
+//
+// 보관 기간(30일 · 「공지」만 3개월 · 05 P14 · P18)은 **서버가** 건다 —
+// 08 · 148줄: "조회 기간은 각 조회 API 에 두고 화면에서는 자르지 않는다".
+
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
-export default function NotificationsPage() {
-  // --- 상태 관리 ---
-  const [filter, setFilter] = useState('전체');
-  
-  // 초기 읽음 상태 (목업 데이터 기준)
-  const [readState, setReadState] = useState<Record<string, boolean>>({
-    n3: true, n6: true, n7: true, n8: true, n9: true
-  });
-  
-  const [liveNotices, setLiveNotices] = useState<any[]>([]);
-  const [liveReports, setLiveReports] = useState<any[]>([]);
-  const [now, setNow] = useState<number>(0);
+type NotificationKind = '공지' | '배정' | '종료' | '경고' | '결과';
 
-  // --- 클라이언트 데이터 로드 ---
-  useEffect(() => {
-    setNow(Date.now());
+type NotificationRow = {
+  notification_id: string;
+  kind: NotificationKind;
+  title: string;
+  body: string;
+  is_read: boolean;
+  received_at: string;
+};
+
+// 종류별 색 — 알림.dc.html 그대로다.
+// 프로토타입의 「신고」는 06 「알림」의 종류 값으로는 **결과**다
+// (kind CHECK 이 공지 · 배정 · 종료 · 경고 · 결과라 '신고' 는 DB 가 받지 않는다).
+// 값은 결과로 두고 사용자에게 보이는 이름만 "신고 결과" 로 적는다.
+const TYPES: Record<NotificationKind, { pillBg: string; pillFg: string; dot: string; label: string }> = {
+  공지: { pillBg: '#EEF2F8', pillFg: '#5A7CA8', dot: '#B4C2D6', label: '공지' },
+  배정: { pillBg: 'rgba(47,99,184,.1)', pillFg: '#2F63B8', dot: '#2F63B8', label: '배정' },
+  종료: { pillBg: 'rgba(0,191,64,.1)', pillFg: '#006E25', dot: '#00BF40', label: '종료' },
+  경고: { pillBg: 'rgba(255,146,0,.12)', pillFg: '#9C5800', dot: '#FF9200', label: '경고' },
+  결과: { pillBg: '#F1EAFB', pillFg: '#6B3FA0', dot: '#9B6FD1', label: '신고 결과' },
+};
+
+const TABS: { value: string; label: string }[] = [
+  { value: '전체', label: '전체' },
+  { value: '공지', label: '공지' },
+  { value: '배정', label: '배정' },
+  { value: '종료', label: '종료' },
+  { value: '경고', label: '경고' },
+  { value: '결과', label: '신고 결과' },
+];
+
+/** 다른 화면의 종 표시에게 "알림이 바뀌었다" 고 알린다 (useUnreadCount 가 받는다) */
+const CHANGED_EVENT = 'washed:notifications-changed';
+
+export default function NotificationsPage() {
+  const [filter, setFilter] = useState('전체');
+  const [items, setItems] = useState<NotificationRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+
+  const load = useCallback(async () => {
     try {
-      setLiveNotices(JSON.parse(localStorage.getItem('washed_notices') || '[]'));
-      setLiveReports(JSON.parse(localStorage.getItem('washed_reports') || '[]'));
-    } catch (e) {}
+      const res = await fetch('/api/notifications', { cache: 'no-store' });
+      if (res.status === 401) {
+        setLoadError('로그인이 필요해요.');
+        setItems([]);
+        return;
+      }
+      const data = (await res.json()) as { ok: boolean; items?: NotificationRow[]; message?: string };
+      if (!data.ok || !data.items) {
+        setLoadError(data.message ?? '알림을 불러오지 못했어요.');
+        return;
+      }
+      setItems(data.items);
+      setLoadError('');
+    } catch {
+      setLoadError('알림을 불러오지 못했어요.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // --- 알림 타입별 스타일 매핑 ---
-  const TYPES: Record<string, { pillBg: string, pillFg: string, dot: string }> = {
-    공지: { pillBg: '#EEF2F8', pillFg: '#5A7CA8', dot: '#B4C2D6' },
-    배정: { pillBg: 'rgba(47,99,184,.1)', pillFg: '#2F63B8', dot: '#2F63B8' },
-    종료: { pillBg: 'rgba(0,191,64,.1)', pillFg: '#006E25', dot: '#00BF40' },
-    경고: { pillBg: 'rgba(255,146,0,.12)', pillFg: '#9C5800', dot: '#FF9200' },
-    신고: { pillBg: '#F1EAFB', pillFg: '#6B3FA0', dot: '#9B6FD1' },
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  // 앱을 열어 둔 채 푸시를 받으면 서비스 워커가 알려 준다(public/sw.js).
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'washed:notification') load();
+    };
+    navigator.serviceWorker.addEventListener('message', onMessage);
+    return () => navigator.serviceWorker.removeEventListener('message', onMessage);
+  }, [load]);
+
+  const unreadCount = items.filter((n) => !n.is_read).length;
+
+  /**
+   * 읽음 처리. **서버가 성공한 뒤에** 화면을 바꾼다 — 미리 읽음으로 칠해 두면
+   * 실패했을 때 사용자는 읽은 줄 알지만 DB 는 그대로라 종이 다시 켜진다.
+   */
+  const markRead = async (notificationId: string) => {
+    const target = items.find((n) => n.notification_id === notificationId);
+    if (!target || target.is_read) return;
+    try {
+      const res = await fetch('/api/notifications/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notificationId }),
+      });
+      const data = (await res.json()) as { ok: boolean };
+      if (!data.ok) return;
+
+      setItems((prev) =>
+        prev.map((n) => (n.notification_id === notificationId ? { ...n, is_read: true } : n)),
+      );
+      window.dispatchEvent(new CustomEvent(CHANGED_EVENT));
+    } catch {
+      // 실패하면 아무것도 바꾸지 않는다 — 다음에 다시 누르면 된다.
+    }
   };
 
-  // --- 날짜 계산 로직 ---
+  const markAllRead = async () => {
+    if (unreadCount === 0) return;
+    try {
+      const res = await fetch('/api/notifications/read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ all: true }),
+      });
+      const data = (await res.json()) as { ok: boolean };
+      if (!data.ok) return;
+
+      setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
+      window.dispatchEvent(new CustomEvent(CHANGED_EVENT));
+    } catch {
+      // 그대로 둔다.
+    }
+  };
+
+  // --- 날짜 묶기 (받은 시각 기준) ---
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
   const midnightTs = midnight.getTime();
 
-  // 1. 공지사항 데이터 가공
-  const noticeNotifs = liveNotices.map((n, i) => {
-    const parts = String(n.date || '').split('.').map((x) => parseInt(x, 10));
-    let offset = 0;
-    if (parts.length === 3 && !isNaN(parts[0])) {
-      const d = new Date(parts[0], parts[1] - 1, parts[2]);
-      offset = Math.max(0, Math.round((midnightTs - d.getTime()) / 86400000));
-    }
-    return { id: `notice-${i}-${n.date}`, type: '공지', offset, time: n.time || '', title: n.title, body: n.body, ts: n.ts || 0 };
-  });
-
-  // 2. 신고 결과 데이터 가공
-  const resultNotifs = liveReports.filter((r) => r.status && r.status !== '접수됨').map((r) => {
-    const statusMsg = r.status === '처리완료' ? '처리가 완료됐어요.' : r.status === '반려' ? '사실이 아닌 것으로 확인되어 반려됐어요.' : '확인 중이에요.';
-    return {
-      id: `report-${r.id}`, type: '신고', offset: 0, time: r.datetime.split(' ')[1] || '',
-      title: `신고 결과: ${r.reason}`,
-      body: `접수하신 신고가 ${statusMsg}`,
-    };
-  });
-
-  // 3. 고정 목업 데이터 + 동적 데이터 병합
-  const allNotifs = [
-    ...resultNotifs,
-    ...noticeNotifs,
-    { id: 'n1', type: '배정', offset: 0, time: '09:41', title: '세탁기 3호기에 배정됐어요', body: '10분 안에 QR 코드를 찍어주세요. 그렇지 않으면 다음 사람에게 넘어가요' },
-    { id: 'n2', type: '종료', offset: 0, time: '09:05', title: '세탁기 3호기 사용이 끝났어요', body: '3분 안에 세탁물을 수거해주세요' },
-    { id: 'n3', type: '공지', offset: 0, time: '08:20', title: '1층 세탁실 점검 안내', body: '9월 12일 오전 10시부터 2시간 동안 이용할 수 없어요' },
-    { id: 'n4', type: '경고', offset: 1, time: '21:34', title: '경고가 1회 추가됐어요', body: '건조기 1호기 · "다했어요" 버튼을 누르지 않아 경고를 받았어요' },
-    { id: 'n5', type: '종료', offset: 1, time: '21:04', title: '건조기 1호기 사용이 끝났어요', body: '3분 안에 세탁물을 수거해주세요' },
-    { id: 'n6', type: '배정', offset: 1, time: '20:58', title: '건조기 2호기에 배정됐어요', body: '10분 안에 QR 코드를 찍어주세요. 그렇지 않으면 다음 사람에게 넘어가요' },
-    { id: 'n7', type: '종료', offset: 5, time: '18:33', title: '건조기 2호기 사용이 끝났어요', body: '3분 안에 세탁물을 수거해주세요' },
-    { id: 'n8', type: '경고', offset: 5, time: '18:02', title: '경고가 1회 추가됐어요', body: '건조기 2호기 · 배정 후 미이용' },
-    { id: 'n9', type: '공지', offset: 12, time: '11:00', title: '이용 규칙이 업데이트됐어요', body: '경고 3회 시 3일 동안 줄서기가 제한됩니다' },
-  ];
+  const dayOffset = (received: string) => {
+    const d = new Date(received);
+    d.setHours(0, 0, 0, 0);
+    return Math.max(0, Math.round((midnightTs - d.getTime()) / 86400000));
+  };
 
   const dateLabel = (offset: number) => {
     if (offset === 0) return '오늘';
     if (offset === 1) return '어제';
-    const d = new Date(midnight);
+    const d = new Date(midnightTs);
     d.setDate(d.getDate() - offset);
     const weekday = ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
     return `${d.getMonth() + 1}월 ${d.getDate()}일 (${weekday})`;
   };
 
-  // 공지는 90일, 나머지는 30일 보관
-  const KEEP_DAYS = (type: string) => (type === '공지' ? 90 : 30);
-  const notExpiredEarly = allNotifs.filter((n) => n.offset < KEEP_DAYS(n.type));
+  const timeLabel = (received: string) =>
+    new Date(received).toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
 
-  const TABS = ['전체', '공지', '배정', '종료', '경고', '신고'];
+  const visible = items.filter((n) => filter === '전체' || n.kind === filter);
 
-  // 읽지 않은 알림 개수 계산 및 로컬스토리지 동기화
-  const unreadCount = allNotifs.filter((n) => !readState[n.id]).length;
-  useEffect(() => {
-    try { localStorage.setItem('washed_unread', String(unreadCount)); } catch (e) {}
-  }, [unreadCount, readState]);
-
-  // 필터링 적용된 목록
-  const visible = notExpiredEarly.filter((n) => filter === '전체' || n.type === filter);
-
-  // 날짜별 그룹핑 로직
   const offsets: number[] = [];
-  visible.forEach((n) => { if (!offsets.includes(n.offset)) offsets.push(n.offset); });
+  visible.forEach((n) => {
+    const o = dayOffset(n.received_at);
+    if (!offsets.includes(o)) offsets.push(o);
+  });
   offsets.sort((a, b) => a - b);
 
   const groups = offsets.map((offset) => ({
     date: dateLabel(offset),
     items: visible
-      .filter((n) => n.offset === offset)
-      .sort((a: any, b: any) => (b.ts || 0) - (a.ts || 0))
+      .filter((n) => dayOffset(n.received_at) === offset)
       .map((n) => {
-        const t = TYPES[n.type] || TYPES['공지'];
-        const isRead = !!readState[n.id];
+        const t = TYPES[n.kind] ?? TYPES['공지'];
         return {
-          ...n,
-          typeLabel: n.type,
+          id: n.notification_id,
+          title: n.title,
+          body: n.body,
+          time: timeLabel(n.received_at),
+          typeLabel: t.label,
           pillBg: t.pillBg,
           pillFg: t.pillFg,
-          dotColor: isRead ? 'transparent' : t.dot,
-          rowBg: isRead ? '#fff' : '#FBFDFF',
-          titleColor: isRead ? '#5A6E8F' : '#1E3557',
-          titleWeight: isRead ? '600' : '700',
-          onClick: () => setReadState((s) => ({ ...s, [n.id]: true })),
+          dotColor: n.is_read ? 'transparent' : t.dot,
+          rowBg: n.is_read ? '#fff' : '#FBFDFF',
+          titleColor: n.is_read ? '#5A6E8F' : '#1E3557',
+          titleWeight: n.is_read ? '600' : '700',
+          onClick: () => markRead(n.notification_id),
         };
       }),
   }));
 
   const isEmpty = groups.length === 0;
-  const emptyTitle = filter === '전체' ? '받은 알림이 없어요' : filter === '배정' ? '배정된 알림이 없어요' : filter === '신고' ? '신고에 대한 결과가 없어요' : `${filter} 알림이 없어요`;
-
-  // 모두 읽음 핸들러
-  const markAllRead = () => {
-    const newRead = { ...readState };
-    allNotifs.forEach((n) => { newRead[n.id] = true; });
-    setReadState(newRead);
-  };
+  const filterLabel = TABS.find((t) => t.value === filter)?.label ?? filter;
+  const emptyTitle = loadError
+    ? loadError
+    : loading
+      ? '알림을 불러오는 중이에요'
+      : filter === '전체'
+        ? '받은 알림이 없어요'
+        : filter === '배정'
+          ? '배정된 알림이 없어요'
+          : filter === '결과'
+            ? '신고에 대한 결과가 없어요'
+            : `${filterLabel} 알림이 없어요`;
 
   return (
     <>
@@ -171,15 +241,15 @@ export default function NotificationsPage() {
 
           <div className="no-scrollbar" style={{ marginTop: '14px', overflowX: 'auto' }}>
             <div style={{ display: 'flex', gap: '6px', width: 'max-content', paddingBottom: '2px' }}>
-              {TABS.map((label) => {
-                const on = filter === label;
-                const count = label === '전체'
-                  ? notExpiredEarly.filter((n) => !readState[n.id]).length
-                  : notExpiredEarly.filter((n) => n.type === label && !readState[n.id]).length;
+              {TABS.map((tab) => {
+                const on = filter === tab.value;
+                const count = tab.value === '전체'
+                  ? items.filter((n) => !n.is_read).length
+                  : items.filter((n) => n.kind === tab.value && !n.is_read).length;
                 
-                const tabLabel = count > 0 ? `${label} ${count}` : label;
+                const tabLabel = count > 0 ? `${tab.label} ${count}` : tab.label;
                 return (
-                  <div key={label} onClick={() => setFilter(label)} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 14px', borderRadius: '999px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', background: on ? '#4C86D8' : '#fff', color: on ? '#fff' : '#5A7CA8', boxShadow: on ? 'none' : 'inset 0 0 0 1px #E6EDF7' }}>
+                  <div key={tab.value} onClick={() => setFilter(tab.value)} style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '8px 14px', borderRadius: '999px', fontSize: '12.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', background: on ? '#4C86D8' : '#fff', color: on ? '#fff' : '#5A7CA8', boxShadow: on ? 'none' : 'inset 0 0 0 1px #E6EDF7' }}>
                     {tabLabel}
                   </div>
                 );
@@ -198,7 +268,9 @@ export default function NotificationsPage() {
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M6 9a6 6 0 1 1 12 0c0 4 1.4 5.4 1.4 5.4H4.6S6 13 6 9Z" stroke="#A8BCD9" strokeWidth="1.8" strokeLinejoin="round"></path><path d="M10 18a2 2 0 0 0 4 0" stroke="#A8BCD9" strokeWidth="1.8" strokeLinecap="round"></path></svg>
                 </div>
                 <div style={{ fontSize: '14px', fontWeight: 700, color: '#5A7CA8' }}>{emptyTitle}</div>
-                <div style={{ fontSize: '12.5px', color: '#A8BCD9' }}>새 알림이 오면 여기에 쌓여요</div>
+                <div style={{ fontSize: '12.5px', color: '#A8BCD9' }}>
+                  {loadError ? '잠시 뒤 다시 시도해주세요' : '새 알림이 오면 여기에 쌓여요'}
+                </div>
               </div>
             ) : (
               groups.map((grp, gIdx) => (

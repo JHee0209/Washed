@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useUnreadCount } from '@/lib/use-unread-count';
 
 const MY_USER_KEY = '원병찬·302호';
 
@@ -34,7 +35,9 @@ const baseGroups: { date: string; items: HistoryItem[] }[] = [
 
 export default function HistoryPage() {
   const [now, setNow] = useState<number>(0);
-  const [hasUnread, setHasUnread] = useState(false);
+  // 종의 점은 DB 가 센다 (F18).
+  const unreadCount = useUnreadCount();
+  const hasUnread = unreadCount > 0;
   const [warnEntry, setWarnEntry] = useState({ count: 0, suspendedUntil: null as number | null });
 
   // 주기적으로 시간 업데이트 및 로컬 스토리지 확인
@@ -43,7 +46,6 @@ export default function HistoryPage() {
     const tick = setInterval(() => setNow(Date.now()), 2000);
 
     try {
-      setHasUnread(parseInt(localStorage.getItem('washed_unread') || '0', 10) > 0);
       const store = JSON.parse(localStorage.getItem('washed_warnings') || '{}');
       if (store[MY_USER_KEY]) {
         setWarnEntry(store[MY_USER_KEY]);
