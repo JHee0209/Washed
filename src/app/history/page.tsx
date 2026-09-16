@@ -1,96 +1,129 @@
-'use client';
-
-import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useUnreadCount } from '@/lib/use-unread-count';
 
-const MY_USER_KEY = '원병찬·302호';
+import { requireMe, myHistory, myWarnings } from '@/lib/queries';
+import NotificationBell from '@/components/notification-bell';
 
-// 임시 기록 데이터 (나중에 DB에서 가져올 데이터)
-//
-// duration · warning 은 **없을 수 있다** — 배정만 받고 쓰지 않으면(05 P3) 사용 시간이
-// 없고, 경고 없이 끝난 건에는 사유가 없다. 타입을 적어 두지 않으면 추론이 항목마다
-// 갈려(union) `it.duration` 을 읽을 수 없다.
-type HistoryItem = {
+export const dynamic = 'force-dynamic';
+
+const SEOUL_TZ = 'Asia/Seoul';
+const dayKeyFmt = new Intl.DateTimeFormat('en-CA', {
+  timeZone: SEOUL_TZ,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+const monthDayFmt = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: SEOUL_TZ,
+  month: 'long',
+  day: 'numeric',
+});
+const timeFmt = new Intl.DateTimeFormat('ko-KR', {
+  timeZone: SEOUL_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function seoulDayKey(d: Date) {
+  return dayKeyFmt.format(d);
+}
+
+// 자정 경계는 KST 기준이라 서버가 UTC 로 돌아도 "오늘 · 어제" 가 어긋나지 않는다.
+function dateLabel(iso: string): string {
+  const d = new Date(iso);
+  const today = seoulDayKey(new Date());
+  const yesterday = seoulDayKey(new Date(Date.now() - 86_400_000));
+  const key = seoulDayKey(d);
+  if (key === today) return '오늘';
+  if (key === yesterday) return '어제';
+  return monthDayFmt.format(d);
+}
+
+function timeLabel(iso: string) {
+  return timeFmt.format(new Date(iso));
+}
+
+type TimelineItem = {
+  key: string;
+  at: string;
   name: string;
+  iconSrc: string | null;
   time: string;
-  iconSrc: string;
   duration?: string;
-  warning?: string;
+  hasWarning: boolean;
+  warningText: string;
+  statusBg: string;
+  statusDot: string;
+  statusFg: string;
+  statusLabel: '완료' | '경고';
 };
 
-const baseGroups: { date: string; items: HistoryItem[] }[] = [
-  { date: '오늘', items: [
-    { name: '세탁기 2호기', time: '09:12', duration: '52분', iconSrc: '/icons/washer-history.svg' },
-  ]},
-  { date: '어제', items: [
-    { name: '건조기 1호기', time: '21:04', duration: '38분', iconSrc: '/icons/dryer-history.svg', warning: '"다했어요" 버튼을 누르지 않아 경고를 받았어요' },
-    { name: '세탁기 4호기', time: '20:10', duration: '49분', iconSrc: '/icons/washer-history.svg' },
-  ]},
-  { date: '9월 6일', items: [
-    // 배정만 받고 쓰지 않았으니 사용 시간이 없다
-    { name: '건조기 2호기', time: '18:33', iconSrc: '/icons/dryer-history.svg', warning: '배정 후 미이용' },
-  ]},
-];
+export default async function HistoryPage() {
+  const me = await requireMe();
+  const [history, { warnings, restriction }] = await Promise.all([
+    myHistory(me.userId),
+    myWarnings(me.userId),
+  ]);
 
-export default function HistoryPage() {
-  const [now, setNow] = useState<number>(0);
-  // 종의 점은 DB 가 센다 (F18).
-  const unreadCount = useUnreadCount();
-  const hasUnread = unreadCount > 0;
-  const [warnEntry, setWarnEntry] = useState({ count: 0, suspendedUntil: null as number | null });
-
-  // 주기적으로 시간 업데이트 및 로컬 스토리지 확인
-  useEffect(() => {
-    setNow(Date.now());
-    const tick = setInterval(() => setNow(Date.now()), 2000);
-
-    try {
-      const store = JSON.parse(localStorage.getItem('washed_warnings') || '{}');
-      if (store[MY_USER_KEY]) {
-        setWarnEntry(store[MY_USER_KEY]);
-      }
-    } catch (e) {}
-
-    return () => clearInterval(tick);
-  }, []);
-
-  // --- 데이터 집계 로직 ---
-  const warnings: any[] = [];
-  baseGroups.forEach((g) => g.items.forEach((it) => {
-    if (it.warning) warnings.push({ ...it, date: g.date, warningText: it.warning });
+  // --- 타임라인: usage_history 전부 + '배정 후 미인증'(세션 자체가 없는 건) 병합 ---
+  // '수거 미완료' · '신고 확인' 사유는 이미 해당 usage_history 행의 result='경고'로
+  // 반영돼 있으므로 여기서 다시 넣지 않는다 (중복 방지).
+  const usageItems: TimelineItem[] = history.map((h) => ({
+    key: h.history_id,
+    at: h.started_at,
+    name: h.machine_name ?? '(삭제된 기기)',
+    iconSrc: h.machine_kind === '건조기' ? '/icons/dryer-history.svg' : '/icons/washer-history.svg',
+    time: timeLabel(h.started_at),
+    duration: `${h.duration_minutes}분`,
+    hasWarning: h.result === '경고',
+    warningText: '',
+    statusBg: h.result === '경고' ? 'rgba(255,146,0,.12)' : 'rgba(0,191,64,.1)',
+    statusDot: h.result === '경고' ? '#FF9200' : '#00BF40',
+    statusFg: h.result === '경고' ? '#9C5800' : '#006E25',
+    statusLabel: h.result === '경고' ? '경고' : '완료',
   }));
 
-  const warningCount = warnings.length;
-  const hasWarnings = warningCount > 0;
-  
-  // 이용 제한 여부 계산
-  const suspended = !!(warnEntry.suspendedUntil && now < warnEntry.suspendedUntil);
-  const suspendLabel = suspended && warnEntry.suspendedUntil
-    ? `이용 제한 중 · ${Math.max(1, Math.ceil((warnEntry.suspendedUntil - now) / 86400000))}일 남음`
-    : '누적 3회가 되면 3일동안 줄서기를 할 수 없어요';
+  const unusedItems: TimelineItem[] = warnings
+    .filter((w) => w.reason === '배정 후 미인증')
+    .map((w) => ({
+      key: w.warning_id,
+      at: w.issued_at,
+      name: '배정 후 미인증',
+      iconSrc: null,
+      time: timeLabel(w.issued_at),
+      duration: undefined,
+      hasWarning: true,
+      warningText: w.reason,
+      statusBg: 'rgba(255,146,0,.12)',
+      statusDot: '#FF9200',
+      statusFg: '#9C5800',
+      statusLabel: '경고',
+    }));
 
-  // UI용 데코레이션(상태 컬러, 라벨) 데이터 생성
-  const decoratedGroups = baseGroups.map((g) => ({
-    ...g,
-    items: g.items.map((it) => ({
-      ...it,
-      hasWarning: !!it.warning,
-      warningText: it.warning || '',
-      showDuration: !!it.duration,
-      statusBg: it.warning ? 'rgba(255,146,0,.12)' : 'rgba(0,191,64,.1)',
-      statusDot: it.warning ? '#FF9200' : '#00BF40',
-      statusFg: it.warning ? '#9C5800' : '#006E25',
-      statusLabel: it.warning ? '경고' : '완료',
-    })),
-  }));
+  const allItems = [...usageItems, ...unusedItems].sort(
+    (a, b) => +new Date(b.at) - +new Date(a.at),
+  );
 
-  // 이용 횟수 및 총 사용 시간 계산
-  const allItems = baseGroups.reduce((acc: any[], g) => acc.concat(g.items), []);
-  const usedItems = allItems.filter((it) => it.duration);
-  const totalMinutes = usedItems.reduce((sum, it) => sum + (parseInt(it.duration, 10) || 0), 0);
-  const useCount = usedItems.length;
+  const groupsMap = new Map<string, TimelineItem[]>();
+  for (const item of allItems) {
+    const label = dateLabel(item.at);
+    const bucket = groupsMap.get(label);
+    if (bucket) bucket.push(item);
+    else groupsMap.set(label, [item]);
+  }
+  const decoratedGroups = [...groupsMap.entries()].map(([date, items]) => ({ date, items }));
+
+  // --- 통계 ---
+  const useCount = history.length;
+  const totalMinutes = history.reduce((sum, h) => sum + h.duration_minutes, 0);
   const useHours = totalMinutes >= 60 ? `${Math.floor(totalMinutes / 60)}시간` : `${totalMinutes}분`;
+
+  // 07-screens.md — 헤더 건수는 기간 무관 현재값(P7), 사유 목록만 30일(P21)
+  const warningCount = restriction?.warning_count ?? 0;
+  const hasWarnings = warningCount > 0;
+  const suspendLabel = restriction?.is_restricted
+    ? `이용 제한 중 · ${restriction.days_left}일 남음`
+    : '누적 3회가 되면 3일동안 줄서기를 할 수 없어요';
 
   return (
     <>
@@ -108,12 +141,12 @@ export default function HistoryPage() {
       `}</style>
 
       <div style={{ width: '390px', height: '844px', margin: '40px auto', position: 'relative', display: 'flex', flexDirection: 'column', background: '#F3F6FB', color: '#1E3557', overflow: 'hidden', borderRadius: '40px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}>
-        
+
         {/* 헤더 바 */}
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '63px 20px 12px', background: '#fff', borderBottom: '1px solid #EAF0FA', width: '396px', height: '96px', position: 'relative' }}>
           <img src="/icons/logo-mark.png" alt="Washed" style={{ width: '34px', height: '34px', objectFit: 'contain', marginLeft: '-3px', marginTop: '2px' }} />
           <span style={{ fontSize: '16px', fontWeight: 800, color: '#2F63B8', letterSpacing: '-0.3px', marginLeft: '-7px', marginTop: '2px' }}>Washed</span>
-          <Link href="/notifications" style={{ boxSizing: 'border-box', width: '25px', height: '25px', borderRadius: '8px', position: 'absolute', right: '30px', top: '60px', background: `url(${hasUnread ? '/icons/bell-active.svg' : '/icons/bell.svg'}) center / cover no-repeat` }}></Link>
+          <NotificationBell />
         </div>
 
         {/* 메인 스크롤 영역 */}
@@ -154,33 +187,39 @@ export default function HistoryPage() {
                     <div style={{ marginTop: '3px', fontSize: '11.5px', color: '#A97740', lineHeight: 1.5 }}>{suspendLabel}</div>
                   </div>
                 </div>
-                {warnings.map((w, idx) => (
-                  <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '10px 12px', borderRadius: '12px', background: '#fff', border: '1px solid #F3E2CC' }}>
-                    <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#8A5220' }}>{w.date} {w.time} · {w.name}</span>
-                    <span style={{ fontSize: '11.5px', color: '#A97740' }}>{w.warningText}</span>
+                {warnings.map((w) => (
+                  <div key={w.warning_id} style={{ display: 'flex', flexDirection: 'column', gap: '2px', padding: '10px 12px', borderRadius: '12px', background: '#fff', border: '1px solid #F3E2CC' }}>
+                    <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#8A5220' }}>{dateLabel(w.issued_at)} {timeLabel(w.issued_at)}</span>
+                    <span style={{ fontSize: '11.5px', color: '#A97740' }}>{w.reason}</span>
                   </div>
                 ))}
               </div>
             )}
 
             {/* 타임라인 히스토리 내역 */}
-            {decoratedGroups.map((grp, idx) => (
-              <div key={idx} style={{ position: 'relative', paddingLeft: '20px' }}>
+            {decoratedGroups.map((grp) => (
+              <div key={grp.date} style={{ position: 'relative', paddingLeft: '20px' }}>
                 {/* 좌측 세로 선과 파란 점 */}
                 <div style={{ position: 'absolute', left: '3px', top: '7px', bottom: '6px', width: '2px', background: '#E3EBF7', borderRadius: '1px' }}></div>
                 <div style={{ position: 'absolute', left: 0, top: '4px', width: '8px', height: '8px', borderRadius: '50%', background: '#5B93E0', boxShadow: '0 0 0 3px #E8F1FD' }}></div>
                 <div style={{ fontSize: '12px', fontWeight: 700, color: '#5A7CA8', marginBottom: '9px' }}>{grp.date}</div>
-                
+
                 <div className="card" style={{ overflow: 'hidden' }}>
                   {grp.items.map((h, hIdx) => (
-                    <div key={hIdx} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', borderBottom: hIdx === grp.items.length - 1 ? 'none' : '1px solid #EDF2F9' }}>
-                      <div className="chip"><img src={h.iconSrc} alt={h.name} style={{ width: '24px', height: '24px' }} /></div>
+                    <div key={h.key} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', borderBottom: hIdx === grp.items.length - 1 ? 'none' : '1px solid #EDF2F9' }}>
+                      <div className="chip">
+                        {h.iconSrc ? (
+                          <img src={h.iconSrc} alt={h.name} style={{ width: '24px', height: '24px' }} />
+                        ) : (
+                          <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#F0913F', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 800 }}>!</div>
+                        )}
+                      </div>
                       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
                         <span style={{ fontSize: '13.5px', fontWeight: 700 }}>{h.name}</span>
                         <span style={{ fontSize: '11.5px', color: '#8FAAD0', marginTop: '3px' }}>
-                          {h.time}{h.showDuration && ` · ${h.duration} 사용`}
+                          {h.time}{h.duration && ` · ${h.duration} 사용`}
                         </span>
-                        {h.hasWarning && (
+                        {h.hasWarning && h.warningText && (
                           <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#8A5220', marginTop: '5px' }}>{h.warningText}</span>
                         )}
                       </div>
