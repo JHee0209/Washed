@@ -13,6 +13,7 @@ import 'server-only';
 
 import { sql } from '@/lib/db';
 import { deleteEvidenceForUser, deleteExpiredEvidence, withdrawPurgeCutoff } from '@/lib/evidence-storage';
+import { liftExpiredRestrictions, resetMonthlyWarnings } from '@/lib/expiration';
 
 export type CleanupResult = {
   /** 05 P23 — 보관 기간이 지나 지운 증거 사진 장수 */
@@ -21,6 +22,10 @@ export type CleanupResult = {
   purgedUsers: number;
   /** 그 계정들이 올렸던 증거 사진 장수 (purgedUsers 에 딸린 값) */
   purgedUserEvidence: number;
+  /** 05 P7 — 3일 제한이 끝나 경고 0회로 자동 해제된 사람 수 */
+  liftedRestrictions: number;
+  /** 05 P7 — 매달 1일(KST)에 경고 0회로 초기화된 사람 수. 그날이 아니면 0 */
+  monthlyWarningReset: number;
   /** 실패한 단계의 이름. 비어 있으면 전부 성공이다 */
   failed: string[];
 };
@@ -86,6 +91,8 @@ export async function runDailyCleanup(now: Date = new Date()): Promise<CleanupRe
     expiredEvidence: 0,
     purgedUsers: 0,
     purgedUserEvidence: 0,
+    liftedRestrictions: 0,
+    monthlyWarningReset: 0,
     failed: [],
   };
 
@@ -107,6 +114,23 @@ export async function runDailyCleanup(now: Date = new Date()): Promise<CleanupRe
   } catch (error) {
     console.error('탈퇴 계정 정리 실패', error);
     result.failed.push('purgedUsers');
+  }
+
+  // 05 P7 — 3일 제한이 끝난 사람. 아래 매달 1일 초기화와 최종 상태가 같아
+  // 순서에 의존하지 않는다.
+  try {
+    result.liftedRestrictions = await liftExpiredRestrictions(now);
+  } catch (error) {
+    console.error('이용 제한 자동 해제 실패', error);
+    result.failed.push('liftedRestrictions');
+  }
+
+  // 05 P7 — 매달 1일(KST). 그날이 아니면 0을 돌려주고 아무것도 바꾸지 않는다.
+  try {
+    result.monthlyWarningReset = await resetMonthlyWarnings(now);
+  } catch (error) {
+    console.error('매달 1일 경고 초기화 실패', error);
+    result.failed.push('monthlyWarningReset');
   }
 
   return result;
