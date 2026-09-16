@@ -14,6 +14,7 @@ import { revalidatePath } from 'next/cache';
 import { requireAdmin } from '@/lib/admin-session';
 import { sql } from '@/lib/db';
 import { notify } from '@/lib/notify';
+import { queueCounts } from '@/lib/queries';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 조회
@@ -39,28 +40,41 @@ export async function adminMachines() {
   `;
 }
 
-/** 탭 2 — 실시간 대기열 현황 (F23) */
+/**
+ * 탭 2 — 실시간 대기열 현황 (F23)
+ *
+ * `counts` 는 홈 화면(F1 · `/api/machines`)이 쓰는 것과 **같은 함수**
+ * (`queries.ts::queueCounts()`)에서 나온 값이다 — 대기 인원 세는 규칙(05 P2 · 08
+ * 3번)을 여기서 다시 계산하지 않는다. 두 화면의 숫자가 항상 같은 이유가 이것이다.
+ */
 export async function adminQueue() {
   await requireAdmin();
-  return sql<{
-    queue_id: string;
-    user_name: string;
-    room: string;
-    machine_kind: string;
-    machine_name: string | null;
-    status: string;
-    queued_at: string;
-    waited_minutes: number;
-  }>`
-    SELECT q.queue_id, u.name AS user_name, u.room, q.machine_kind,
-           m.name AS machine_name, q.status, q.queued_at,
-           FLOOR(EXTRACT(EPOCH FROM (now() - q.queued_at)) / 60)::int AS waited_minutes
-      FROM queue q
-      JOIN users u ON u.user_id = q.user_id
-      LEFT JOIN machines m ON m.machine_id = q.machine_id
-     WHERE q.status IN ('대기 중', '배정됨', '사용 중')
-     ORDER BY q.machine_kind, q.queued_at
-  `;
+  const [rows, counts] = await Promise.all([
+    sql<{
+      queue_id: string;
+      user_name: string;
+      room: string;
+      machine_kind: string;
+      machine_name: string | null;
+      status: string;
+      queued_at: string;
+      waited_minutes: number;
+    }>`
+      SELECT q.queue_id, u.name AS user_name, u.room, q.machine_kind,
+             m.name AS machine_name, q.status, q.queued_at,
+             FLOOR(EXTRACT(EPOCH FROM (now() - q.queued_at)) / 60)::int AS waited_minutes
+        FROM queue q
+        JOIN users u ON u.user_id = q.user_id
+        LEFT JOIN machines m ON m.machine_id = q.machine_id
+       WHERE q.status IN ('대기 중', '배정', '사용중', '수거대기')
+       ORDER BY q.machine_kind, q.queued_at
+    `,
+    queueCounts(),
+  ]);
+  return {
+    rows,
+    counts: { 세탁기: counts['세탁기'] ?? 0, 건조기: counts['건조기'] ?? 0 },
+  };
 }
 
 /** 탭 3 — 신고 내역 (F27) */
@@ -476,9 +490,22 @@ export async function removeNotice(noticeId: string) {
   revalidatePath('/notifications');
 }
 
-/** 대기열에서 빼기 (F23) — 관리자가 막힌 줄을 푸는 자리 */
+/**
+ * 대기열에서 빼기 (F23) — 관리자가 막힌 줄을 푸는 자리.
+ *
+ * 「종료」는 저장되는 상태가 아니다(05 상태값) — `queue` 에는 취소됨 같은 상태값이
+ * 없고(`db/schema.sql` 의 CHECK 는 대기 중 · 배정 · 사용중 · 수거대기 뿐이다), 끝난
+ * 줄은 행 자체를 지운다. 배정된 줄을 지울 때는 물려 있던 기기도 함께 반납해야
+ * 한다 — 안 그러면 그 기기가 영원히 「사용중」으로 남는다.
+ */
 export async function cancelQueue(queueId: string) {
   await requireAdmin();
-  await sql`UPDATE queue SET status = '취소됨' WHERE queue_id = ${queueId}`;
+  await sql`
+    WITH removed AS (
+      DELETE FROM queue WHERE queue_id = ${queueId} RETURNING machine_id
+    )
+    UPDATE machines SET status = '사용가능', ends_at = NULL
+     WHERE machine_id = (SELECT machine_id FROM removed WHERE machine_id IS NOT NULL)
+  `;
   revalidatePath('/admin');
 }
