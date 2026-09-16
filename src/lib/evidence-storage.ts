@@ -13,7 +13,7 @@
 import 'server-only';
 
 import { sql } from '@/lib/db';
-import { EVIDENCE_RETENTION_MONTHS, WITHDRAW_GRACE_DAYS, type EvidenceMime } from '@/lib/report-rules';
+import { EVIDENCE_RETENTION_MONTHS, type EvidenceMime } from '@/lib/report-rules';
 
 /**
  * 05 P23 — 이 신고의 사진을 언제까지 두는가.
@@ -100,9 +100,49 @@ export async function deleteEvidenceForUser(userId: string): Promise<number> {
   return rows.length;
 }
 
-/** 05 P24 — 탈퇴 신청 후 되돌릴 수 있는 기간이 끝나는 시점 */
-export function withdrawPurgeCutoff(now: Date = new Date()): Date {
-  const at = new Date(now);
-  at.setDate(at.getDate() - WITHDRAW_GRACE_DAYS);
-  return at;
+/**
+ * 05 P24 — 유예가 끝난 **모든** 탈퇴 계정의 사진을 한 문장으로 지운다.
+ *
+ * deleteEvidenceForUser() 를 사람 수만큼 도는 것과 결과는 같지만, 배치는 한 번에
+ * 여러 명을 처리하므로 왕복을 한 번으로 줄인다(작업 지시 14번 「set-based」).
+ * 계정을 지우기 **전에** 부르는 순서는 그대로다 — 이유는 위 함수의 주석에 있다.
+ */
+export async function deleteEvidenceForWithdrawnUsers(cutoff: Date): Promise<number> {
+  const rows = await sql<{ report_id: string }>`
+    DELETE FROM report_evidence
+     WHERE report_id IN (
+             SELECT r.report_id
+               FROM reports r
+               JOIN users u ON u.user_id = r.reporter_user_id
+              WHERE u.withdraw_requested_at IS NOT NULL
+                AND u.withdraw_requested_at <= ${cutoff.toISOString()}::timestamptz
+           )
+    RETURNING report_id
+  `;
+  return rows.length;
+}
+
+/**
+ * 05 P23 · SP4 — 보관 기간이 지난 **신고에 딸린** 사진을 지운다.
+ *
+ * 신고 자체를 지우기 직전에 부른다. report_evidence 는 reports 의 ON DELETE CASCADE
+ * 라 지금 저장소에서는 부르지 않아도 사라지지만, 외부 저장소로 옮기면 DB 행만
+ * 사라지고 파일이 남는다 — 그때 맞는 순서를 지금부터 둔다(deleteEvidenceForUser 와
+ * 같은 이유다).
+ *
+ * 올린 지 3개월이 지난 사진은 이미 deleteExpiredEvidence() 가 delete_after 로 지웠을
+ * 것이다. 그래도 기산점이 다르므로(사진은 **올린** 시각, 신고는 **접수** 시각) 남아
+ * 있는 것이 있을 수 있어 한 번 더 훑는다.
+ */
+export async function deleteEvidenceForExpiredReports(cutoff: Date): Promise<number> {
+  const rows = await sql<{ report_id: string }>`
+    DELETE FROM report_evidence
+     WHERE report_id IN (
+             SELECT report_id
+               FROM reports
+              WHERE created_at <= ${cutoff.toISOString()}::timestamptz
+           )
+    RETURNING report_id
+  `;
+  return rows.length;
 }
