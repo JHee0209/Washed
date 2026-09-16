@@ -2,12 +2,85 @@
 
 import { useState } from 'react';
 import { signIn } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+
+/**
+ * 07 흐름표 · 05 P11 — 어느 쪽이 틀렸는지 알려주지 않는다.
+ *
+ * auth.ts 의 authorize 가 형식 불량 · 미가입 · 비밀번호 불일치를 전부 같은
+ * `return null` 로 묶어 둔 것과 문구를 맞췄다. 화면이 더 자세히 말하면
+ * 서버가 숨긴 것(가입 여부)이 화면에서 새어 나간다.
+ */
+const LOGIN_FAILED = '아이디 또는 비밀번호가 올바르지 않아요.';
 
 export default function LoginPage() {
   // ⭐️ 언어 설정 관련 상태
   const [langOpen, setLangOpen] = useState(false);
   const [currentLang, setCurrentLang] = useState('ko');
+
+  const router = useRouter();
+
+  // --- 로그인 상태 (F38) ---
+  //
+  // 화면 라벨은 「아이디」지만 서버가 받는 필드 이름은 email 이다
+  // (auth.ts 의 credentials · 05 P11 — 아이디가 곧 학교 이메일이다).
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [errorText, setErrorText] = useState('');
+  const [googleOnly, setGoogleOnly] = useState(false);
+  const [pending, setPending] = useState(false);
+
+  /** 입력이 바뀌면 이전 결과를 지운다 — 고친 값에 옛 오류가 붙어 있으면 안 된다. */
+  const clearResult = () => {
+    setErrorText('');
+    setGoogleOnly(false);
+  };
+
+  const handleLogin = async () => {
+    if (pending) return;
+    clearResult();
+
+    // 서버까지 갈 필요가 없는 것은 빈 값뿐이다. 「무엇이 틀렸다」가 아니라
+    // 「아직 보내지 않았다」라서 위의 숨기기 규칙과 부딪치지 않는다.
+    if (email.trim() === '' || password === '') {
+      setErrorText('아이디와 비밀번호를 모두 입력해 주세요.');
+      return;
+    }
+
+    setPending(true);
+    try {
+      // redirect: false 는 호출 자리에 리터럴로 둬야 SignInResponse 오버로드가
+      // 잡힌다. 변수로 빼면 redirect 가 boolean 으로 넓어져 반환이 void 가 된다.
+      // 비밀번호는 trim 하지 않는다 — 앞뒤 공백도 비밀번호의 일부다.
+      const res = await signIn('credentials', {
+        email: email.trim(),
+        password,
+        redirect: false,
+      });
+
+      // 로그인이 실패해도 res.ok 는 true 다 — @auth/core 가 실패를 status 없이
+      // Response.json({ url }) 로 돌려준다(= 200). ok 로 성공을 판정하면
+      // 비밀번호가 틀려도 홈으로 들어간다. error 는 실패 시 늘 'CredentialsSignin'
+      // 이고, 갈라 보는 값은 code 다 (05 P22).
+      if (res?.code === 'google_only') {
+        setGoogleOnly(true);
+        return;
+      }
+
+      if (!res || res.error) {
+        setErrorText(LOGIN_FAILED);
+        return;
+      }
+
+      router.push('/home');
+      router.refresh();
+    } catch {
+      setErrorText('네트워크 오류예요. 잠시 뒤 다시 시도해주세요.');
+    } finally {
+      setPending(false);
+    }
+  };
 
   const langMap: Record<string, { label: string, icon: string }> = {
     ko: { label: '한국어', icon: '/icons/flag-kr.png' },
@@ -68,10 +141,48 @@ export default function LoginPage() {
         <div style={{ position: 'relative', zIndex: 1, width: '100%', background: '#fff', borderRadius: '24px', padding: '26px 22px 22px', boxShadow: '0 14px 36px rgba(47,99,184,.12), 0 2px 8px rgba(47,99,184,.05)', animation: 'riseIn .8s cubic-bezier(.22,1,.36,1) .42s both' }}>
           
           <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#33456B', marginBottom: '8px' }}>아이디</label>
-          <input className="field" type="text" placeholder="아이디를 입력해 주세요" />
+          <input
+            className="field"
+            type="text"
+            value={email}
+            onChange={(e) => { setEmail(e.target.value); clearResult(); }}
+            disabled={pending}
+            placeholder="아이디를 입력해 주세요"
+            style={errorText ? { borderColor: '#F0A9A4' } : undefined}
+          />
 
           <label style={{ display: 'block', fontSize: '13px', fontWeight: 700, color: '#33456B', margin: '18px 0 8px' }}>비밀번호</label>
-          <input className="field" type="password" placeholder="비밀번호를 입력해 주세요" />
+          <input
+            className="field"
+            type="password"
+            value={password}
+            onChange={(e) => { setPassword(e.target.value); clearResult(); }}
+            disabled={pending}
+            placeholder="비밀번호를 입력해 주세요"
+            style={errorText ? { borderColor: '#F0A9A4' } : undefined}
+          />
+
+          {/* 두 칸을 함께 가리키는 문구라 두 칸 다음에 둔다 (관리자 로그인과 같은 자리). */}
+          {errorText && (
+            <div style={{ marginTop: '10px', fontSize: '11.5px', color: '#E0554E', lineHeight: 1.5 }}>{errorText}</div>
+          )}
+
+          {/*
+            05 P22 · 07 흐름표 — 비밀번호 칸이 빈 계정은 이메일로 들어올 수 없다.
+            08: 「화면은 구글 로그인으로 가는 길을 함께 보여줘야 한다 — 메시지만 띄우면
+            사용자가 갈 곳이 없다.」 비밀번호 찾기 화면이 같은 상황을 같은 카드로 처리해서
+            모양을 맞췄다. 두 화면이 다르게 말하면 사용자가 다른 문제로 읽는다.
+          */}
+          {googleOnly && (
+            <div style={{ marginTop: '12px', background: '#fff', border: '1px solid #E6EDF7', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#1E3557', lineHeight: 1.6 }}>
+                구글 간편로그인으로 가입한 계정이에요.<br />구글 계정으로 로그인해주세요.
+              </span>
+              <button type="button" onClick={() => signIn('google', { callbackUrl: '/home' })} style={{ border: 'none', cursor: 'pointer', color: '#fff', background: '#4C86D8', borderRadius: '12px', padding: '12px', fontSize: '13.5px', fontWeight: 700 }}>
+                구글 계정으로 로그인
+              </button>
+            </div>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '16px 0 20px' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '13px', fontWeight: 500, color: '#5A6E8F', cursor: 'pointer', position: 'relative' }}>
@@ -86,7 +197,15 @@ export default function LoginPage() {
             <Link href="/password-reset" style={{ fontSize: '13px', fontWeight: 500, color: '#8FAAD0', textDecoration: 'none' }}>비밀번호 찾기</Link>
           </div>
 
-          <button className="primary" type="button">로그인</button>
+          <button
+            className="primary"
+            type="button"
+            onClick={handleLogin}
+            disabled={pending}
+            style={pending ? { opacity: 0.65, cursor: 'default' } : undefined}
+          >
+            {pending ? '로그인 중…' : '로그인'}
+          </button>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', margin: '22px 0' }}>
             <div style={{ flex: 1, height: '1px', background: '#EAF0FA' }}></div>
