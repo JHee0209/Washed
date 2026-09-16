@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useUnreadCount } from '@/lib/use-unread-count';
@@ -8,11 +8,18 @@ import NotificationPrompt from '@/components/notification-prompt';
 import { useRouter } from 'next/navigation';
 
 // --- 전역 상수 (타이머 시간 등) ---
-const READY_MS = 10 * 60 * 1000;
+//
+// **배정 10분(05 P3)은 여기 없다.** 배정 마감 시각은 서버가 정해 assign_deadline_at
+// 으로 내려주고, 화면은 「서버가 준 마감 − 지금」만 그린다 (08 · 4번 · Issue #5).
+// 아래 60분 · 45분 · 3분은 QR 인증 뒤의 흐름(F8 · F9 · F10)이라 아직 화면 몫이다
+// — Issue #6 · #7 에서 서버로 옮긴다.
 const RUN_MS_WASHER = 60 * 60 * 1000;
 const RUN_MS_DRYER = 45 * 60 * 1000;
 const GRACE_MS = 3 * 60 * 1000;
 const runMsFor = (type: string) => (type === 'dryer' ? RUN_MS_DRYER : RUN_MS_WASHER);
+
+/** 서버가 정한 배정 결과를 받아 오는 주기 (05 P2 — 앞사람이 끝나면 내 차례가 온다) */
+const POLL_MS = 5000;
 
 type ApiMachine = { id: string; type: string; name: string; status: string; remaining: number };
 type ApiQueueCounts = { washer: number; dryer: number };
@@ -20,8 +27,14 @@ type ApiQueueEntry = {
   status: 'waiting' | 'assigned' | 'inuse' | 'pickup';
   machineId: string | null;
   machineName: string | null;
+  assignedAt: string | null;
   assignDeadlineAt: string | null;
+  pickupDeadlineAt: string | null;
   queuedAt: string;
+  /** 05 P2 — 내 앞에 남은 대기 인원 */
+  ahead: number;
+  /** 05 P2 — 그 종류에서 가장 먼저 끝나는 기기의 종료 예정 시각 (없으면 null) */
+  estimatedTurnAt: string | null;
 };
 type ApiMine = { washer: ApiQueueEntry | null; dryer: ApiQueueEntry | null };
 
@@ -36,10 +49,21 @@ export default function HomePage() {
   const [now, setNow] = useState(Date.now());
   const [scanningId, setScanningId] = useState<string | null>(null);
   const [warningId, setWarningId] = useState<string | null>(null);
+  // 05 P3 「배정 해제 안내 모달」. **Issue #5 에서는 아무 데서도 띄우지 않는다** —
+  // 10분이 지났는지를 화면이 판정하면 브라우저 시계로 제재가 갈리고, 앱을 켜지
+  // 않은 사람에게는 아예 일어나지 않는다(08 · 4번). 서버가 배정을 해제한 것을
+  // 확인하고 띄우는 일은 Issue #8 이 맡는다 — 모달은 그때 쓰도록 남겨 둔다.
   const [expiredOpen, setExpiredOpen] = useState(false);
 
+  // 서버가 정한 내 줄서기 상태 (05 P2 · P3). 화면은 이 값을 **그리기만** 한다 —
+  // 배정 여부 · 배정 마감을 클라이언트가 스스로 정하지 않는다 (08 · 3번 · 4번).
+  const [mine, setMine] = useState<ApiMine>({ washer: null, dryer: null });
+  // 서버 시각과 브라우저 시각의 차이. 카운트다운을 서버 기준으로 보정한다.
+  const [clockSkewMs, setClockSkewMs] = useState(0);
+
+  // QR 인증 이후의 로컬 시뮬레이션(F8 · F9 · F10). Issue #6 · #7 에서 서버로 옮긴다 —
+  // 그때까지는 배정(서버)과 사용 중(로컬)을 **갈라서** 둔다.
   const [queue, setQueue] = useState<Record<string, any>>({});
-  const [typeQueue, setTypeQueue] = useState<Record<string, any>>({});
   const [queueCounts, setQueueCounts] = useState<ApiQueueCounts>({ washer: 0, dryer: 0 });
   const [rawMachines, setRawMachines] = useState<ApiMachine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,65 +89,39 @@ export default function HomePage() {
     }
   }, []);
 
-  useEffect(() => {
-    loadMachines();
-  }, [loadMachines]);
-
-  // --- 내 줄서기 상태 복원 (F3 · F7 — 서버가 기억하므로 새로고침해도 유지된다) ---
-  const hydratedQueueRef = useRef(false);
-
-  const loadMine = useCallback(async (): Promise<ApiMine | null> => {
+  // --- 내 줄서기 상태 (F3 · F5 · F6 · F7) ---
+  //
+  // 서버가 기억하므로 새로고침해도 유지되고, **앞사람이 끝나 내 차례가 된 것(F5)도
+  // 이 조회로만 화면에 닿는다** — 클라이언트가 스스로 판단하지 않는다 (08 · 3번).
+  const loadMine = useCallback(async () => {
     try {
       const res = await fetch('/api/queue', { cache: 'no-store' });
-      if (!res.ok) return null;
+      if (!res.ok) return;
       const data = await res.json();
-      return data.mine as ApiMine;
+      setMine(data.mine as ApiMine);
+      if (data.serverNow) {
+        setClockSkewMs(new Date(data.serverNow).getTime() - Date.now());
+      }
     } catch {
-      return null;
+      // 조회 실패는 기존 값을 그대로 두고 다음 폴링에서 다시 맞춘다.
     }
   }, []);
 
-  // 서버가 준 상태를 처음 한 번만 로컬 시뮬레이션 상태로 옮긴다 — 이후(QR 인증·
-  // 러닝·유예 타이머)는 F5·F6·F8·F9·F10 범위라 지금처럼 클라이언트가 그대로 맡는다.
   useEffect(() => {
-    if (loading || hydratedQueueRef.current || rawMachines.length === 0) return;
-    hydratedQueueRef.current = true;
+    loadMachines();
+    loadMine();
+  }, [loadMachines, loadMine]);
 
-    (async () => {
-      const mine = await loadMine();
-      if (!mine) return;
-
-      (['washer', 'dryer'] as const).forEach((type) => {
-        const entry = mine[type];
-        if (!entry) return;
-
-        if (entry.status === 'assigned' && entry.machineId) {
-          const readyDeadline = entry.assignDeadlineAt
-            ? new Date(entry.assignDeadlineAt).getTime()
-            : Date.now();
-          setQueue((prev) => ({
-            ...prev,
-            [entry.machineId as string]: { phase: 'ready', name: entry.machineName ?? '', readyDeadline },
-          }));
-        } else if (entry.status === 'waiting') {
-          const list = rawMachines.filter((r) => r.type === type);
-          const busy = list.filter((r) => r.status === 'inuse');
-          const soonestRemaining = busy.length
-            ? busy.reduce((a, b) => (a.remaining <= b.remaining ? a : b)).remaining
-            : 1;
-          setTypeQueue((prev) => ({
-            ...prev,
-            [type]: {
-              type,
-              turnAt: Date.now() + Math.max(soonestRemaining, 1) * 60000,
-              othersWaiting: queueCounts[type] || 0,
-            },
-          }));
-        }
-      });
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, rawMachines, loadMine]);
+  // 주기적으로 서버 상태를 다시 읽는다. **이 폴링이 없으면 서버가 배정을 올려도
+  // 열려 있는 화면에는 영원히 닿지 않는다** — 예전처럼 한 번만 읽고 나머지를 화면이
+  // 시뮬레이션하면 F5(앞사람 종료로 내 차례가 됨)가 성립하지 않는다.
+  useEffect(() => {
+    const id = setInterval(() => {
+      loadMine();
+      loadMachines();
+    }, POLL_MS);
+    return () => clearInterval(id);
+  }, [loadMine, loadMachines]);
 
   // --- 알림(Toast) 함수 ---
   const showToast = (message: string) => {
@@ -131,7 +129,15 @@ export default function HomePage() {
     setTimeout(() => setToast({ visible: false, message: '' }), 3000);
   };
 
-  // --- 실시간 타이머 및 엔진 시뮬레이션 ---
+  // --- 실시간 타이머 ---
+  //
+  // **배정(10분)은 여기서 만료시키지 않는다.** 05 P3 의 「넘기면 배정이 해제되어 다음
+  // 사람에게 넘어가고 경고 1회가 누적된다」는 화면이 켜져 있어야 일어나는 일이면
+  // 안 된다(08 · 4번 — 「앱을 안 켠 사람도 경고를 받아야 한다」). 서버 스케줄러가
+  // 맡는다(Issue #8). 여기서는 남은 시간을 그릴 뿐이고, 마감이 지나면 0:00 에서
+  // 멈춘 채 다음 폴링이 서버 판정을 가져오기를 기다린다.
+  //
+  // 아래 러닝 · 유예 전환은 QR 인증 뒤(F9 · F10)라 아직 화면 몫이다 — Issue #7.
   useEffect(() => {
     const tick = setInterval(() => {
       const currentTime = Date.now();
@@ -141,15 +147,9 @@ export default function HomePage() {
         const newQ = { ...prevQ };
         let changed = false;
 
-        // 상태 체크 및 만료 처리
         Object.keys(newQ).forEach((id) => {
           const e = newQ[id];
-          if (e.phase === 'ready' && currentTime >= e.readyDeadline) {
-            delete newQ[id];
-            changed = true;
-            setExpiredOpen(true);
-            showToast(`${e.name} 배정 시간 10분이 지나 경고가 1회 누적됐어요.`);
-          } else if (e.phase === 'running' && currentTime >= e.runDeadline) {
+          if (e.phase === 'running' && currentTime >= e.runDeadline) {
             newQ[id] = { ...e, phase: 'grace', graceDeadline: currentTime + GRACE_MS };
             changed = true;
             showToast(`${e.name} 이용 시간이 끝났어요. 3분 안에 "다했어요"를 눌러주세요.`);
@@ -168,14 +168,12 @@ export default function HomePage() {
   }, []);
 
   // --- 핸들러 함수 ---
-  const join = (id: string, name: string, deadline?: number) => {
-    const readyDeadline = deadline ?? Date.now() + READY_MS;
-    setQueue((prev) => ({ ...prev, [id]: { phase: 'ready', name, readyDeadline } }));
-    showToast(`${name}를 바로 이용할 수 있어요. 10분 안에 QR을 찍어주세요.`);
-  };
 
-  // F3 · F4 — 줄서기는 서버가 판정한다(05 P1 · P2 · P3 · P7 · P20). 빈 기기가 있으면
-  // 서버가 그 자리에서 배정해 돌려주고, 없으면 대기 중으로 등록된다.
+  // F3 · F4 — 줄서기는 서버가 판정한다(05 P1 · P2 · P3 · P7 · P20).
+  //
+  // 빈 기기가 있고 내 앞에 아무도 없으면 서버가 그 자리에서 배정해 돌려주고, 아니면
+  // 대기 중으로 등록된다. **화면은 어느 쪽인지 스스로 계산하지 않고** 응답을 그대로
+  // 반영한 뒤 서버 상태를 다시 읽는다.
   const autoJoin = async (type: string, label: string) => {
     try {
       const res = await fetch(`/api/queue/${type}`, { method: 'POST' });
@@ -186,22 +184,13 @@ export default function HomePage() {
         return;
       }
 
-      if (data.status === 'assigned' && data.machineId) {
-        const deadline = data.assignDeadlineAt ? new Date(data.assignDeadlineAt).getTime() : undefined;
-        join(data.machineId, data.machineName ?? label, deadline);
+      if (data.status === 'assigned') {
+        showToast(`${data.machineName ?? label}를 바로 이용할 수 있어요. 10분 안에 QR을 찍어주세요.`);
       } else {
-        const list = rawMachines.filter((r) => r.type === type);
-        const busy = list.filter((r) => r.status === 'inuse');
-        const soonestRemaining = busy.length
-          ? busy.reduce((a, b) => (a.remaining <= b.remaining ? a : b)).remaining
-          : 1;
-        const othersWaiting = queueCounts[type as 'washer' | 'dryer'] || 0;
-        setTypeQueue((prev) => ({
-          ...prev,
-          [type]: { type, turnAt: Date.now() + Math.max(soonestRemaining, 1) * 60000, othersWaiting },
-        }));
         showToast(`${label} 대기열에 참여했어요. 먼저 끝나는 기기로 자동 배정돼요.`);
       }
+      // 배정 · 대기 어느 쪽이든 서버가 가진 값이 기준이다.
+      loadMine();
       loadMachines();
     } catch {
       showToast('네트워크 오류로 줄서기에 실패했어요.');
@@ -216,28 +205,29 @@ export default function HomePage() {
 
       if (!res.ok) {
         showToast(data.message || `${label} 줄 빠지기에 실패했어요.`);
+        loadMine();
         if (res.status === 403) loadMachines();
         return;
       }
 
-      setTypeQueue((prev) => { const n = { ...prev }; delete n[type]; return n; });
       showToast(`${label} 대기열에서 나갔어요.`);
+      loadMine();
       loadMachines();
     } catch {
       showToast('네트워크 오류로 줄 빠지기에 실패했어요.');
     }
   };
 
-  const leave = (id: string, name: string) => {
-    setQueue((prev) => { const n = { ...prev }; delete n[id]; return n; });
-    showToast(`${name} 대기열에서 나갔어요. 다시 신청하면 맨 뒤로 들어가요.`);
-  };
-
+  // F8 — QR 인증. 아직 화면 시뮬레이션이다(08 · 6번 · Issue #6) — 서버로 옮기면
+  // 「배정된 사람인가 · 그 기기가 맞는가 · 10분이 지나지 않았는가」를 서버가 본다.
   const start = (id: string) => {
     setScanningId(null);
     const m = rawMachines.find((r) => r.id === id);
     if (!m) return;
-    setQueue((prev) => ({ ...prev, [id]: { ...prev[id], phase: 'running', runDeadline: Date.now() + runMsFor(m.type) } }));
+    setQueue((prev) => ({
+      ...prev,
+      [id]: { phase: 'running', name: m.name, runDeadline: Date.now() + runMsFor(m.type) },
+    }));
     showToast(`${m.name} QR 인증 완료! 타이머가 시작됐어요.`);
   };
 
@@ -254,8 +244,29 @@ export default function HomePage() {
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
 
-  const effectiveStatus = (r: any) => queue[r.id] ? 'inuse' : r.status;
-  
+  // 서버 기준 시각. 카운트다운은 전부 이 값으로 그린다 — 브라우저 시계를 앞당겨도
+  // 남은 시간이 바뀌지 않는다 (08 · 4번).
+  const serverNow = now + clockSkewMs;
+
+  // --- 서버가 준 배정 (05 P2 · P3) ---
+  // 배정된 기기의 id → 마감 시각. 화면이 만드는 값이 아니라 서버가 준 값이다.
+  const assignedByMachineId = new Map<string, { name: string; deadline: number | null }>();
+  (['washer', 'dryer'] as const).forEach((type) => {
+    const entry = mine[type];
+    if (entry?.status === 'assigned' && entry.machineId) {
+      assignedByMachineId.set(entry.machineId, {
+        name: entry.machineName ?? '',
+        deadline: entry.assignDeadlineAt ? new Date(entry.assignDeadlineAt).getTime() : null,
+      });
+    }
+  });
+
+  /** 서버 배정(내 것) 또는 로컬 사용 중(QR 이후)이면 그 기기는 내가 쓰는 중이다 */
+  const isMineNow = (id: string) => assignedByMachineId.has(id) || Boolean(queue[id]);
+
+  const effectiveStatus = (r: any) => (isMineNow(r.id) ? 'inuse' : r.status);
+
+
   const primaryBtn = { border: 'none', cursor: 'pointer', color: '#fff', background: '#4C86D8', borderRadius: '10px', padding: '9px', fontSize: '12px', fontWeight: 700, boxShadow: '0px 6px 14px -6px rgba(47,99,184,.9)' };
   const leaveBtn = { border: 'none', cursor: 'pointer', color: '#E0554E', background: 'transparent', boxShadow: 'inset 0 0 0 1px #F0B6B2', borderRadius: '10px', padding: '8px', fontSize: '12px', fontWeight: 700 };
   const disabledBtn = { border: 'none', cursor: 'default', color: '#A8BCD9', background: '#EDF2FA', borderRadius: '10px', padding: '8px', fontSize: '12px', fontWeight: 700 };
@@ -274,11 +285,11 @@ export default function HomePage() {
     else if (isInUse) { badgeFg = '#3B76CC'; badgeDot = '#5B93E0'; badgeLabel = '사용중'; }
 
     const e = queue[r.id];
-    let actionLabel = null, actionOnClick = () => {}, actionDisabled = false, actionStyle: any = leaveBtn;
+    const actionOnClick = () => {};
+    let actionLabel = null, actionDisabled = false, actionStyle: any = leaveBtn;
 
-    if (e && e.phase === 'waiting') {
-      actionLabel = '줄 빠지기'; actionOnClick = () => leave(r.id, r.name);
-    } else if (e) {
+    // 05 P3 — 배정된 뒤에는 줄 빠지기 버튼이 없다(기기 목록에서 「이용 중」으로 비활성).
+    if (isMineNow(r.id)) {
       actionLabel = '이용 중'; actionDisabled = true; actionStyle = disabledBtn;
     }
 
@@ -303,16 +314,18 @@ export default function HomePage() {
     const total = list.length;
     const available = list.filter((r) => effectiveStatus(r) === 'available').length;
     const inuse = list.filter((r) => effectiveStatus(r) === 'inuse').length;
-    const assignedId = list.map((r) => r.id).find((id) => queue[id]);
-    const assigned = assignedId ? { ...list.find((r) => r.id === assignedId), ...queue[assignedId] } : null;
-    const waitingType = typeQueue[type];
+    const entry = mine[type];
+    const assignedMachine = list.find((r) => assignedByMachineId.has(r.id) || queue[r.id]);
+    const isWaiting = entry?.status === 'waiting';
     const hasFreeSlot = list.length > 0;
-    const waitingCount = available > 0 ? 0 : (queueCounts[type] || 0) + (waitingType ? 1 : 0);
+    // 05 P2 — 대기 인원은 서버(queueCounts)가 센다. 화면이 규칙을 다시 적지 않는다.
+    // 내가 그 줄에 서 있으면 서버가 이미 나를 포함해 세고 있으므로 더하지 않는다.
+    const waitingCount = queueCounts[type] || 0;
 
     let actionLabel, actionOnClick, actionDisabled = false, actionStyle, actionInfo;
-    if (assigned) {
-      actionLabel = null; actionOnClick = () => {}; actionStyle = primaryBtn; actionInfo = `${assigned.name} 이용 중`;
-    } else if (waitingType) {
+    if (assignedMachine) {
+      actionLabel = null; actionOnClick = () => {}; actionStyle = primaryBtn; actionInfo = `${assignedMachine.name} 이용 중`;
+    } else if (isWaiting) {
       actionLabel = null; actionOnClick = () => {}; actionStyle = disabledBtn; actionInfo = `현재 ${waitingCount}명 대기 중이에요`;
     } else if (!hasFreeSlot) {
       actionLabel = '잠시만요'; actionOnClick = () => {}; actionDisabled = true; actionStyle = disabledBtn; actionInfo = '곧 다시 신청할 수 있어요';
@@ -325,20 +338,40 @@ export default function HomePage() {
 
   const typeSummaries = [ summarize('washer', '세탁기', '#5B93E0'), summarize('dryer', '건조기', '#F0913F') ];
 
-  const myWaiting = Object.values(typeQueue).map((t) => ({
-    isWasher: t.type === 'washer', isDryer: t.type === 'dryer', name: t.type === 'washer' ? '세탁기 대기열' : '건조기 대기열',
-    waitLeft: fmt(Math.max(0, t.turnAt - now)),
-    leave: () => leaveType(t.type, t.type === 'washer' ? '세탁기' : '건조기'),
-  }));
+  // 내 대기 현황 — 서버가 준 「대기 중」만 그린다 (05 P2).
+  // 예상 대기는 05 P2 의 「그 종류에서 가장 먼저 끝나는 기기의 남은 시간」이고,
+  // 돌아가는 기기가 없으면 서버가 null 을 주므로 카운트다운을 그리지 않는다.
+  const myWaiting = (['washer', 'dryer'] as const)
+    .filter((type) => mine[type]?.status === 'waiting')
+    .map((type) => {
+      const entry = mine[type] as ApiQueueEntry;
+      const turnAt = entry.estimatedTurnAt ? new Date(entry.estimatedTurnAt).getTime() : null;
+      return {
+        isWasher: type === 'washer',
+        isDryer: type === 'dryer',
+        name: type === 'washer' ? '세탁기 대기열' : '건조기 대기열',
+        waitLeft: turnAt === null ? null : fmt(Math.max(0, turnAt - serverNow)),
+        ahead: entry.ahead,
+        leave: () => leaveType(type, type === 'washer' ? '세탁기' : '건조기'),
+      };
+    });
 
   const myCurrent: any[] = [];
   rawMachines.forEach((r) => {
+    const icon = { isWasher: r.type === 'washer', isDryer: r.type === 'dryer' };
+
+    // 배정(F6) — 마감 시각은 **서버가 준 값**이고, 남은 시간은 0 에서 멈춘다.
+    // 10분이 지났을 때의 배정 해제 · 경고는 서버가 판정한다 (05 P3 · Issue #8) —
+    // 화면이 스스로 지우지 않으므로, 서버가 해제할 때까지 0:00 으로 남아 있는다.
+    const assigned = assignedByMachineId.get(r.id);
+    if (assigned && !queue[r.id]) {
+      myCurrent.push({ ...icon, name: r.name, timeLeft: assigned.deadline === null ? '--:--' : fmt(assigned.deadline - serverNow), timeColor: '#5B93E0', message: '10분이 지나면 순서가 넘어갑니다. 시간 내에 QR 인증해 주세요.', msgColor: '#8FAAD0', btnLabel: 'QR 인증', btnStyle: { ...primaryBtn, width: '100%' }, onClick: () => setWarningId(r.id) });
+      return;
+    }
+
     const e = queue[r.id];
     if (!e) return;
-    const icon = { isWasher: r.type === 'washer', isDryer: r.type === 'dryer' };
-    if (e.phase === 'ready') {
-      myCurrent.push({ ...icon, name: r.name, timeLeft: fmt(e.readyDeadline - now), timeColor: '#5B93E0', message: '10분이 지나면 순서가 넘어갑니다. 시간 내에 QR 인증해 주세요.', msgColor: '#8FAAD0', btnLabel: 'QR 인증', btnStyle: { ...primaryBtn, width: '100%' }, onClick: () => setWarningId(r.id) });
-    } else if (e.phase === 'running') {
+    if (e.phase === 'running') {
       myCurrent.push({ ...icon, name: r.name, timeLeft: `약 ${fmt(e.runDeadline - now)}`, timeColor: '#5B93E0', message: '이용 완료 후 "다했어요"를 눌러주세요.', msgColor: '#8FAAD0', btnLabel: '다했어요', btnStyle: { ...leaveBtn, width: '100%' }, onClick: () => finish(r.id, r.name) });
     } else if (e.phase === 'grace') {
       myCurrent.push({ ...icon, name: r.name, timeLeft: fmt(e.graceDeadline - now), timeColor: '#E0554E', message: '시간이 끝났어요! 지금 누르지 않으면 경고가 쌓여요.', msgColor: '#E0554E', btnLabel: '다했어요', btnStyle: { ...leaveBtn, width: '100%' }, onClick: () => finish(r.id, r.name) });
@@ -405,7 +438,13 @@ export default function HomePage() {
                         <img src={mq.isWasher ? "/icons/washer-inuse.svg" : "/icons/dryer-inuse.svg"} alt="" style={{ width: '30px', height: '30px', flexShrink: 0 }} />
                         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                           <span style={{ fontSize: '12.5px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mq.name}</span>
-                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#5B93E0' }}>약 {mq.waitLeft} 후 배정</span>
+                          {/* 05 P2 — 예상 대기는 서버가 준 「가장 먼저 끝나는 기기의 남은 시간」이다.
+                              돌아가는 기기가 없으면 언제 빌지 알 수 없으므로 시간을 지어내지 않는다. */}
+                          <span style={{ fontSize: '11px', fontWeight: 700, color: '#5B93E0' }}>
+                            {mq.waitLeft === null
+                              ? (mq.ahead > 0 ? `앞에 ${mq.ahead}명` : '차례를 기다리는 중')
+                              : `약 ${mq.waitLeft} 후 배정`}
+                          </span>
                         </div>
                       </div>
                       <span style={{ fontSize: '11px', color: '#8FAAD0', lineHeight: 1.4, marginTop: '9px', marginBottom: '8px' }}>이용 예정이 아니면 줄 빠지기를 눌러주세요.</span>
