@@ -22,7 +22,23 @@ export const runtime = 'nodejs';
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
 
-  // 신고가 있는지, 누구 것인지 먼저 본다.
+  // ── 누구인지부터 본다. **DB 를 만지기 전이다.**
+  //
+  // 신고가 누구 것인지 알려면 결국 조회를 해야 하지만, 로그인도 하지 않은 요청까지
+  // 조회를 태울 이유는 없다 — 주소만 알면 아무나 DB 를 두드릴 수 있게 된다.
+  // 관리자이거나 로그인한 사생이어야 아래로 내려간다.
+  const admin = await getAdmin();
+  let userId: string | null = null;
+
+  if (!admin) {
+    const session = await auth();
+    userId = session?.user?.id ?? null;
+    if (!userId) {
+      return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    }
+  }
+
+  // ── 그 다음에 신고를 찾고, 사생이면 본인 것인지 본다.
   const rows = await sql<{ reporter_user_id: string }>`
     SELECT reporter_user_id FROM reports WHERE report_id = ${id} LIMIT 1
   `;
@@ -31,19 +47,10 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return Response.json({ ok: false, message: '신고를 찾을 수 없어요.' }, { status: 404 });
   }
 
-  // 관리자 → 통과. 아니면 신고자 본인인지 본다.
-  const admin = await getAdmin();
-  if (!admin) {
-    const session = await auth();
-    const userId = session?.user?.id;
-    if (!userId) {
-      return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
-    }
-    if (userId !== report.reporter_user_id) {
-      // 신고가 있는지 없는지를 드러내지 않으려면 404 가 낫지만, 여기서는 이미
-      // 로그인한 사람이고 주소는 report_id 를 알아야 만들 수 있다. 403 으로 분명히 한다.
-      return Response.json({ ok: false, message: '볼 수 있는 권한이 없어요.' }, { status: 403 });
-    }
+  // 관리자는 모든 신고를 본다 (F27 · 05 P9 — 사실/거짓 판정의 근거다).
+  // 사생은 자기가 쓴 신고만 본다.
+  if (!admin && userId !== report.reporter_user_id) {
+    return Response.json({ ok: false, message: '볼 수 있는 권한이 없어요.' }, { status: 403 });
   }
 
   const evidence = await readEvidence(id);
