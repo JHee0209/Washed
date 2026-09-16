@@ -164,25 +164,30 @@ export async function myQueue(userId: string) {
   return rows;
 }
 
-/** 이용 내역 (F5 · 06 「이용 내역」 · 조회는 3개월 · P17) */
+/** 이용 내역 (F13 · 06 「이용 내역」 · 조회는 30일 · P21) */
 export async function myHistory(userId: string) {
   return sql<{
     history_id: string;
     machine_name: string | null;
+    machine_kind: string | null;
     started_at: string;
     ended_at: string;
     result: string;
+    duration_minutes: number;
   }>`
-    SELECT h.history_id, m.name AS machine_name, h.started_at, h.ended_at, h.result
+    SELECT h.history_id, m.name AS machine_name, m.kind AS machine_kind,
+           h.started_at, h.ended_at, h.result,
+           GREATEST(0, ROUND(EXTRACT(EPOCH FROM (h.ended_at - h.started_at)) / 60))::int
+             AS duration_minutes
       FROM usage_history h
       LEFT JOIN machines m ON m.machine_id = h.machine_id
      WHERE h.user_id = ${userId}
-       AND h.started_at >= now() - interval '3 months'
+       AND h.started_at >= now() - interval '30 days'
      ORDER BY h.started_at DESC
   `;
 }
 
-/** 내 경고와 이용 제한 (F6 · 05 P5 · P7) */
+/** 내 경고와 이용 제한 (F13 · F6 · 05 P7 · 경고 사유 목록은 30일 · P21) */
 export async function myWarnings(userId: string) {
   const warnings = await sql<{
     warning_id: string;
@@ -193,6 +198,7 @@ export async function myWarnings(userId: string) {
     SELECT warning_id, reason, issued_by, issued_at
       FROM warnings
      WHERE user_id = ${userId}
+       AND issued_at >= now() - interval '30 days'
      ORDER BY issued_at DESC
   `;
 
