@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Link from 'next/link';
+import { useSession } from 'next-auth/react';
 import { useUnreadCount } from '@/lib/use-unread-count';
 import NotificationPrompt from '@/components/notification-prompt';
 import { useRouter } from 'next/navigation';
@@ -12,26 +13,14 @@ const RUN_MS_WASHER = 60 * 60 * 1000;
 const RUN_MS_DRYER = 45 * 60 * 1000;
 const GRACE_MS = 3 * 60 * 1000;
 const runMsFor = (type: string) => (type === 'dryer' ? RUN_MS_DRYER : RUN_MS_WASHER);
-const MY_USER_KEY = '원병찬·302호';
 
-// 임시 기기 데이터
-const initialMachines = [
-  { id: 'w1', type: 'washer', name: '세탁기 1호기', status: 'inuse', remaining: 20 },
-  { id: 'w2', type: 'washer', name: '세탁기 2호기', status: 'available', remaining: 0 },
-  { id: 'w3', type: 'washer', name: '세탁기 3호기', status: 'inuse', remaining: 20 },
-  { id: 'w4', type: 'washer', name: '세탁기 4호기', status: 'available', remaining: 0 },
-  { id: 'w5', type: 'washer', name: '세탁기 5호기', status: 'inuse', remaining: 20 },
-  { id: 'w6', type: 'washer', name: '세탁기 6호기', status: 'available', remaining: 0 },
-  { id: 'w7', type: 'washer', name: '세탁기 7호기', status: 'inuse', remaining: 20 },
-  { id: 'w8', type: 'washer', name: '세탁기 8호기', status: 'fault', remaining: 0 },
-  { id: 'd1', type: 'dryer', name: '건조기 1호기', status: 'inuse', remaining: 15 },
-  { id: 'd2', type: 'dryer', name: '건조기 2호기', status: 'inuse', remaining: 15 },
-  { id: 'd3', type: 'dryer', name: '건조기 3호기', status: 'inuse', remaining: 15 },
-  { id: 'd4', type: 'dryer', name: '건조기 4호기', status: 'inuse', remaining: 15 },
-];
+type ApiMachine = { id: string; type: string; name: string; status: string; remaining: number };
+type ApiQueueCounts = { washer: number; dryer: number };
 
 export default function HomePage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const myName = session?.user?.name || '';
 
   // --- 상태 관리 ---
   const [toast, setToast] = useState({ visible: false, message: '' });
@@ -40,15 +29,37 @@ export default function HomePage() {
   const [scanningId, setScanningId] = useState<string | null>(null);
   const [warningId, setWarningId] = useState<string | null>(null);
   const [expiredOpen, setExpiredOpen] = useState(false);
-  
+
   const [queue, setQueue] = useState<Record<string, any>>({});
   const [typeQueue, setTypeQueue] = useState<Record<string, any>>({});
-  const [extraWaiters, setExtraWaiters] = useState({ washer: 2, dryer: 1 });
-  const [rawMachines, setRawMachines] = useState(initialMachines);
-  
+  const [queueCounts, setQueueCounts] = useState<ApiQueueCounts>({ washer: 0, dryer: 0 });
+  const [rawMachines, setRawMachines] = useState<ApiMachine[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+
   // 종의 점은 DB 가 센다 (F18 · 05 P14 — 보관 기간까지 서버가 건다).
   const unreadCount = useUnreadCount();
   const hasUnread = unreadCount > 0;
+
+  // --- 기기 목록 · 대기 인원 조회 (F1 · F2 · 05 P2) ---
+  const loadMachines = useCallback(async () => {
+    setLoadError(false);
+    try {
+      const res = await fetch('/api/machines', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`${res.status}`);
+      const data = await res.json();
+      setRawMachines(data.machines);
+      setQueueCounts(data.queueCounts);
+    } catch {
+      setLoadError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMachines();
+  }, [loadMachines]);
 
   // --- 알림(Toast) 함수 ---
   const showToast = (message: string) => {
@@ -88,13 +99,6 @@ export default function HomePage() {
         });
         return changed ? newQ : prevQ;
       });
-
-      // 가짜 대기 인원 변동 시뮬레이션
-      if (Math.random() < 0.05) {
-        const type = Math.random() < 0.5 ? 'washer' : 'dryer';
-        const delta = Math.random() < 0.5 ? -1 : 1;
-        setExtraWaiters((s) => ({ ...s, [type]: Math.min(6, Math.max(0, s[type] + delta)) }));
-      }
     }, 1000);
     return () => clearInterval(tick);
   }, []);
@@ -169,9 +173,11 @@ export default function HomePage() {
     const status = effectiveStatus(r);
     const isInUse = status === 'inuse';
     const isFault = status === 'fault';
-    
+    const isInspection = status === 'inspection';
+
     let badgeFg = '#4A5F82', badgeDot = '#B9C9DF', badgeLabel = '사용가능';
     if (isFault) { badgeFg = '#E52222'; badgeDot = '#E52222'; badgeLabel = '고장'; }
+    else if (isInspection) { badgeFg = '#70737C'; badgeDot = '#8FAAD0'; badgeLabel = '점검 중'; }
     else if (isInUse) { badgeFg = '#3B76CC'; badgeDot = '#5B93E0'; badgeLabel = '사용중'; }
 
     const e = queue[r.id];
@@ -192,7 +198,7 @@ export default function HomePage() {
       progressPct = 100; showProgress = true;
     }
 
-    return { ...r, badgeFg, badgeDot, badgeLabel, iconInuse: isInUse, iconAvailable: !isInUse && !isFault, iconFault: isFault, showProgress, progress: `${progressPct}%`, actionLabel, actionOnClick, actionDisabled, actionStyle };
+    return { ...r, badgeFg, badgeDot, badgeLabel, iconInuse: isInUse, iconAvailable: !isInUse && !isFault && !isInspection, iconFault: isFault, iconInspection: isInspection, showProgress, progress: `${progressPct}%`, actionLabel, actionOnClick, actionDisabled, actionStyle };
   });
 
   const washerMachines = machinesUI.filter((m) => m.type === 'washer');
@@ -203,12 +209,12 @@ export default function HomePage() {
     const list = rawMachines.filter((r) => r.type === type);
     const total = list.length;
     const available = list.filter((r) => effectiveStatus(r) === 'available').length;
-    const inuse = total - available;
+    const inuse = list.filter((r) => effectiveStatus(r) === 'inuse').length;
     const assignedId = list.map((r) => r.id).find((id) => queue[id]);
     const assigned = assignedId ? { ...list.find((r) => r.id === assignedId), ...queue[assignedId] } : null;
     const waitingType = typeQueue[type];
     const hasFreeSlot = list.length > 0;
-    const waitingCount = available > 0 ? 0 : (extraWaiters[type] || 0) + (waitingType ? 1 : 0);
+    const waitingCount = available > 0 ? 0 : (queueCounts[type] || 0) + (waitingType ? 1 : 0);
 
     let actionLabel, actionOnClick, actionDisabled = false, actionStyle, actionInfo;
     if (assigned) {
@@ -282,7 +288,7 @@ export default function HomePage() {
           <div style={{ padding: '20px 16px 24px', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <h1 style={{ margin: 0, fontSize: '23px', fontWeight: 800, letterSpacing: '-0.02em', color: '#1E3557', marginTop: '-5px' }}>안녕하세요, 병찬</h1>
+              <h1 style={{ margin: 0, fontSize: '23px', fontWeight: 800, letterSpacing: '-0.02em', color: '#1E3557', marginTop: '-5px' }}>안녕하세요{myName ? `, ${myName}` : ''}</h1>
               <p style={{ margin: 0, fontSize: '13px', color: '#8FAAD0' }}>오늘도 줄 서지 않고 편하게 세탁해요</p>
             </div>
 
@@ -341,6 +347,18 @@ export default function HomePage() {
               <p style={{ margin: 0, fontSize: '12px', color: '#8FAAD0' }}>차례 10분 전, 이용 가능해질 때 알려드려요</p>
             </div>
             
+            {loading ? (
+              <div style={{ background: '#fff', borderRadius: '20px', padding: '18px', boxShadow: '0px 10px 26px -8px rgba(47,99,184,.28)', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '80px' }}>
+                <span style={{ fontSize: '13px', color: '#8FAAD0' }}>기기 정보를 불러오는 중이에요…</span>
+              </div>
+            ) : loadError ? (
+              <div style={{ background: '#fff', borderRadius: '20px', padding: '18px', boxShadow: '0px 10px 26px -8px rgba(47,99,184,.28)', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'center', textAlign: 'center' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#1E3557' }}>기기 정보를 불러오지 못했어요</span>
+                <span style={{ fontSize: '12px', color: '#8FAAD0' }}>네트워크 상태를 확인한 뒤 다시 시도해주세요.</span>
+                <button onClick={loadMachines} style={{ ...primaryBtn, padding: '9px 18px' }}>다시 시도</button>
+              </div>
+            ) : (
+              <>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'start' }}>
               {typeSummaries.map((ts, idx) => (
                 <div key={idx} style={{ background: '#fff', borderRadius: '18px', padding: '14px', boxShadow: '0px 10px 26px -8px rgba(47,99,184,.28)', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>
@@ -390,6 +408,12 @@ export default function HomePage() {
                             <div style={{ position: 'absolute', top: '-4px', right: '-4px', width: '14px', height: '14px', borderRadius: '50%', background: '#E52222', color: '#fff', fontSize: '10px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>!</div>
                           </div>
                         )}
+                        {m.iconInspection && (
+                          <div style={{ position: 'relative', width: '24px', height: '24px', flexShrink: 0 }}>
+                            <img src="/icons/washer-inuse.svg" alt="" style={{ width: '24px', height: '24px', filter: 'grayscale(1) opacity(.55)' }} />
+                            <div style={{ position: 'absolute', top: '-4px', right: '-4px', width: '14px', height: '14px', borderRadius: '50%', background: '#8FAAD0', color: '#fff', fontSize: '9px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>II</div>
+                          </div>
+                        )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
                           <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</span>
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -415,6 +439,18 @@ export default function HomePage() {
                       <div key={idx} style={{ background: '#fff', borderRadius: '14px', padding: '10px', boxShadow: '0px 10px 26px -8px rgba(47,99,184,.28)', display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
                         {m.iconAvailable && <img src="/icons/dryer-available.svg" alt="" style={{ width: '24px', height: '24px', flexShrink: 0 }} />}
                         {m.iconInuse && <img src="/icons/dryer-inuse.svg" alt="" style={{ width: '24px', height: '24px', flexShrink: 0 }} />}
+                        {m.iconFault && (
+                          <div style={{ position: 'relative', width: '24px', height: '24px', flexShrink: 0 }}>
+                            <img src="/icons/dryer-inuse.svg" alt="" style={{ width: '24px', height: '24px', filter: 'grayscale(1) opacity(.55)' }} />
+                            <div style={{ position: 'absolute', top: '-4px', right: '-4px', width: '14px', height: '14px', borderRadius: '50%', background: '#E52222', color: '#fff', fontSize: '10px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>!</div>
+                          </div>
+                        )}
+                        {m.iconInspection && (
+                          <div style={{ position: 'relative', width: '24px', height: '24px', flexShrink: 0 }}>
+                            <img src="/icons/dryer-inuse.svg" alt="" style={{ width: '24px', height: '24px', filter: 'grayscale(1) opacity(.55)' }} />
+                            <div style={{ position: 'absolute', top: '-4px', right: '-4px', width: '14px', height: '14px', borderRadius: '50%', background: '#8FAAD0', color: '#fff', fontSize: '9px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1 }}>II</div>
+                          </div>
+                        )}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px', minWidth: 0 }}>
                           <span style={{ fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{m.name}</span>
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
@@ -429,6 +465,8 @@ export default function HomePage() {
                 </div>
               )}
             </div>
+              </>
+            )}
 
           </div>
         </div>
