@@ -29,14 +29,18 @@ type Data = {
     minutes_left: number | null;
   }[];
   queue: {
-    queue_id: string;
-    user_name: string;
-    room: string;
-    machine_kind: string;
-    machine_name: string | null;
-    status: string;
-    waited_minutes: number;
-  }[];
+    rows: {
+      queue_id: string;
+      user_name: string;
+      room: string;
+      machine_kind: string;
+      machine_name: string | null;
+      status: string;
+      waited_minutes: number;
+    }[];
+    // 홈 화면(F1)과 같은 규칙(05 P2 · queries.ts::queueCounts())으로 센 값이다.
+    counts: { 세탁기: number; 건조기: number };
+  };
   reports: {
     report_id: string;
     user_name: string;
@@ -88,7 +92,7 @@ type Data = {
 
 export default function AdminTabs({ tab, data }: { tab: string; data: Data }) {
   if (tab === 'dashboard') return <Machines rows={data.machines} />;
-  if (tab === 'queue') return <Queue rows={data.queue} />;
+  if (tab === 'queue') return <Queue rows={data.queue.rows} counts={data.queue.counts} />;
   if (tab === 'reports') return <Reports rows={data.reports} />;
   if (tab === 'history') return <History rows={data.history} />;
   if (tab === 'warnings') return <Warnings rows={data.warnings} />;
@@ -319,32 +323,61 @@ function Machines({ rows }: { rows: Data['machines'] }) {
 
 // ─── 탭 2 · 실시간 대기열 (F23) ──────────────────────────────────────────────
 
-function Queue({ rows }: { rows: Data['queue'] }) {
+function Queue({
+  rows,
+  counts,
+}: {
+  rows: Data['queue']['rows'];
+  counts: Data['queue']['counts'];
+}) {
   return (
-    <Table cols={['사용자', '호실', '종류', '배정 기기', '상태', '대기', '']}>
-      {rows.length === 0 ? (
-        <EmptyRow span={7} text="지금 줄 선 사람이 없어요." />
-      ) : (
-        rows.map((q) => (
-          <tr key={q.queue_id}>
-            <td style={{ ...cell, fontWeight: 700 }}>{q.user_name}</td>
-            <td style={cell}>{q.room}</td>
-            <td style={cell}>{q.machine_kind}</td>
-            <td style={{ ...cell, color: '#8FAAD0' }}>{q.machine_name ?? '—'}</td>
-            <td style={cell}>
-              <Dot color={q.status === '배정됨' ? '#FF9200' : '#2F63B8'} />
-              {q.status}
-            </td>
-            <td style={{ ...cell, color: '#8FAAD0' }}>{q.waited_minutes}분</td>
-            <td style={cell}>
-              <Btn tone="danger" onClick={() => cancelQueue(q.queue_id)}>
-                취소
-              </Btn>
-            </td>
-          </tr>
-        ))
-      )}
-    </Table>
+    <>
+      {/*
+        05 P2 · 08 3번 — 대기 인원은 그 종류에 바로 쓸 수 있는 기기가 있으면 0명이다.
+        이 숫자는 홈 화면(F1)과 같은 함수(queueCounts())가 낸 값이라 항상 일치한다.
+      */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 16,
+          padding: '11px 14px',
+          marginBottom: 14,
+          borderRadius: 12,
+          background: 'rgba(47,99,184,.06)',
+          fontSize: 12.5,
+          color: '#33456B',
+          fontWeight: 600,
+        }}
+      >
+        <span>세탁기 대기 {counts.세탁기}명</span>
+        <span>건조기 대기 {counts.건조기}명</span>
+      </div>
+
+      <Table cols={['사용자', '호실', '종류', '배정 기기', '상태', '대기', '']}>
+        {rows.length === 0 ? (
+          <EmptyRow span={7} text="지금 줄 선 사람이 없어요." />
+        ) : (
+          rows.map((q) => (
+            <tr key={q.queue_id}>
+              <td style={{ ...cell, fontWeight: 700 }}>{q.user_name}</td>
+              <td style={cell}>{q.room}</td>
+              <td style={cell}>{q.machine_kind}</td>
+              <td style={{ ...cell, color: '#8FAAD0' }}>{q.machine_name ?? '—'}</td>
+              <td style={cell}>
+                <Dot color={q.status === '배정' ? '#FF9200' : '#2F63B8'} />
+                {q.status}
+              </td>
+              <td style={{ ...cell, color: '#8FAAD0' }}>{q.waited_minutes}분</td>
+              <td style={cell}>
+                <Btn tone="danger" onClick={() => cancelQueue(q.queue_id)}>
+                  취소
+                </Btn>
+              </td>
+            </tr>
+          ))
+        )}
+      </Table>
+    </>
   );
 }
 

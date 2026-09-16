@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useUnreadCount } from '@/lib/use-unread-count';
@@ -16,6 +16,14 @@ const runMsFor = (type: string) => (type === 'dryer' ? RUN_MS_DRYER : RUN_MS_WAS
 
 type ApiMachine = { id: string; type: string; name: string; status: string; remaining: number };
 type ApiQueueCounts = { washer: number; dryer: number };
+type ApiQueueEntry = {
+  status: 'waiting' | 'assigned' | 'inuse' | 'pickup';
+  machineId: string | null;
+  machineName: string | null;
+  assignDeadlineAt: string | null;
+  queuedAt: string;
+};
+type ApiMine = { washer: ApiQueueEntry | null; dryer: ApiQueueEntry | null };
 
 export default function HomePage() {
   const router = useRouter();
@@ -61,6 +69,62 @@ export default function HomePage() {
     loadMachines();
   }, [loadMachines]);
 
+  // --- 내 줄서기 상태 복원 (F3 · F7 — 서버가 기억하므로 새로고침해도 유지된다) ---
+  const hydratedQueueRef = useRef(false);
+
+  const loadMine = useCallback(async (): Promise<ApiMine | null> => {
+    try {
+      const res = await fetch('/api/queue', { cache: 'no-store' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.mine as ApiMine;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // 서버가 준 상태를 처음 한 번만 로컬 시뮬레이션 상태로 옮긴다 — 이후(QR 인증·
+  // 러닝·유예 타이머)는 F5·F6·F8·F9·F10 범위라 지금처럼 클라이언트가 그대로 맡는다.
+  useEffect(() => {
+    if (loading || hydratedQueueRef.current || rawMachines.length === 0) return;
+    hydratedQueueRef.current = true;
+
+    (async () => {
+      const mine = await loadMine();
+      if (!mine) return;
+
+      (['washer', 'dryer'] as const).forEach((type) => {
+        const entry = mine[type];
+        if (!entry) return;
+
+        if (entry.status === 'assigned' && entry.machineId) {
+          const readyDeadline = entry.assignDeadlineAt
+            ? new Date(entry.assignDeadlineAt).getTime()
+            : Date.now();
+          setQueue((prev) => ({
+            ...prev,
+            [entry.machineId as string]: { phase: 'ready', name: entry.machineName ?? '', readyDeadline },
+          }));
+        } else if (entry.status === 'waiting') {
+          const list = rawMachines.filter((r) => r.type === type);
+          const busy = list.filter((r) => r.status === 'inuse');
+          const soonestRemaining = busy.length
+            ? busy.reduce((a, b) => (a.remaining <= b.remaining ? a : b)).remaining
+            : 1;
+          setTypeQueue((prev) => ({
+            ...prev,
+            [type]: {
+              type,
+              turnAt: Date.now() + Math.max(soonestRemaining, 1) * 60000,
+              othersWaiting: queueCounts[type] || 0,
+            },
+          }));
+        }
+      });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, rawMachines, loadMine]);
+
   // --- 알림(Toast) 함수 ---
   const showToast = (message: string) => {
     setToast({ visible: true, message });
@@ -104,35 +168,64 @@ export default function HomePage() {
   }, []);
 
   // --- 핸들러 함수 ---
-  const join = (id: string, name: string) => {
-    const currentTime = Date.now();
-    setQueue((prev) => ({ ...prev, [id]: { phase: 'ready', name, readyDeadline: currentTime + READY_MS } }));
+  const join = (id: string, name: string, deadline?: number) => {
+    const readyDeadline = deadline ?? Date.now() + READY_MS;
+    setQueue((prev) => ({ ...prev, [id]: { phase: 'ready', name, readyDeadline } }));
     showToast(`${name}를 바로 이용할 수 있어요. 10분 안에 QR을 찍어주세요.`);
   };
 
-  const autoJoin = (type: string, label: string) => {
-    const currentTime = Date.now();
-    const list = rawMachines.filter((r) => r.type === type);
-    const free = list.filter((r) => r.status === 'available');
-    
-    if (free.length > 0) {
-      join(free[0].id, free[0].name);
-      return;
+  // F3 · F4 — 줄서기는 서버가 판정한다(05 P1 · P2 · P3 · P7 · P20). 빈 기기가 있으면
+  // 서버가 그 자리에서 배정해 돌려주고, 없으면 대기 중으로 등록된다.
+  const autoJoin = async (type: string, label: string) => {
+    try {
+      const res = await fetch(`/api/queue/${type}`, { method: 'POST' });
+      const data = await res.json();
+
+      if (!res.ok) {
+        showToast(data.message || `${label} 줄서기에 실패했어요.`);
+        return;
+      }
+
+      if (data.status === 'assigned' && data.machineId) {
+        const deadline = data.assignDeadlineAt ? new Date(data.assignDeadlineAt).getTime() : undefined;
+        join(data.machineId, data.machineName ?? label, deadline);
+      } else {
+        const list = rawMachines.filter((r) => r.type === type);
+        const busy = list.filter((r) => r.status === 'inuse');
+        const soonestRemaining = busy.length
+          ? busy.reduce((a, b) => (a.remaining <= b.remaining ? a : b)).remaining
+          : 1;
+        const othersWaiting = queueCounts[type as 'washer' | 'dryer'] || 0;
+        setTypeQueue((prev) => ({
+          ...prev,
+          [type]: { type, turnAt: Date.now() + Math.max(soonestRemaining, 1) * 60000, othersWaiting },
+        }));
+        showToast(`${label} 대기열에 참여했어요. 먼저 끝나는 기기로 자동 배정돼요.`);
+      }
+      loadMachines();
+    } catch {
+      showToast('네트워크 오류로 줄서기에 실패했어요.');
     }
-    const busy = list.filter((r) => r.status === 'inuse');
-    if (busy.length === 0) { showToast(`지금은 대기할 수 있는 ${label}가 없어요.`); return; }
-    if (typeQueue[type]) { showToast(`이미 ${label} 대기열에 참여 중이에요.`); return; }
-    
-    const soonest = busy.reduce((a, b) => (a.remaining <= b.remaining ? a : b));
-    const othersWaiting = Object.values(typeQueue).filter((t) => t.type === type).length;
-    
-    setTypeQueue((prev) => ({ ...prev, [type]: { type, turnAt: currentTime + Math.max(soonest.remaining, 1) * 60000, othersWaiting } }));
-    showToast(`${label} 대기열에 참여했어요. 먼저 끝나는 기기로 자동 배정돼요.`);
   };
 
-  const leaveType = (type: string, label: string) => {
-    setTypeQueue((prev) => { const n = { ...prev }; delete n[type]; return n; });
-    showToast(`${label} 대기열에서 나갔어요.`);
+  // F7 — 줄 빠지기도 서버가 막는다(05 P3 — 배정 상태에서는 불가).
+  const leaveType = async (type: string, label: string) => {
+    try {
+      const res = await fetch(`/api/queue/${type}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        showToast(data.message || `${label} 줄 빠지기에 실패했어요.`);
+        if (res.status === 403) loadMachines();
+        return;
+      }
+
+      setTypeQueue((prev) => { const n = { ...prev }; delete n[type]; return n; });
+      showToast(`${label} 대기열에서 나갔어요.`);
+      loadMachines();
+    } catch {
+      showToast('네트워크 오류로 줄 빠지기에 실패했어요.');
+    }
   };
 
   const leave = (id: string, name: string) => {

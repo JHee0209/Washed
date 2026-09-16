@@ -158,7 +158,7 @@ export async function myQueue(userId: string) {
       FROM queue q
       LEFT JOIN machines m ON m.machine_id = q.machine_id
      WHERE q.user_id = ${userId}
-       AND q.status IN ('대기 중', '배정됨', '사용 중')
+       AND q.status IN ('대기 중', '배정', '사용중', '수거대기')
      ORDER BY q.queued_at
   `;
   return rows;

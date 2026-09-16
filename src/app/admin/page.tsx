@@ -47,7 +47,7 @@ export default async function AdminPage({
   // 탭마다 필요한 것만 읽는다 — 일곱 개를 매번 다 읽지 않는다
   const data = {
     machines: tab === 'dashboard' ? await adminMachines() : [],
-    queue: tab === 'queue' ? await adminQueue() : [],
+    queue: tab === 'queue' ? await adminQueue() : { rows: [], counts: { 세탁기: 0, 건조기: 0 } },
     reports: tab === 'reports' ? await adminReports() : [],
     history: tab === 'history' ? await adminHistory() : [],
     warnings: tab === 'warnings' ? await adminWarnings() : [],
