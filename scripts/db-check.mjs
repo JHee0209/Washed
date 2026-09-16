@@ -21,6 +21,9 @@ const EXPECTED = [
   ['warnings', '경고'],
   ['usage_restrictions', '이용 제한'],
   ['reports', '신고'],
+  // 06 「신고」의 저장 항목 「증거 사진」이 실제로 놓이는 자리다 (0005 · 05 P15 · P23).
+  // 새 저장 항목이 아니라 reports.evidence_photo_url 이 가리키는 파일 본체다.
+  ['report_evidence', '신고 증거 사진'],
   ['notifications', '알림'],
   ['push_subscriptions', '푸시 구독'],
   ['usage_history', '이용 내역'],
