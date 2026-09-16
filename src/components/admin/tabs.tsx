@@ -44,6 +44,9 @@ type Data = {
     reason: string;
     machine_kind: string | null;
     machine_no: number | null;
+    // 05 P15 — 「세탁물 있음」에만 값이 있다. 3개월이 지나 사진이 지워져도
+    // 이 주소는 남고 열면 410 이 온다 (0005 · 05 P23).
+    evidence_photo_url: string | null;
     etc_content: string | null;
     status: string;
     created_at: string;
@@ -349,9 +352,9 @@ function Queue({ rows }: { rows: Data['queue'] }) {
 
 function Reports({ rows }: { rows: Data['reports'] }) {
   return (
-    <Table cols={['접수', '신고자', '호실', '사유', '대상', '상태', '']}>
+    <Table cols={['접수', '신고자', '호실', '사유', '대상', '증거', '상태', '']}>
       {rows.length === 0 ? (
-        <EmptyRow span={7} text="접수된 신고가 없어요." />
+        <EmptyRow span={8} text="접수된 신고가 없어요." />
       ) : (
         rows.map((r) => (
           <tr key={r.report_id}>
@@ -363,6 +366,26 @@ function Reports({ rows }: { rows: Data['reports'] }) {
             </td>
             <td style={{ ...cell, color: '#8FAAD0' }}>
               {r.machine_kind ? `${r.machine_kind} ${r.machine_no ?? ''}` : '—'}
+            </td>
+            {/*
+              05 P15 — 증거 사진은 「세탁물 있음」에만 있다. 관리자가 처리완료(사실)와
+              반려(거짓)를 가르는 근거라(P9) 여기서 열어 볼 수 있어야 한다.
+              주소는 권한을 보고 내려주는 라우트다 — 관리자 세션으로 통과한다.
+              05 P23 의 3개월이 지나 사진이 지워지면 그 주소가 410 을 돌려준다.
+            */}
+            <td style={cell}>
+              {r.evidence_photo_url ? (
+                <a
+                  href={r.evidence_photo_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: '#2F63B8', fontWeight: 600 }}
+                >
+                  사진
+                </a>
+              ) : (
+                <span style={{ color: '#8FAAD0' }}>—</span>
+              )}
             </td>
             <td style={cell}>
               <Dot

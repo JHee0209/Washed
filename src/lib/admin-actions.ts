@@ -278,7 +278,15 @@ export async function setReportStatus(reportId: string, status: string) {
   `;
   if (updated.length === 0) return;
 
-  // P19 — 신고자에게만. 알림함 기록이 핵심이고 푸시는 그 뒤 best-effort 다(P26).
+  // P19 — **신고자에게만.** 「신고당한 사람에게는 누가 신고했는지 알리지 않는다」
+  //
+  // 받는 사람은 위에서 **DB 에서 읽은** row.reporter_user_id 다 — 이 함수의 인자는
+  // reportId 와 status 뿐이고 받는 사람을 밖에서 넣을 길이 없다. 관리자 화면이
+  // 무엇을 보내든 알림은 그 신고를 쓴 사람에게만 간다.
+  //
+  // notify() 는 user_id 하나에 한 줄을 넣는다 — addNotice() 의 공지처럼 users 를
+  // 훑지 않는다. 전체 · 같은 호수 · 피신고자 · 관리자로 새는 경로가 없다.
+  // (피신고자는 애초에 reports 에 적히지도 않는다 — 06 「신고」에 그런 칸이 없다.)
   try {
     await notify(
       row.reporter_user_id,

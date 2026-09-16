@@ -1,10 +1,20 @@
 'use client';
 
-import { useState, useEffect, useSyncExternalStore } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { useUnreadCount } from '@/lib/use-unread-count';
 import { enablePush, permissionServerSnapshot, permissionSnapshot, subscribePushState } from '@/lib/push-client';
 import { useRouter } from 'next/navigation';
+import {
+  ALLOWED_EVIDENCE_MIME,
+  MACHINE_COUNT,
+  MAX_EVIDENCE_BYTES,
+  MAX_EVIDENCE_LABEL,
+  REASON_LABELS,
+  isAllowedEvidenceMime,
+  isMachineKind,
+} from '@/lib/report-rules';
+import { requestWithdrawal } from '@/lib/user-actions';
 
 // FAQ 데이터
 const FAQ_KO = [
@@ -42,10 +52,21 @@ export default function SettingsPage() {
   const [etcText, setEtcText] = useState('');
   const [laundryType, setLaundryType] = useState<string | null>(null);
   const [laundryMachine, setLaundryMachine] = useState<number | null>(null);
-  
+
+  // 증거 사진 (05 P15 — 「세탁물이 있어요」 전용 · 필수).
+  // 파일 자체는 여기 들고 있다가 접수할 때 FormData 로 한 번에 올린다 —
+  // 따로 먼저 올리면 접수가 실패했을 때 주인 없는 파일이 남는다.
+  const [evidenceFile, setEvidenceFile] = useState<File | null>(null);
+  const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
+  const evidenceInputRef = useRef<HTMLInputElement | null>(null);
+
+  // 접수 중에는 버튼을 잠근다 — 연속으로 누르면 신고가 여러 건 만들어진다.
+  const [submitting, setSubmitting] = useState(false);
+
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawPending, setWithdrawPending] = useState(false);
   const [faqOpen, setFaqOpen] = useState(false);
   const [openFaqId, setOpenFaqId] = useState<string | null>(null);
 
@@ -90,41 +111,116 @@ export default function SettingsPage() {
     }
   };
 
+  // 미리보기용 blob: URL 은 명시적으로 풀어 줘야 한다 — 화면을 떠날 때
+  // 남아 있으면 그 사진이 탭이 닫힐 때까지 메모리에 붙어 있는다.
+  useEffect(() => {
+    return () => {
+      if (evidencePreview) URL.revokeObjectURL(evidencePreview);
+    };
+  }, [evidencePreview]);
+
   const showToast = (message: string) => {
     setToastMessage(message);
     setToastVisible(true);
     setTimeout(() => setToastVisible(false), 2500);
   };
 
-  // --- 신고하기 로직 ---
-  const reasonDefs = ['기기가 고장났어요', '순서를 지키지 않았어요', '세탁물이 있어요', '기타'];
-  const showLaundryFilter = reportReason && ['기기가 고장났어요', '순서를 지키지 않았어요', '세탁물이 있어요'].includes(reportReason);
+  // --- 신고하기 로직 (F11 · 05 P15) ---
+  //
+  // 사유 목록 · 기기 대수 · 사진 조건은 전부 src/lib/report-rules.ts 에서 온다.
+  // 서버(/api/reports)가 보는 것과 **같은 값**이어야 하기 때문이다 (08 · 7번).
+  const reasonDefs = REASON_LABELS;
+  const showLaundryFilter = reportReason !== null && reportReason !== '기타';
   const showEvidenceSlot = reportReason === '세탁물이 있어요';
   const showMachineNumbers = showLaundryFilter && !!laundryType;
-  const machineCount = laundryType === '건조기' ? 4 : 8;
+  const machineCount = isMachineKind(laundryType) ? MACHINE_COUNT[laundryType] : 0;
 
-  const canSubmit = !!reportReason && (!showLaundryFilter || (laundryType && laundryMachine)) && (!showEvidenceSlot || true); 
+  // 05 P15 — 「"세탁물이 있어요" 는 사진을 붙이기 전까지 접수 버튼이 켜지지 않는다」
+  const canSubmit =
+    !!reportReason &&
+    (!showLaundryFilter || (!!laundryType && !!laundryMachine)) &&
+    (!showEvidenceSlot || !!evidenceFile) &&
+    (reportReason !== '기타' || !!etcText.trim());
 
-  const submitReport = () => {
-    if (!canSubmit) return;
-    try {
-      const list = JSON.parse(localStorage.getItem('washed_reports') || '[]');
-      const now = new Date();
-      const datetime = `${String(now.getMonth() + 1).padStart(2, '0')}/${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      const machineName = laundryType && laundryMachine ? `${laundryType} ${laundryMachine}호기` : '';
-      list.unshift({
-        id: `u${Date.now()}`, reason: reportReason, datetime,
-        reporter: '주희 · 302호', machine: machineName, etc: etcText,
-        status: '접수됨', notified: false,
-      });
-      localStorage.setItem('washed_reports', JSON.stringify(list));
-    } catch (e) {}
-    
-    setReportReason(null);
-    setEtcText('');
+  const clearEvidence = () => {
+    setEvidenceFile(null);
+    setEvidencePreview((url) => {
+      if (url) URL.revokeObjectURL(url);
+      return null;
+    });
+    if (evidenceInputRef.current) evidenceInputRef.current.value = '';
+  };
+
+  /** 사유를 바꾸면 그 사유에 없는 칸은 전부 비운다 (05 P15) */
+  const pickReason = (label: string) => {
+    setReportReason(label);
+    setEtcText(label === '기타' ? etcText : '');
     setLaundryType(null);
     setLaundryMachine(null);
-    showToast('신고가 접수됐어요. 관리자가 확인 후 조치할게요.');
+    if (label !== '세탁물이 있어요') clearEvidence();
+  };
+
+  const pickEvidence = (file: File | null) => {
+    if (!file) return clearEvidence();
+
+    // 화면에서도 서버와 **같은 상수**로 먼저 걸러 준다. 이것은 친절이고,
+    // 접수를 정하는 것은 서버다 — 아래 검사를 지워도 서버가 415 · 413 으로 막는다.
+    if (!isAllowedEvidenceMime(file.type)) {
+      showToast('JPG · PNG · WebP 이미지만 첨부할 수 있어요.');
+      if (evidenceInputRef.current) evidenceInputRef.current.value = '';
+      return;
+    }
+    if (file.size > MAX_EVIDENCE_BYTES) {
+      showToast(`사진은 ${MAX_EVIDENCE_LABEL} 까지 첨부할 수 있어요.`);
+      if (evidenceInputRef.current) evidenceInputRef.current.value = '';
+      return;
+    }
+
+    setEvidenceFile(file);
+    setEvidencePreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const submitReport = async () => {
+    // 접수 중 재진입을 막는다 — 버튼도 잠그지만 한 번 더 본다.
+    if (!canSubmit || submitting) return;
+    setSubmitting(true);
+
+    try {
+      // 신고자는 보내지 않는다. 서버가 세션에서 정한다 (08 · 1번).
+      const form = new FormData();
+      form.set('reason', reportReason!);
+      if (laundryType) form.set('machineKind', laundryType);
+      if (laundryMachine) form.set('machineNo', String(laundryMachine));
+      if (etcText.trim()) form.set('etcContent', etcText.trim());
+      if (evidenceFile) form.set('evidence', evidenceFile);
+
+      const response = await fetch('/api/reports', { method: 'POST', body: form });
+      const data = (await response.json().catch(() => null)) as { message?: string } | null;
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          showToast('로그인이 필요해요.');
+          setTimeout(() => router.push('/login'), 800);
+          return;
+        }
+        showToast(data?.message ?? '신고를 접수하지 못했어요. 잠시 뒤 다시 시도해주세요.');
+        return;
+      }
+
+      setReportReason(null);
+      setEtcText('');
+      setLaundryType(null);
+      setLaundryMachine(null);
+      clearEvidence();
+      showToast('신고가 접수됐어요. 관리자가 확인 후 조치할게요.');
+    } catch {
+      showToast('신고를 접수하지 못했어요. 연결을 확인해주세요.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   // ⭐️ 확실하게 작동하는 로그아웃 및 회원탈퇴 핸들러
@@ -136,12 +232,26 @@ export default function SettingsPage() {
     }, 800);
   };
 
-  const handleWithdraw = () => {
-    setWithdrawOpen(false);
-    showToast('회원탈퇴가 완료되었습니다.');
-    setTimeout(() => {
-      router.push('/login');
-    }, 800);
+  /**
+   * 탈퇴 신청 (05 P24).
+   *
+   * 즉시 삭제가 아니라 **14일 유예**다 — 서버는 신청 시각만 적고, 실제 삭제는
+   * 14일 뒤 정리 배치가 한다. 그때 이 사람이 올린 증거 사진도 함께 지워진다
+   * (05 P23 · src/lib/cleanup.ts). 아래 모달 문구가 말하는 그대로다.
+   *
+   * requestWithdrawal() 이 끝에서 signOut({ redirectTo: '/login' }) 을 부르므로
+   * 여기서 따로 화면을 옮기지 않는다.
+   */
+  const handleWithdraw = async () => {
+    if (withdrawPending) return;
+    setWithdrawPending(true);
+    try {
+      await requestWithdrawal();
+    } catch {
+      setWithdrawPending(false);
+      setWithdrawOpen(false);
+      showToast('탈퇴 신청을 처리하지 못했어요. 잠시 뒤 다시 시도해주세요.');
+    }
   };
 
   return (
@@ -270,7 +380,7 @@ export default function SettingsPage() {
                   {reasonDefs.map((label, idx) => {
                     const on = reportReason === label;
                     return (
-                      <div key={idx} onClick={() => { setReportReason(label); setEtcText(label === '기타' ? etcText : ''); setLaundryType(null); setLaundryMachine(null); }} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 14px', borderRadius: '12px', cursor: 'pointer', background: on ? 'rgba(91,147,224,.10)' : '#fff', boxShadow: `inset 0 0 0 1px ${on ? '#5B93E0' : '#E6EDF7'}` }}>
+                      <div key={idx} onClick={() => pickReason(label)} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '13px 14px', borderRadius: '12px', cursor: 'pointer', background: on ? 'rgba(91,147,224,.10)' : '#fff', boxShadow: `inset 0 0 0 1px ${on ? '#5B93E0' : '#E6EDF7'}` }}>
                         <div style={{ width: '18px', height: '18px', borderRadius: '50%', boxShadow: `inset 0 0 0 ${on ? '6px' : '1.5px'} ${on ? '#5B93E0' : '#C3D2E6'}`, flexShrink: 0 }}></div>
                         <span style={{ fontSize: '14px', fontWeight: 500, color: on ? '#2F63B8' : '#4A5F82' }}>{label}</span>
                       </div>
@@ -311,16 +421,49 @@ export default function SettingsPage() {
                     <textarea placeholder="의견을 입력해주세요" value={etcText} onChange={(e) => setEtcText(e.target.value)} style={{ border: 'none', outline: 'none', borderRadius: '12px', boxShadow: 'inset 0 0 0 1px #E6EDF7', background: '#F7FAFE', padding: '12px', fontSize: '13.5px', color: '#1E3557', resize: 'none', minHeight: '64px', fontFamily: 'inherit' }}></textarea>
                   )}
 
-                  {/* 증거 사진 (디자인 유지용 목업) */}
+                  {/*
+                    증거 사진 (05 P15 — 「세탁물이 있어요」 에만 있고 **필수**).
+                    남의 세탁물을 꺼내는 근거가 되므로 붙이기 전까지 접수 버튼이
+                    켜지지 않는다. 같은 조건을 서버도 본다 (08 · 7번).
+                  */}
                   {showEvidenceSlot && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                       <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#5A7CA8' }}>증거 사진 (필수)</span>
-                      <div style={{ width: '100%', height: '140px', borderRadius: '12px', background: '#F6F9FE', border: '1px dashed #B4C2D6', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8FAAD0', fontSize: '13px', cursor: 'pointer' }}>사진을 첨부해 주세요</div>
+                      <input
+                        ref={evidenceInputRef}
+                        type="file"
+                        accept={ALLOWED_EVIDENCE_MIME.join(',')}
+                        onChange={(e) => pickEvidence(e.target.files?.[0] ?? null)}
+                        style={{ display: 'none' }}
+                      />
+                      {evidencePreview ? (
+                        <div style={{ position: 'relative', width: '100%', height: '140px', borderRadius: '12px', overflow: 'hidden', border: '1px solid #E6EDF7' }}>
+                          {/* next/image 는 blob: URL 을 최적화하지 못한다 — 미리보기는 <img> 로 둔다 */}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={evidencePreview} alt="첨부한 증거 사진" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                          <button
+                            type="button"
+                            onClick={clearEvidence}
+                            disabled={submitting}
+                            style={{ position: 'absolute', top: '8px', right: '8px', border: 'none', cursor: submitting ? 'default' : 'pointer', background: 'rgba(23,35,60,.72)', color: '#fff', borderRadius: '999px', padding: '5px 11px', fontSize: '11.5px', fontWeight: 700 }}
+                          >
+                            다시 고르기
+                          </button>
+                        </div>
+                      ) : (
+                        <div
+                          onClick={() => evidenceInputRef.current?.click()}
+                          style={{ width: '100%', height: '140px', borderRadius: '12px', background: '#F6F9FE', border: '1px dashed #B4C2D6', display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'center', justifyContent: 'center', color: '#8FAAD0', fontSize: '13px', cursor: 'pointer' }}
+                        >
+                          <span>사진을 첨부해 주세요</span>
+                          <span style={{ fontSize: '11px' }}>JPG · PNG · WebP · {MAX_EVIDENCE_LABEL} 까지</span>
+                        </div>
+                      )}
                     </div>
                   )}
 
                 </div>
-                <button onClick={submitReport} disabled={!canSubmit} style={{ border: 'none', cursor: canSubmit ? 'pointer' : 'default', color: canSubmit ? '#fff' : '#A8BCD9', background: canSubmit ? '#E0554E' : '#EDF2FA', borderRadius: '12px', padding: '13px 16px', fontSize: '14px', fontWeight: 700 }}>신고 접수</button>
+                <button onClick={submitReport} disabled={!canSubmit || submitting} style={{ border: 'none', cursor: canSubmit && !submitting ? 'pointer' : 'default', color: canSubmit && !submitting ? '#fff' : '#A8BCD9', background: canSubmit && !submitting ? '#E0554E' : '#EDF2FA', borderRadius: '12px', padding: '13px 16px', fontSize: '14px', fontWeight: 700 }}>{submitting ? '접수 중…' : '신고 접수'}</button>
               </div>
             </div>
 
@@ -423,9 +566,9 @@ export default function SettingsPage() {
               <span style={{ fontSize: '16px', fontWeight: 700, color: '#1E3557' }}>탈퇴하시겠습니까?</span>
               <span style={{ fontSize: '13px', color: '#8FAAD0', lineHeight: 1.55, paddingBottom: '18px' }}>탈퇴 후 <b style={{ color: '#2F63B8' }}>14일</b> 안에 다시 로그인하면<br/>되돌릴 수 있어요. 14일이 지나면 이용 내역 · 경고 ·<br/>신고 기록이 모두 영구 삭제됩니다.</span>
               <div style={{ display: 'flex', width: 'calc(100% + 40px)', borderTop: '1px solid #EDF2F9' }}>
-                <button onClick={() => setWithdrawOpen(false)} style={{ flex: 1, border: 'none', cursor: 'pointer', color: '#2F63B8', background: 'transparent', padding: '14px', fontSize: '15px', fontWeight: 600 }}>취소</button>
+                <button onClick={() => setWithdrawOpen(false)} disabled={withdrawPending} style={{ flex: 1, border: 'none', cursor: withdrawPending ? 'default' : 'pointer', color: '#2F63B8', background: 'transparent', padding: '14px', fontSize: '15px', fontWeight: 600 }}>취소</button>
                 <div style={{ width: '1px', background: '#EDF2F9' }}></div>
-                <button onClick={handleWithdraw} style={{ flex: 1, border: 'none', cursor: 'pointer', color: '#E0554E', background: 'transparent', padding: '14px', fontSize: '15px', fontWeight: 700 }}>탈퇴하기</button>
+                <button onClick={handleWithdraw} disabled={withdrawPending} style={{ flex: 1, border: 'none', cursor: withdrawPending ? 'default' : 'pointer', color: withdrawPending ? '#A8BCD9' : '#E0554E', background: 'transparent', padding: '14px', fontSize: '15px', fontWeight: 700 }}>{withdrawPending ? '처리 중…' : '탈퇴하기'}</button>
               </div>
             </div>
           </div>
