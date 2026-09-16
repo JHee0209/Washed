@@ -18,6 +18,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { auth } from '@/auth';
+import { withdrawPendingBlock } from '@/lib/account-guard';
 import { sql } from '@/lib/db';
 import { evidenceDeleteAfter, evidenceUrl } from '@/lib/evidence-storage';
 import { MAX_EVIDENCE_BYTES, validateReportInput } from '@/lib/report-rules';
@@ -31,6 +32,11 @@ export async function POST(request: Request) {
   if (!userId) {
     return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
   }
+
+  // 05 P24 — 탈퇴를 신청하면 즉시 이용이 정지된다. 화면만 막으면 이 라우트를 직접
+  // 부르는 길이 남는다.
+  const blocked = withdrawPendingBlock(session);
+  if (blocked) return blocked;
 
   // ── 2. 폼 읽기
   let form: FormData;

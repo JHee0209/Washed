@@ -119,29 +119,43 @@ export async function listMachines(): Promise<Machine[]> {
  * 종류별 대기 인원 (05 P2).
  * 저장하지 않고 그때그때 센다 — 06 「대기 인원은 저장하지 않는다」.
  * 빈 기기가 있으면 0명, 없으면 그 종류에 줄 선 사람 수.
+ *
+ * 이 함수는 **대기 인원을 세는 규칙의 유일한 곳**이다 (08 · 2번 · 3번 — 「규칙을
+ * 대기열 조회 API 한 곳에만 둔다」). 홈(F1)과 관리자(F23)가 같은 숫자를 보는 이유다.
+ *
+ * ── 「빈 기기」 판정이 배정과 글자까지 같아야 한다
+ * `사용가능` 이지만 **이미 어느 줄이 물고 있는** 기기는 배정에 쓸 수 없다
+ * (src/lib/assignment.ts 의 locked_free 가 같은 NOT EXISTS 로 거른다). 조건이 두
+ * 곳에서 갈리면 「빈 기기가 있다고 0명이라 적어 놓고 실제로는 아무도 배정되지 않는」
+ * 자리가 생긴다. 바꿀 때는 두 곳을 함께 본다.
+ *
+ * 두 종류를 늘 돌려주므로 부르는 쪽이 `?? 0` 을 붙이지 않아도 된다.
  */
 export async function queueCounts(): Promise<Record<string, number>> {
-  const rows = await sql<{ machine_kind: string; n: number }>`
-    SELECT machine_kind, COUNT(*)::int AS n
-      FROM queue
-     WHERE status = '대기 중'
-     GROUP BY machine_kind
+  const rows = await sql<{ kind: string; waiting: number; free: number }>`
+    SELECT k.kind,
+           (SELECT COUNT(*)::int FROM queue q
+             WHERE q.machine_kind = k.kind AND q.status = '대기 중') AS waiting,
+           (SELECT COUNT(*)::int FROM machines m
+             WHERE m.kind = k.kind AND m.status = '사용가능'
+               AND NOT EXISTS (SELECT 1 FROM queue q2 WHERE q2.machine_id = m.machine_id)
+           ) AS free
+      FROM (VALUES ('세탁기'), ('건조기')) AS k(kind)
   `;
-  const free = await sql<{ kind: string; n: number }>`
-    SELECT kind, COUNT(*)::int AS n
-      FROM machines
-     WHERE status = '사용가능'
-     GROUP BY kind
-  `;
-  const freeBy = new Map(free.map((f) => [f.kind, f.n]));
   const out: Record<string, number> = {};
   for (const r of rows) {
-    out[r.machine_kind] = (freeBy.get(r.machine_kind) ?? 0) > 0 ? 0 : r.n;
+    out[r.kind] = r.free > 0 ? 0 : r.waiting;
   }
   return out;
 }
 
-/** 내 줄서기 (F2 · F3 · 06 「줄서기」) */
+/**
+ * 내 줄서기 (F2 · F3 · F5 · F6 · 06 「줄서기」)
+ *
+ * `server_now` 를 함께 돌려주는 것이 요점이다 — 화면은 남은 시간을 「서버가 준
+ * 마감 시각 − 서버가 준 지금」으로만 그린다. 브라우저 시계로 만료를 판정하지
+ * 않는다 (08 · 4번). `assigned_at` 도 같은 이유로 내려보낸다.
+ */
 export async function myQueue(userId: string) {
   const rows = await sql<{
     queue_id: string;
@@ -150,18 +164,56 @@ export async function myQueue(userId: string) {
     machine_name: string | null;
     status: string;
     queued_at: string;
+    assigned_at: string | null;
     assign_deadline_at: string | null;
     pickup_deadline_at: string | null;
+    server_now: string;
+    /** 05 P2 — 내 앞에 몇 명이 더 기다리는지 (대기 중일 때만 뜻이 있다) */
+    ahead: number;
   }>`
     SELECT q.queue_id, q.machine_kind, q.machine_id, m.name AS machine_name,
-           q.status, q.queued_at, q.assign_deadline_at, q.pickup_deadline_at
+           q.status, q.queued_at, q.assigned_at, q.assign_deadline_at, q.pickup_deadline_at,
+           now() AS server_now,
+           (SELECT COUNT(*)::int FROM queue o
+             WHERE o.machine_kind = q.machine_kind
+               AND o.status = '대기 중'
+               AND (o.queued_at, o.queue_id) < (q.queued_at, q.queue_id)) AS ahead
       FROM queue q
       LEFT JOIN machines m ON m.machine_id = q.machine_id
      WHERE q.user_id = ${userId}
-       AND q.status IN ('대기 중', '배정됨', '사용 중')
+       AND q.status IN ('대기 중', '배정', '사용중', '수거대기')
      ORDER BY q.queued_at
   `;
   return rows;
+}
+
+/**
+ * 종류별 예상 대기 (05 P2 · 08 · 2번).
+ *
+ * 05 P2 — 「대기자가 없을 때의 예상 대기는 **그 종류에서 가장 먼저 끝나는 기기의
+ * 남은 시간**이다」. 프로토타입이 `washed_typequeue.waitLeftMs` 로 화면끼리
+ * 넘기던 값이 이것이고, 서버로 옮기면 조회할 때마다 세면 된다(06 「대기 인원 ·
+ * 혼잡도 · 예상 대기는 저장하지 않는다」).
+ *
+ * 돌아가는 기기가 하나도 없으면 `null` 이다 — 언제 빌지 알 수 없다는 뜻이고,
+ * 화면은 그때 카운트다운을 그리지 않는다. 05 에 없는 숫자를 지어내지 않는다.
+ */
+export async function kindWaitEstimates(): Promise<{
+  serverNow: string;
+  byKind: Record<string, string | null>;
+}> {
+  const rows = await sql<{ kind: string; soonest_ends_at: string | null; server_now: string }>`
+    SELECT k.kind,
+           (SELECT MIN(m.ends_at) FROM machines m
+             WHERE m.kind = k.kind AND m.status = '사용중' AND m.ends_at IS NOT NULL
+           ) AS soonest_ends_at,
+           now() AS server_now
+      FROM (VALUES ('세탁기'), ('건조기')) AS k(kind)
+  `;
+  const byKind: Record<string, string | null> = {};
+  for (const r of rows) byKind[r.kind] = r.soonest_ends_at;
+  // 두 종류를 늘 돌려주는 질의라 rows 가 비는 일은 없다.
+  return { serverNow: rows[0].server_now, byKind };
 }
 
 /** 이용 내역 (F13 · 06 「이용 내역」 · 조회는 30일 · P21) */

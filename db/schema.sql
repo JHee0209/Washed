@@ -210,9 +210,14 @@ CREATE TABLE IF NOT EXISTS warnings (
   issued_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- 기록 화면(최근 30일 · 05 P21) · 관리자 조회 · 3개월 삭제 배치 (05 SP4 · 08 · 9번)
+-- 기록 화면(최근 30일 · 05 P21) · 관리자 조회 (05 SP4)
 CREATE INDEX IF NOT EXISTS warnings_user_issued_at_idx
   ON warnings (user_id, issued_at DESC);
+
+-- 3개월 삭제 배치 (05 SP4 · 08 · 9번 · 0007). 배치는 사람을 가리지 않고 시각만 보므로
+-- 위의 (user_id, issued_at) 인덱스가 쓰이지 않는다.
+CREATE INDEX IF NOT EXISTS warnings_issued_at_idx
+  ON warnings (issued_at);
 
 
 -- -----------------------------------------------------------------------------
@@ -297,9 +302,14 @@ CREATE TABLE IF NOT EXISTS reports (
   )
 );
 
--- 관리자 신고 내역 목록 (F24) · 3개월 삭제 배치 (05 SP4 · P23 · 08 · 9번)
+-- 관리자 신고 내역 목록 (F24)
 CREATE INDEX IF NOT EXISTS reports_status_created_at_idx
   ON reports (status, created_at DESC);
+
+-- 3개월 삭제 배치 (05 SP4 · P23 · 08 · 9번 · 0007). 배치는 상태를 가리지 않고 접수
+-- 시각만 보므로 위의 (status, created_at) 인덱스가 쓰이지 않는다.
+CREATE INDEX IF NOT EXISTS reports_created_at_idx
+  ON reports (created_at);
 
 
 -- -----------------------------------------------------------------------------
@@ -339,9 +349,14 @@ CREATE TABLE IF NOT EXISTS notifications (
   received_at     timestamptz NOT NULL DEFAULT now()
 );
 
--- 알림함 목록 · 안 읽은 개수 · 30일 삭제 배치 (05 P14 · 08 · 5번)
+-- 알림함 목록 · 안 읽은 개수 (05 P14 · 08 · 5번)
 CREATE INDEX IF NOT EXISTS notifications_user_received_at_idx
   ON notifications (user_id, received_at DESC);
+
+-- 30일 · 「공지」 3개월 삭제 배치 (05 P14 · 08 · 9번 · 0007). 배치는 사람을 가리지
+-- 않고 받은 시각만 보므로 위의 (user_id, received_at) 인덱스가 쓰이지 않는다.
+CREATE INDEX IF NOT EXISTS notifications_received_at_idx
+  ON notifications (received_at);
 
 
 -- -----------------------------------------------------------------------------
@@ -367,9 +382,14 @@ CREATE TABLE IF NOT EXISTS usage_history (
   -- 사생 기록 화면은 최근 30일만 보여준다 (05 P21 · SP4 · 08 · 9번).
 );
 
--- 기록 화면 30일 · 관리자 3개월 조회 · 삭제 배치 (05 P17 · P21 · 08 · 9번)
+-- 기록 화면 30일 · 관리자 3개월 조회 (05 P17 · P21)
 CREATE INDEX IF NOT EXISTS usage_history_user_started_at_idx
   ON usage_history (user_id, started_at DESC);
+
+-- 3개월 삭제 배치 (05 P17 · SP4 · 08 · 9번 · 0007). 배치는 사람을 가리지 않고 시작
+-- 시각만 보므로 위의 (user_id, started_at) 인덱스가 쓰이지 않는다.
+CREATE INDEX IF NOT EXISTS usage_history_started_at_idx
+  ON usage_history (started_at);
 
 
 -- -----------------------------------------------------------------------------

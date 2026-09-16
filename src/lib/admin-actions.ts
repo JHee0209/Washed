@@ -12,8 +12,10 @@
 import { revalidatePath } from 'next/cache';
 
 import { requireAdmin } from '@/lib/admin-session';
+import { drainQueue } from '@/lib/assignment';
 import { sql } from '@/lib/db';
 import { notify } from '@/lib/notify';
+import { queueCounts } from '@/lib/queries';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 조회
@@ -39,28 +41,41 @@ export async function adminMachines() {
   `;
 }
 
-/** 탭 2 — 실시간 대기열 현황 (F23) */
+/**
+ * 탭 2 — 실시간 대기열 현황 (F23)
+ *
+ * `counts` 는 홈 화면(F1 · `/api/machines`)이 쓰는 것과 **같은 함수**
+ * (`queries.ts::queueCounts()`)에서 나온 값이다 — 대기 인원 세는 규칙(05 P2 · 08
+ * 3번)을 여기서 다시 계산하지 않는다. 두 화면의 숫자가 항상 같은 이유가 이것이다.
+ */
 export async function adminQueue() {
   await requireAdmin();
-  return sql<{
-    queue_id: string;
-    user_name: string;
-    room: string;
-    machine_kind: string;
-    machine_name: string | null;
-    status: string;
-    queued_at: string;
-    waited_minutes: number;
-  }>`
-    SELECT q.queue_id, u.name AS user_name, u.room, q.machine_kind,
-           m.name AS machine_name, q.status, q.queued_at,
-           FLOOR(EXTRACT(EPOCH FROM (now() - q.queued_at)) / 60)::int AS waited_minutes
-      FROM queue q
-      JOIN users u ON u.user_id = q.user_id
-      LEFT JOIN machines m ON m.machine_id = q.machine_id
-     WHERE q.status IN ('대기 중', '배정됨', '사용 중')
-     ORDER BY q.machine_kind, q.queued_at
-  `;
+  const [rows, counts] = await Promise.all([
+    sql<{
+      queue_id: string;
+      user_name: string;
+      room: string;
+      machine_kind: string;
+      machine_name: string | null;
+      status: string;
+      queued_at: string;
+      waited_minutes: number;
+    }>`
+      SELECT q.queue_id, u.name AS user_name, u.room, q.machine_kind,
+             m.name AS machine_name, q.status, q.queued_at,
+             FLOOR(EXTRACT(EPOCH FROM (now() - q.queued_at)) / 60)::int AS waited_minutes
+        FROM queue q
+        JOIN users u ON u.user_id = q.user_id
+        LEFT JOIN machines m ON m.machine_id = q.machine_id
+       WHERE q.status IN ('대기 중', '배정', '사용중', '수거대기')
+       ORDER BY q.machine_kind, q.queued_at
+    `,
+    queueCounts(),
+  ]);
+  return {
+    rows,
+    counts: { 세탁기: counts['세탁기'] ?? 0, 건조기: counts['건조기'] ?? 0 },
+  };
 }
 
 /** 탭 3 — 신고 내역 (F27) */
@@ -193,18 +208,40 @@ export async function adminUsers() {
 // 동작
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 기기 상태 바꾸기 — 고장 표시 · 복구 (F24 · 05 P13) */
+/**
+ * 기기 상태 바꾸기 — 고장 표시 · 복구 · 강제 사용가능 (F24 · 05 P10)
+ *
+ * 05 P10 — 「사용 중인 기기는 관리자 페이지에서 **강제 사용가능** 처리로 비운 뒤에만
+ * 고장으로 바꿀 수 있다」. 그 「비운다」가 기기 상태만 바꾸는 것이 아니다 — 그 기기를
+ * 물고 있던 **줄도 함께 놓아야** 한다. 안 놓으면 queue 행이 그 machine_id 를 계속
+ * 쥐고 있어서 `queue_machine_once_idx` 때문에 **그 기기는 다시는 배정되지 않는다**
+ * (cancelQueue 가 같은 이유로 기기를 반납한다 · src/lib/assignment.ts 의 NOT EXISTS).
+ */
 export async function setMachineStatus(machineId: string, status: string) {
   await requireAdmin();
   if (!['사용가능', '사용중', '고장', '점검중'].includes(status)) {
     throw new Error('알 수 없는 상태입니다.');
   }
+
+  // 기기를 사용자 손에서 떼어내는 상태로 갈 때는 물려 있던 줄을 먼저 지운다.
+  // 「종료」는 저장되는 상태가 아니라 행 자체를 지우는 것이다 (05 상태값 · 06 「줄서기」).
+  if (status !== '사용중') {
+    await sql`DELETE FROM queue WHERE machine_id = ${machineId}`;
+  }
+
   await sql`
     UPDATE machines
        SET status = ${status},
            ends_at = CASE WHEN ${status} = '사용중' THEN ends_at ELSE NULL END
      WHERE machine_id = ${machineId}
   `;
+
+  // 05 P2 — 방금 빈 기기를 기다리던 다음 사람에게 넘긴다. 배정 판정은 서버가 한다
+  // (08 · 3번). 다음 사람의 10분은 **기기가 사용가능이 된 지금**부터 센다 (08 · 4번).
+  if (status === '사용가능') {
+    await drainQueue();
+    revalidatePath('/home');
+  }
   revalidatePath('/admin');
 }
 
@@ -217,9 +254,38 @@ export async function addMachine(name: string, kind: string) {
   revalidatePath('/admin');
 }
 
-/** 기기 삭제 (F24) — 이용 내역은 machine_id 가 NULL 로 남는다(내역은 지우지 않는다) */
+/**
+ * 기기 삭제 (F24) — 이용 내역은 machine_id 가 NULL 로 남는다(내역은 지우지 않는다).
+ *
+ * Issue #5 — **배정 · 사용중 · 수거대기인 줄이 이 기기를 물고 있는 동안은 지우지
+ * 않는다.** `queue.machine_id` 의 FK 는 `ON DELETE SET NULL` 이라 지워도 SQL
+ * 오류는 나지 않지만, 그러면 `queue.status` 는 '배정'(또는 '사용중' · '수거대기')
+ * 그대로인데 `machine_id` 만 NULL 로 남는 고아 줄이 생긴다 — 그 사람은 QR 을 찍을
+ * 기기가 없는 채로 10분(05 P3) 타이머만 돌게 된다.
+ *
+ * 자동으로 다른 기기에 옮겨 주는 것(재배정)은 여기서 만들지 않는다 — 그 판정은
+ * drainQueue() 의 몫이 아니고, 정상적으로 대기 중(machine_id 가 아직 없는) 사람들
+ * 사이에 새치기를 만들 뿐이다. 가장 보수적으로 **삭제 자체를 막아**, 관리자가 먼저
+ * 그 사람의 줄을 정리(취소 · 사용 종료 — Issue #6 · #7 · #8 범위)한 뒤 지우게 한다.
+ *
+ * 대기 중(machine_id 가 NULL)인 일반 대기열은 이 기기를 가리키지 않으므로 영향이
+ * 없다 — 아래 조회가 machine_id 로 좁히기 때문에 애초에 걸리지 않는다.
+ */
 export async function removeMachine(machineId: string) {
   await requireAdmin();
+
+  const blocking = await sql<{ status: string; n: number }>`
+    SELECT status, COUNT(*)::int AS n
+      FROM queue
+     WHERE machine_id = ${machineId}
+       AND status IN ('배정', '사용중', '수거대기')
+     GROUP BY status
+  `;
+  if (blocking.length > 0) {
+    const detail = blocking.map((b) => `${b.status} ${b.n}건`).join(', ');
+    throw new Error(`이 기기를 이용 중인 줄이 있어 삭제할 수 없습니다 (${detail}). 먼저 정리한 뒤 다시 시도해주세요.`);
+  }
+
   await sql`DELETE FROM machines WHERE machine_id = ${machineId}`;
   revalidatePath('/admin');
 }
@@ -476,9 +542,28 @@ export async function removeNotice(noticeId: string) {
   revalidatePath('/notifications');
 }
 
-/** 대기열에서 빼기 (F23) — 관리자가 막힌 줄을 푸는 자리 */
+/**
+ * 대기열에서 빼기 (F23) — 관리자가 막힌 줄을 푸는 자리.
+ *
+ * 「종료」는 저장되는 상태가 아니다(05 상태값) — `queue` 에는 취소됨 같은 상태값이
+ * 없고(`db/schema.sql` 의 CHECK 는 대기 중 · 배정 · 사용중 · 수거대기 뿐이다), 끝난
+ * 줄은 행 자체를 지운다. 배정된 줄을 지울 때는 물려 있던 기기도 함께 반납해야
+ * 한다 — 안 그러면 그 기기가 영원히 「사용중」으로 남는다.
+ */
 export async function cancelQueue(queueId: string) {
   await requireAdmin();
-  await sql`UPDATE queue SET status = '취소됨' WHERE queue_id = ${queueId}`;
+  await sql`
+    WITH removed AS (
+      DELETE FROM queue WHERE queue_id = ${queueId} RETURNING machine_id
+    )
+    UPDATE machines SET status = '사용가능', ends_at = NULL
+     WHERE machine_id = (SELECT machine_id FROM removed WHERE machine_id IS NOT NULL)
+  `;
+
+  // 05 P2 — 반납된 기기를 기다리던 다음 사람에게 곧바로 넘긴다. 이 호출이 없으면
+  // 기기는 비어 있는데 대기자는 계속 기다리는 상태로 남는다 (08 · 3번).
+  // 다음 사람의 10분은 여기서부터 센다 — 앞사람의 3분은 들어가지 않는다 (08 · 4번).
+  await drainQueue();
   revalidatePath('/admin');
+  revalidatePath('/home');
 }
