@@ -15,7 +15,15 @@ import type { NextAuthConfig } from 'next-auth';
 import Google from 'next-auth/providers/google';
 
 /** 로그인해야 들어갈 수 있는 자리 (07 흐름표) */
-const PROTECTED = ['/home', '/history', '/settings', '/notifications', '/profile'];
+const PROTECTED = ['/home', '/history', '/settings', '/notifications', '/profile', '/withdraw'];
+
+/**
+ * 탈퇴 복구 안내 (05 P24 · F36).
+ *
+ * 탈퇴를 신청한 사람이 갈 수 있는 **유일한** 보호 화면이다. 반대로 정상 계정이
+ * 여기로 오면 홈으로 돌려보낸다 — 신청하지도 않은 사람에게 보일 화면이 아니다.
+ */
+const WITHDRAW_NOTICE = '/withdraw';
 
 /** 로그인 전 화면 — 이미 로그인했으면 홈으로 돌려보낸다 */
 const GUEST_ONLY = ['/login', '/signup', '/password-reset'];
@@ -65,7 +73,26 @@ export const authConfig = {
         return Response.redirect(new URL('/signup?google=1', request.nextUrl));
       }
 
-      if (PROTECTED.some((p) => pathname.startsWith(p))) return signedIn;
+      const inProtected = PROTECTED.some((p) => pathname.startsWith(p));
+
+      // 05 P24 — 탈퇴를 신청하면 즉시 이용이 정지되고 복구 안내만 볼 수 있다.
+      // **로그인 자체는 막지 않는다**(auth.ts 의 authorize 가 통과시킨다) — 잠가 두면
+      // 복구할 길까지 함께 막힌다. 대신 홈으로 가려는 것을 여기서 가른다(07 흐름표
+      // 「탈퇴 대기 계정으로 로그인하면 → 복구 안내」).
+      if (signedIn && Boolean(auth?.withdrawPending)) {
+        if (pathname.startsWith(WITHDRAW_NOTICE)) return true;
+        if (inProtected || GUEST_ONLY.some((p) => pathname.startsWith(p))) {
+          return Response.redirect(new URL(WITHDRAW_NOTICE, request.nextUrl));
+        }
+        return true;
+      }
+
+      // 탈퇴를 신청하지 않은 사람에게는 복구 안내가 보일 이유가 없다.
+      if (signedIn && pathname.startsWith(WITHDRAW_NOTICE)) {
+        return Response.redirect(new URL('/home', request.nextUrl));
+      }
+
+      if (inProtected) return signedIn;
 
       if (signedIn && GUEST_ONLY.some((p) => pathname.startsWith(p))) {
         return Response.redirect(new URL('/home', request.nextUrl));
@@ -80,6 +107,8 @@ export const authConfig = {
       session.user.email = (token.email as string) ?? '';
       session.user.name = (token.name as string) ?? '';
       session.pendingSignup = Boolean(token.pendingSignup);
+      // 05 P24 — 라우트 핸들러가 추가 조회 없이 탈퇴 대기 여부를 볼 수 있게 한다.
+      session.withdrawPending = Boolean(token.withdrawPending);
       return session;
     },
   },

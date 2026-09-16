@@ -9,6 +9,7 @@
 // 갈아 끼운다.
 
 import { auth } from '@/auth';
+import { withdrawPendingBlock } from '@/lib/account-guard';
 import { sql } from '@/lib/db';
 
 export const runtime = 'nodejs';
@@ -19,6 +20,11 @@ export async function POST(request: Request) {
   if (!userId) {
     return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
   }
+
+  // 05 P24 — 탈퇴 대기 계정에는 폰 알림을 새로 붙이지 않는다. (아래 DELETE 는 막지
+  // 않는다 — 구독을 **거두는** 일까지 막을 이유가 없다.)
+  const blocked = withdrawPendingBlock(session);
+  if (blocked) return blocked;
 
   let body: unknown;
   try {
