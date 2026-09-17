@@ -59,8 +59,11 @@ export default function NotificationPrompt() {
   // 이미 허용한 기기면 서버에 구독이 남아 있도록 조용히 맞춘다.
   // (열쇠가 회전되거나 서버 행이 지워졌을 수 있다.)
   useEffect(() => {
-    if (permission === 'granted') syncPushSubscription();
-  }, [permission]);
+    // allow()가 이미 enablePush()로 구독/저장을 진행 중일 때 같은 registration에
+    // syncPushSubscription()이 동시에 끼어들면 두 흐름이 경쟁하다 enablePush()
+    // 쪽이 settle되지 않아 "등록 중..."이 영영 풀리지 않는 경우가 있었다.
+    if (permission === 'granted' && !pending) syncPushSubscription();
+  }, [permission, pending]);
 
   async function allow() {
     setPending(true);
