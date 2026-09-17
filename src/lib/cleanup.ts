@@ -28,7 +28,11 @@ import {
   deleteEvidenceForWithdrawnUsers,
   deleteExpiredEvidence,
 } from '@/lib/evidence-storage';
-import { liftExpiredRestrictions, resetMonthlyWarnings } from '@/lib/expiration';
+import {
+  expireOverdueAssignments,
+  liftExpiredRestrictions,
+  resetMonthlyWarnings,
+} from '@/lib/expiration';
 import {
   noticeCutoff,
   notificationCutoffs,
@@ -64,6 +68,13 @@ export type CleanupResult = {
   liftedRestrictions: number;
   /** 05 P7 — 매달 1일(KST)에 경고 0회로 초기화된 사람 수. 그날이 아니면 0 */
   monthlyWarningReset: number;
+  /**
+   * 05 P3 — 10분 안에 QR 인증이 없어 배정이 풀리고 경고가 매겨진 건수.
+   *
+   * 이 배치는 **백스톱일 뿐**이다 — 실제로는 POST /api/queue/[kind] 가 줄서기 때마다
+   * 먼저 훑어 하루를 기다리지 않는다(트래픽이 없을 때만 이 값이 의미를 갖는다).
+   */
+  expiredAssignments: number;
   /** 실패한 단계의 이름. 비어 있으면 전부 성공이다 */
   failed: string[];
 };
@@ -263,6 +274,7 @@ export async function runDailyCleanup(now: Date = new Date()): Promise<CleanupRe
     purgedUserEvidence: 0,
     liftedRestrictions: 0,
     monthlyWarningReset: 0,
+    expiredAssignments: 0,
     failed: [],
   };
 
@@ -320,6 +332,12 @@ export async function runDailyCleanup(now: Date = new Date()): Promise<CleanupRe
     const purged = await purgeWithdrawnUsers(now);
     result.purgedUsers = purged.users;
     result.purgedUserEvidence = purged.evidence;
+  });
+
+  // 05 P3 — 배정 10분 만료의 **백스톱**이다. 실제로는 POST /api/queue/[kind] 가
+  // 줄서기 때마다 먼저 훑으므로, 이 단계는 그 사이 트래픽이 없었을 때만 의미가 있다.
+  await step('expiredAssignments', async () => {
+    result.expiredAssignments = await expireOverdueAssignments(now);
   });
 
   // 05 P7 — 3일 제한이 끝난 사람. 아래 매달 1일 초기화와 최종 상태가 같아
