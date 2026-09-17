@@ -63,17 +63,24 @@ const SYSTEM_WARNING_DESCRIPTION: Record<SystemWarningReason, string> = {
  * **알림 허용 여부를 보지 않는다** — notify() 를 그대로 부르므로, 허용하지 않았거나
  * 구독이 끊긴 사람도 알림함 기록은 똑같이 생긴다(05 P26). 실패해도 경고 자체는
  * 이미 쌓인 뒤라 되돌리지 않는다(admin-actions.ts issueWarning 과 같은 판단).
+ *
+ * `usageHistoryId` — 05 P6 · 0008. '수거 미완료'는 expireOverduePickups() 가 방금
+ * 만든 usage_history 행을 그대로 넘긴다(항상 새 행이라 부분 UNIQUE 인덱스에 걸릴
+ * 일이 없다). '배정 후 미인증'은 usage_history 자체가 없어 넘기지 않는다 —
+ * 그 칸은 NULL로 남고, admin-actions.ts 의 관리자 교차 중복 검사 대상에서도 자연히
+ * 빠진다(P3는 신고로 관찰할 수 없는 사건이라 원래도 대상이 아니다).
  */
 async function applySystemWarning(
   userId: string,
   reason: SystemWarningReason,
   now: Date,
+  usageHistoryId?: string,
 ): Promise<void> {
   const nowIso = now.toISOString();
 
   await sql`
-    INSERT INTO warnings (user_id, reason, issued_by)
-    VALUES (${userId}, ${reason}, '시스템 자동')
+    INSERT INTO warnings (user_id, reason, issued_by, usage_history_id)
+    VALUES (${userId}, ${reason}, '시스템 자동', ${usageHistoryId ?? null})
   `;
 
   await sql`
@@ -238,13 +245,16 @@ export async function expireOverduePickups(now: Date = new Date()): Promise<numb
       ? new Date(new Date(row.ends_at).getTime() - runMinutes * 60 * 1000)
       : new Date(new Date(row.pickup_deadline_at).getTime() - (runMinutes + 3) * 60 * 1000);
 
-    await sql`
+    const inserted = await sql<{ history_id: string }>`
       INSERT INTO usage_history (user_id, machine_id, started_at, ended_at, result)
       VALUES (${row.user_id}, ${row.machine_id}, ${startedAt.toISOString()}::timestamptz,
               ${row.pickup_deadline_at}::timestamptz, '경고')
+      RETURNING history_id
     `;
 
-    await applySystemWarning(row.user_id, '수거 미완료', now);
+    // 05 P6 — 이 usage_history 행을 사건 참조로 남긴다. 관리자가 F28에서 같은 행을
+    // 골라 경고를 또 주려 하면 warnings_usage_history_id_idx 가 막는다.
+    await applySystemWarning(row.user_id, '수거 미완료', now, inserted[0]?.history_id);
   }
 
   return expired.length;

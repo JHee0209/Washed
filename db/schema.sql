@@ -208,6 +208,9 @@ CREATE TABLE IF NOT EXISTS warnings (
 
   -- 06 「부여 시각」
   issued_at  timestamptz NOT NULL DEFAULT now()
+
+  -- 06 「사건 참조(이용 내역, 선택 · 05 P6)」는 usage_history 뒤에서 ALTER 로 붙인다
+  -- (0008) — usage_history 가 이 표보다 뒤(8번)에 있어 여기서는 아직 참조할 수 없다.
 );
 
 -- 기록 화면(최근 30일 · 05 P21) · 관리자 조회 (05 SP4)
@@ -390,6 +393,17 @@ CREATE INDEX IF NOT EXISTS usage_history_user_started_at_idx
 -- 시각만 보므로 위의 (user_id, started_at) 인덱스가 쓰이지 않는다.
 CREATE INDEX IF NOT EXISTS usage_history_started_at_idx
   ON usage_history (started_at);
+
+-- 05 P6 · 0008 — 경고의 「사건 참조」. usage_history 뒤에 두는 이유는 warnings 표
+-- 자체(4번)의 주석에 있다. 자동(P5 수거 미완료)·관리자(F28 「경고 주기」) 양쪽이
+-- 같은 usage_history 행을 가리키면 아래 부분 UNIQUE 인덱스가 두 번째를 거부한다.
+ALTER TABLE warnings
+  ADD COLUMN IF NOT EXISTS usage_history_id uuid NULL
+    REFERENCES usage_history(history_id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS warnings_usage_history_id_idx
+  ON warnings (usage_history_id)
+  WHERE usage_history_id IS NOT NULL;
 
 
 -- -----------------------------------------------------------------------------

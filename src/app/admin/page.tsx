@@ -44,12 +44,15 @@ export default async function AdminPage({
   const { tab: rawTab } = await searchParams;
   const tab = TABS.some((t) => t.key === rawTab) ? rawTab! : 'dashboard';
 
-  // 탭마다 필요한 것만 읽는다 — 일곱 개를 매번 다 읽지 않는다
+  // 탭마다 필요한 것만 읽는다 — 일곱 개를 매번 다 읽지 않는다.
+  // history 는 'users' 탭에서도 읽는다 — 05 P6 · 0008: F29 「이용 내역 관련 경고」
+  // 드롭다운이 그 사용자의 최근 이용 내역을 골라야 해서, adminHistory() 를 새로
+  // 만들지 않고 그대로 재사용한다(같은 3개월 · 300건 조회).
   const data = {
     machines: tab === 'dashboard' ? await adminMachines() : [],
     queue: tab === 'queue' ? await adminQueue() : { rows: [], counts: { 세탁기: 0, 건조기: 0 } },
     reports: tab === 'reports' ? await adminReports() : [],
-    history: tab === 'history' ? await adminHistory() : [],
+    history: tab === 'history' || tab === 'users' ? await adminHistory() : [],
     warnings: tab === 'warnings' ? await adminWarnings() : [],
     notices: tab === 'notice' ? await adminNotices() : [],
     users: tab === 'users' ? await adminUsers() : [],
