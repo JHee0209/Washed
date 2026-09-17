@@ -5,6 +5,7 @@
 
 'use client';
 
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
 import {
@@ -77,6 +78,7 @@ type Data = {
     is_restricted: boolean;
     days_left: number | null;
     last_reason: string | null;
+    recent_month_count: number;
   }[];
   notices: { notice_id: string; title: string; body: string; created_at: string }[];
   users: {
@@ -90,6 +92,10 @@ type Data = {
     signup_method: string;
     created_at: string;
     withdraw_requested_at: string | null;
+    warning_count: number;
+    restricted_until: string | null;
+    is_restricted: boolean;
+    days_left: number | null;
   }[];
 };
 
@@ -532,6 +538,9 @@ function Warnings({ rows }: { rows: Data['warnings'] }) {
       >
         경고 <strong>3회</strong>가 쌓이면 <strong>3일</strong> 동안 줄서기가 자동으로 제한됩니다.
         제한이 끝나면 경고는 0회로 초기화되고, 매달 1일에도 초기화됩니다. (05 P7)
+        <br />
+        경고 기록은 <strong>최근 1개월</strong>만 보관·조회할 수 있어요 — 「현재 경고」(제재 횟수)와
+        「최근 1개월 경고 이력」(기록 건수)은 서로 다른 값일 수 있습니다. (05 SP4)
       </div>
 
       <Table cols={['사용자', '학번', '호실', '경고', '최근 사유', '제한', '']}>
@@ -539,34 +548,25 @@ function Warnings({ rows }: { rows: Data['warnings'] }) {
           <EmptyRow span={7} text="경고를 받은 사용자가 없어요." />
         ) : (
           rows.map((w) => (
-            <tr key={w.user_id}>
-              <td style={{ ...cell, fontWeight: 700 }}>{w.user_name}</td>
+            <tr key={w.user_id} id={`user-${w.user_id}`}>
+              <td style={{ ...cell, fontWeight: 700 }}>
+                {/* Issue #28 — 사용자 목록 탭의 같은 사용자 행으로 이동 */}
+                <Link href={`/admin?tab=users#user-${w.user_id}`} style={{ color: 'inherit' }}>
+                  {w.user_name}
+                </Link>
+              </td>
               <td style={cell}>{w.student_id}</td>
               <td style={cell}>{w.room}</td>
               <td style={cell}>
                 <Gauge count={w.warning_count} />
+                {/* 05 SP4 — 현재 경고(제재 횟수)와 최근 1개월 경고 이력(기록 건수)은 다른 값이라 나눠 보여준다 */}
+                <div style={{ fontSize: 11, color: '#8FAAD0', marginTop: 4, whiteSpace: 'nowrap' }}>
+                  최근 1개월 경고 이력 {w.recent_month_count}건
+                </div>
               </td>
               <td style={{ ...cell, color: '#8FAAD0' }}>{w.last_reason ?? '—'}</td>
               <td style={cell}>
-                {w.is_restricted ? (
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      padding: '4px 9px',
-                      borderRadius: 8,
-                      background: 'rgba(229,34,34,.1)',
-                      color: '#C2453E',
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                    }}
-                  >
-                    이용정지 · {w.days_left}일 남음
-                  </span>
-                ) : (
-                  <span style={{ color: '#A8BCD9' }}>—</span>
-                )}
+                <RestrictionBadge isRestricted={w.is_restricted} daysLeft={w.days_left} />
               </td>
               <td style={cell}>
                 <div style={{ display: 'flex', gap: 6 }}>
@@ -592,6 +592,34 @@ function Warnings({ rows }: { rows: Data['warnings'] }) {
         )}
       </Table>
     </>
+  );
+}
+
+/** 05 P7 — 제한 상태 배지. 경고 탭·사용자 목록 탭 둘 다에서 쓴다(Issue #28). */
+function RestrictionBadge({
+  isRestricted,
+  daysLeft,
+}: {
+  isRestricted: boolean;
+  daysLeft: number | null;
+}) {
+  if (!isRestricted) return <span style={{ color: '#A8BCD9' }}>—</span>;
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '4px 9px',
+        borderRadius: 8,
+        background: 'rgba(229,34,34,.1)',
+        color: '#C2453E',
+        fontSize: 11.5,
+        fontWeight: 700,
+      }}
+    >
+      이용정지 · {daysLeft}일 남음
+    </span>
   );
 }
 
@@ -859,18 +887,34 @@ function Users({ rows, history }: { rows: Data['users']; history: Data['history'
         </div>
       ) : null}
 
-      <Table cols={['가입', '이름', '학번', '호실', '이메일', '가입 방식', '상태', '']}>
+      <Table cols={['가입', '이름', '학번', '호실', '이메일', '가입 방식', '경고', '제한', '상태', '']}>
         {rows.length === 0 ? (
-          <EmptyRow span={8} text="가입한 사용자가 없어요." />
+          <EmptyRow span={10} text="가입한 사용자가 없어요." />
         ) : (
           rows.map((u) => (
-            <tr key={u.user_id}>
+            <tr key={u.user_id} id={`user-${u.user_id}`}>
               <td style={{ ...cell, color: '#8FAAD0' }}>{fmt(u.created_at, false)}</td>
               <td style={{ ...cell, fontWeight: 700 }}>{u.name}</td>
               <td style={cell}>{u.student_id}</td>
               <td style={cell}>{u.room}</td>
               <td style={{ ...cell, color: '#8FAAD0' }}>{u.email}</td>
               <td style={cell}>{u.signup_method}</td>
+              <td style={cell}>
+                {u.warning_count > 0 ? (
+                  // Issue #28 — 경고 누적 사용자 탭의 같은 사용자 행으로 이동
+                  <Link
+                    href={`/admin?tab=warnings#user-${u.user_id}`}
+                    style={{ color: 'inherit', textDecoration: 'none' }}
+                  >
+                    <Gauge count={u.warning_count} />
+                  </Link>
+                ) : (
+                  <Gauge count={0} />
+                )}
+              </td>
+              <td style={cell}>
+                <RestrictionBadge isRestricted={u.is_restricted} daysLeft={u.days_left} />
+              </td>
               <td style={cell}>
                 {u.withdraw_requested_at ? (
                   <>

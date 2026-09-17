@@ -555,7 +555,7 @@ export default function SignupPage() {
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontSize: '13px', fontWeight: 800, color: '#171719' }}>3. 개인정보의 보유 및 이용 기간</span>
-                      <span style={{ fontSize: '12.5px', color: 'rgba(55,56,60,.88)', lineHeight: 1.6 }}>보유기간: 회원 탈퇴 신청일로부터 14일까지. 탈퇴 신청 후 14일 이내에 다시 로그인하면 계정이 복구되며, 14일이 지나면 모든 개인정보를 영구 파기합니다. 세탁실 이용 내역 · 경고 기록 · 신고(증거 사진 포함)는 분쟁 처리를 위해 3개월간 보관하며, 3개월이 지나거나 탈퇴 후 14일이 지나거나 둘 중 먼저 오는 때에 파기합니다.</span>
+                      <span style={{ fontSize: '12.5px', color: 'rgba(55,56,60,.88)', lineHeight: 1.6 }}>보유기간: 회원 탈퇴 신청일로부터 14일까지. 탈퇴 신청 후 14일 이내에 다시 로그인하면 계정이 복구되며, 14일이 지나면 모든 개인정보를 영구 파기합니다. 세탁실 이용 내역 · 신고(증거 사진 포함)는 분쟁 처리를 위해 3개월간, 경고 기록은 1개월간 보관하며, 각 기간이 지나거나 탈퇴 후 14일이 지나거나 둘 중 먼저 오는 때에 파기합니다.</span>
                       <span style={{ fontSize: '12.5px', color: 'rgba(55,56,60,.88)', lineHeight: 1.6 }}>동의 철회 시: 탈퇴 신청 후 14일의 복구 기간이 지나면 지체 없이 파기합니다 (단, 법령에서 일정 기간 보관을 의무화하는 경우는 제외)</span>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
