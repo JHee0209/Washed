@@ -25,13 +25,13 @@ type NotificationRow = {
 // 종류별 색 — 알림.dc.html 그대로다.
 // 프로토타입의 「신고」는 06 「알림」의 종류 값으로는 **결과**다
 // (kind CHECK 이 공지 · 배정 · 종료 · 경고 · 결과라 '신고' 는 DB 가 받지 않는다).
-// 값은 결과로 두고 사용자에게 보이는 이름만 "신고 결과" 로 적는다.
+// 값은 결과로 두고 사용자에게 보이는 이름만 "신고" 로 적는다.
 const TYPES: Record<NotificationKind, { pillBg: string; pillFg: string; dot: string; label: string }> = {
   공지: { pillBg: '#EEF2F8', pillFg: '#5A7CA8', dot: '#B4C2D6', label: '공지' },
   배정: { pillBg: 'rgba(47,99,184,.1)', pillFg: '#2F63B8', dot: '#2F63B8', label: '배정' },
   종료: { pillBg: 'rgba(0,191,64,.1)', pillFg: '#006E25', dot: '#00BF40', label: '종료' },
   경고: { pillBg: 'rgba(255,146,0,.12)', pillFg: '#9C5800', dot: '#FF9200', label: '경고' },
-  결과: { pillBg: '#F1EAFB', pillFg: '#6B3FA0', dot: '#9B6FD1', label: '신고 결과' },
+  결과: { pillBg: '#F1EAFB', pillFg: '#6B3FA0', dot: '#9B6FD1', label: '신고' },
 };
 
 const TABS: { value: string; label: string }[] = [
@@ -40,7 +40,7 @@ const TABS: { value: string; label: string }[] = [
   { value: '배정', label: '배정' },
   { value: '종료', label: '종료' },
   { value: '경고', label: '경고' },
-  { value: '결과', label: '신고 결과' },
+  { value: '결과', label: '신고' },
 ];
 
 /** 다른 화면의 종 표시에게 "알림이 바뀌었다" 고 알린다 (useUnreadCount 가 받는다) */

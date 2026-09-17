@@ -54,7 +54,7 @@ export type CleanupResult = {
   expiredReportEvidence: number;
   /** 05 P17 · SP4 — 3개월이 지나 지운 이용 내역 건수 */
   expiredUsageHistory: number;
-  /** 05 SP4 — 3개월이 지나 지운 경고 기록 건수 */
+  /** 05 SP4 — 1개월이 지나 지운 경고 기록 건수 */
   expiredWarnings: number;
   /** 05 P18 — 3개월이 지나 지운 공지 건수 */
   expiredNotices: number;
@@ -138,7 +138,7 @@ export async function deleteExpiredUsageHistory(now: Date = new Date()): Promise
 }
 
 /**
- * 05 SP4 — 3개월이 지난 경고 **기록**(사유 · 시각)을 지운다.
+ * 05 SP4 — 1개월이 지난 경고 **기록**(사유 · 시각)을 지운다(2026-09-17: 3개월 → 1개월).
  *
  * **usage_restrictions 는 건드리지 않는다.** 05 의 대조표에서 「경고 누적 횟수 · 이용
  * 제한」은 보관 칸이 「지우지 않는다 — 0회로 되돌린다」이다(P7). 제한 3일이 끝날 때와
@@ -319,7 +319,7 @@ export async function runDailyCleanup(now: Date = new Date()): Promise<CleanupRe
     result.expiredUsageHistory = await deleteExpiredUsageHistory(now);
   });
 
-  // 05 SP4 — 3개월이 지난 경고 기록 (누적 횟수 · 이용 제한은 건드리지 않는다)
+  // 05 SP4 — 1개월이 지난 경고 기록 (누적 횟수 · 이용 제한은 건드리지 않는다)
   await step('expiredWarnings', async () => {
     result.expiredWarnings = await deleteExpiredWarnings(now);
   });
