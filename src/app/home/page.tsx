@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSession } from 'next-auth/react';
 import { useUnreadCount } from '@/lib/use-unread-count';
 import NotificationPrompt from '@/components/notification-prompt';
+import QrScanner, { type QrVerifiedResult } from './qr-scanner';
 import { useRouter } from 'next/navigation';
 
 // --- 전역 상수 (타이머 시간 등) ---
@@ -30,6 +31,8 @@ type ApiQueueEntry = {
   assignedAt: string | null;
   assignDeadlineAt: string | null;
   pickupDeadlineAt: string | null;
+  /** F8 — QR 인증 성공 뒤 서버가 찍은 종료 예정 시각(05 P4). 사용중이 아니면 null */
+  endsAt: string | null;
   queuedAt: string;
   /** 05 P2 — 내 앞에 남은 대기 인원 */
   ahead: number;
@@ -122,6 +125,32 @@ export default function HomePage() {
     }, POLL_MS);
     return () => clearInterval(id);
   }, [loadMine, loadMachines]);
+
+  // F8 — 서버가 이미 「사용중」으로 판정했는데 로컬 queue 에 아직 없으면(새로고침 ·
+  // 다른 기기에서 이어보기) 서버의 종료 예정 시각으로 시드한다. QR 인증에 성공한
+  // 그 순간에는 handleQrVerified 가 곧바로 채워 두므로 여기서는 새로고침·다른
+  // 기기 접속처럼 로컬 상태가 비어 있는 경우만 채운다(07 공통 인수 조건의
+  // 「다른 기기 · 새로고침에도 같은 것이 보인다」 · 요구사항 7번).
+  useEffect(() => {
+    (['washer', 'dryer'] as const).forEach((type) => {
+      const entry = mine[type];
+      const machineId = entry?.machineId;
+      if (entry?.status !== 'inuse' || !machineId || !entry.endsAt) return;
+      setQueue((prev) => {
+        if (prev[machineId]) return prev;
+        return {
+          ...prev,
+          [machineId]: {
+            phase: 'running',
+            name: entry.machineName ?? '',
+            // 서버 절대시각을 클라이언트 시계 기준으로 옮긴다 — 아래 렌더링이
+            // `now`(클라이언트 시계)와 비교하기 때문이다 (08 · 4번).
+            runDeadline: new Date(entry.endsAt as string).getTime() - clockSkewMs,
+          },
+        };
+      });
+    });
+  }, [mine, clockSkewMs]);
 
   // --- 알림(Toast) 함수 ---
   const showToast = (message: string) => {
@@ -218,17 +247,25 @@ export default function HomePage() {
     }
   };
 
-  // F8 — QR 인증. 아직 화면 시뮬레이션이다(08 · 6번 · Issue #6) — 서버로 옮기면
-  // 「배정된 사람인가 · 그 기기가 맞는가 · 10분이 지나지 않았는가」를 서버가 본다.
-  const start = (id: string) => {
+  // F8 — QR 인증. 카메라가 디코딩한 값을 QrScanner 가 /api/queue/verify-qr 로 보내
+  // 서버가 「배정된 사람인가 · 그 기기가 맞는가 · 10분이 지나지 않았는가」를 판정한
+  // 뒤 여기로 결과를 돌려준다 — 종료 예정 시각(세탁 60분 · 건조 45분)도 서버가
+  // 정한 값이고, 클라이언트는 그리기만 한다(05 P4 · 10번 요구사항).
+  const handleQrVerified = (result: QrVerifiedResult) => {
     setScanningId(null);
-    const m = rawMachines.find((r) => r.id === id);
-    if (!m) return;
+    const skew = new Date(result.serverNow).getTime() - Date.now();
+    setClockSkewMs(skew);
     setQueue((prev) => ({
       ...prev,
-      [id]: { phase: 'running', name: m.name, runDeadline: Date.now() + runMsFor(m.type) },
+      [result.machineId]: {
+        phase: 'running',
+        name: result.machineName ?? '',
+        runDeadline: new Date(result.endsAt).getTime() - skew,
+      },
     }));
-    showToast(`${m.name} QR 인증 완료! 타이머가 시작됐어요.`);
+    showToast(`${result.machineName ?? '기기'} QR 인증 완료! 타이머가 시작됐어요.`);
+    loadMine();
+    loadMachines();
   };
 
   const finish = (id: string, name: string) => {
@@ -390,7 +427,6 @@ export default function HomePage() {
         a:hover { color: #3B76CC; }
         .no-scrollbar { scrollbar-width: none; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
-        @keyframes qrScan { 0% { top: 8% } 100% { top: 88% } }
       `}</style>
 
       <div style={{ width: '390px', height: '844px', margin: '40px auto', position: 'relative', display: 'flex', flexDirection: 'column', background: '#F3F6FB', color: '#1E3557', overflow: 'hidden', borderRadius: '40px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}>
@@ -637,31 +673,10 @@ export default function HomePage() {
           </div>
         )}
 
-        {/* 모달 2: QR 스캐너 */}
+        {/* 모달 2: QR 스캐너 — 실제 카메라(qr-scanner.tsx). 최종 판정은 서버가 한다. */}
         {scanningId && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 200, background: 'rgba(13,28,58,.74)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
-            <div style={{ width: '100%', maxWidth: '300px', background: '#17233C', borderRadius: '20px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0px 20px 44px -12px rgba(8,20,46,.75)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '14px', fontWeight: 800, color: '#EEF4FD' }}>QR 스캔</span>
-                <div onClick={() => setScanningId(null)} style={{ cursor: 'pointer', color: 'rgba(224,235,250,.62)', fontSize: '18px', lineHeight: 1, padding: '2px 6px' }}>×</div>
-              </div>
-              <div style={{ position: 'relative', aspectRatio: 1, borderRadius: '18px', overflow: 'hidden', background: '#0D1728' }}>
-                <div style={{ position: 'absolute', inset: 0, background: 'repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 10px, transparent 10px 20px)' }}></div>
-                <div style={{ position: 'absolute', left: '12%', top: '12%', width: '20px', height: '20px', borderLeft: '3px solid #5B93E0', borderTop: '3px solid #5B93E0', borderRadius: '4px 0 0 0' }}></div>
-                <div style={{ position: 'absolute', right: '12%', top: '12%', width: '20px', height: '20px', borderRight: '3px solid #5B93E0', borderTop: '3px solid #5B93E0', borderRadius: '0 4px 0 0' }}></div>
-                <div style={{ position: 'absolute', left: '12%', bottom: '12%', width: '20px', height: '20px', borderLeft: '3px solid #5B93E0', borderBottom: '3px solid #5B93E0', borderRadius: '0 0 0 4px' }}></div>
-                <div style={{ position: 'absolute', right: '12%', bottom: '12%', width: '20px', height: '20px', borderRight: '3px solid #5B93E0', borderBottom: '3px solid #5B93E0', borderRadius: '0 0 4px 0' }}></div>
-                <div style={{ position: 'absolute', left: '12%', right: '12%', height: '2px', background: '#5B93E0', boxShadow: '0 0 12px rgba(91,147,224,.85)', animation: 'qrScan 1.8s ease-in-out infinite alternate' }}></div>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: '#EEF4FD', textAlign: 'center' }}>{(rawMachines.find(r => r.id === scanningId) || {}).name}</span>
-                <span style={{ fontSize: '11px', color: 'rgba(224,235,250,.62)', lineHeight: 1.5, textAlign: 'center' }}>QR 코드를 사각형 안에 맞춰주세요.</span>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => setScanningId(null)} style={{ flex: 1, border: 'none', cursor: 'pointer', color: '#EEF4FD', background: 'transparent', boxShadow: 'inset 0 0 0 1px rgba(224,235,250,.26)', borderRadius: '12px', padding: '10px', fontSize: '13px', fontWeight: 700 }}>취소</button>
-                <button onClick={() => start(scanningId)} style={{ flex: 1, border: 'none', cursor: 'pointer', color: '#fff', background: '#4C86D8', borderRadius: '12px', padding: '11px', fontSize: '13px', fontWeight: 700 }}>인식 완료</button>
-              </div>
-            </div>
+            <QrScanner onClose={() => setScanningId(null)} onVerified={handleQrVerified} />
           </div>
         )}
 

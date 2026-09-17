@@ -35,6 +35,16 @@ export function assignDeadlineFrom(assignedAt: Date): Date {
   return new Date(assignedAt.getTime() + ASSIGN_WINDOW_MINUTES * 60 * 1000);
 }
 
+/**
+ * 05 P4 — QR 인증 성공 뒤 사용 시간. 세탁기 60분 · 건조기 45분이며, 실제 코스
+ * 시간과 어긋날 수 있어 화면은 "약 N분"으로 적는다(04 F8의 [?]).
+ *
+ * 지금까지는 `src/app/home/page.tsx`의 `RUN_MS_WASHER`/`RUN_MS_DRYER`로 화면에만
+ * 있던 값이다 — Issue #6 에서 QR 인증이 서버로 옮겨 오면서 `machines.ends_at`을
+ * 서버가 찍어야 하므로, 그 기준값을 여기(서버 쪽 단일 기준)로 옮긴다.
+ */
+export const RUN_MINUTES_BY_KIND: Record<string, number> = { 세탁기: 60, 건조기: 45 };
+
 /** 짝짓기에 들어가는 빈 기기 한 대 */
 export type FreeMachine = {
   machineId: string;
