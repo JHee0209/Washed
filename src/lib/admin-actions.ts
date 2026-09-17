@@ -140,7 +140,14 @@ export async function adminHistory() {
   `;
 }
 
-/** 탭 5 — 경고 누적 사용자 (F25 · 05 P5 · P7) */
+/**
+ * 탭 5 — 경고 누적 사용자 (F25 · 05 P5 · P7)
+ *
+ * warning_count(usage_restrictions) 와 recent_month_count(warnings)는 서로 다른
+ * 값이다 — 전자는 제한 3일 종료 · 매달 1일에 0으로 되돌아가는 "현재 제재" 횟수이고,
+ * 후자는 05 SP4(2026-09-17: 1개월로 축소)에 따라 **최근 1개월 warnings 행 수**다.
+ * 화면에서 하나로 합치지 않고 각각 보여준다 — 두 축이 의미가 다르다.
+ */
 export async function adminWarnings() {
   await requireAdmin();
   return sql<{
@@ -154,6 +161,7 @@ export async function adminWarnings() {
     days_left: number | null;
     last_reason: string | null;
     last_issued_at: string | null;
+    recent_month_count: number;
   }>`
     SELECT u.user_id, u.name AS user_name, u.room, u.student_id,
            COALESCE(r.warning_count, 0) AS warning_count,
@@ -163,13 +171,21 @@ export async function adminWarnings() {
                 ELSE CEIL(EXTRACT(EPOCH FROM (r.restricted_until - now())) / 86400)::int
            END AS days_left,
            w.reason AS last_reason,
-           w.issued_at AS last_issued_at
+           w.issued_at AS last_issued_at,
+           COALESCE(m.recent_month_count, 0) AS recent_month_count
       FROM users u
       LEFT JOIN usage_restrictions r ON r.user_id = u.user_id
       LEFT JOIN LATERAL (
         SELECT reason, issued_at FROM warnings
-         WHERE user_id = u.user_id ORDER BY issued_at DESC LIMIT 1
+         WHERE user_id = u.user_id
+           AND issued_at >= now() - interval '1 month'
+         ORDER BY issued_at DESC LIMIT 1
       ) w ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS recent_month_count FROM warnings
+         WHERE user_id = u.user_id
+           AND issued_at >= now() - interval '1 month'
+      ) m ON true
      WHERE COALESCE(r.warning_count, 0) > 0
      ORDER BY COALESCE(r.warning_count, 0) DESC, u.name
   `;
@@ -192,7 +208,13 @@ export async function adminNotices() {
   `;
 }
 
-/** 탭 7 — 사용자 목록 (F29) */
+/**
+ * 탭 7 — 사용자 목록 (F29 · 07-screens.md F29 행 — 이름·학번·호실·경고 횟수·제한 여부)
+ *
+ * 경고 횟수·제한 여부는 adminWarnings() 와 같은 usage_restrictions 조인을 그대로
+ * 재사용한다 — Issue #28: 사용자 목록과 경고 누적 화면이 같은 user_id 기준으로
+ * 서로 이어지도록.
+ */
 export async function adminUsers() {
   await requireAdmin();
   return sql<{
@@ -206,11 +228,22 @@ export async function adminUsers() {
     signup_method: string;
     created_at: string;
     withdraw_requested_at: string | null;
+    warning_count: number;
+    restricted_until: string | null;
+    is_restricted: boolean;
+    days_left: number | null;
   }>`
-    SELECT user_id, name, email, gender, school, student_id, room,
-           signup_method, created_at, withdraw_requested_at
-      FROM users
-     ORDER BY created_at DESC
+    SELECT u.user_id, u.name, u.email, u.gender, u.school, u.student_id, u.room,
+           u.signup_method, u.created_at, u.withdraw_requested_at,
+           COALESCE(r.warning_count, 0) AS warning_count,
+           r.restricted_until,
+           (r.restricted_until IS NOT NULL AND r.restricted_until > now()) AS is_restricted,
+           CASE WHEN r.restricted_until IS NULL OR r.restricted_until <= now() THEN NULL
+                ELSE CEIL(EXTRACT(EPOCH FROM (r.restricted_until - now())) / 86400)::int
+           END AS days_left
+      FROM users u
+      LEFT JOIN usage_restrictions r ON r.user_id = u.user_id
+     ORDER BY u.created_at DESC
   `;
 }
 

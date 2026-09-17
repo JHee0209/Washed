@@ -37,12 +37,14 @@ export const NOTICE_RETENTION_MONTHS = 3;
 export const USAGE_HISTORY_RETENTION_MONTHS = 3;
 
 /**
- * 05 SP4 — 경고 **기록**(사유 · 시각)은 3개월 보관한다.
+ * 05 SP4 — 경고 **기록**(사유 · 시각)은 1개월만 보관한다.
  *
- * 누적 횟수와 이용 제한(usage_restrictions)은 여기 해당하지 않는다 — 05 의 대조표가
- * 「지우지 않는다 — 0회로 되돌린다」로 적어 둔 값이라 배치가 건드리지 않는다(P7).
+ * 2026-09-17 갱신: 이용 내역 · 신고와 함께 3개월이었던 것을, 경고만 1개월로 줄였다
+ * (docs/05-policy.md 「확인할 수 없어 표시해 둔 것」 · SP4 갱신). 누적 횟수와 이용
+ * 제한(usage_restrictions)은 여기 해당하지 않는다 — 05 의 대조표가 「지우지 않는다 —
+ * 0회로 되돌린다」로 적어 둔 값이라 배치가 건드리지 않는다(P7).
  */
-export const WARNING_RETENTION_MONTHS = 3;
+export const WARNING_RETENTION_MONTHS = 1;
 
 /** 05 P23 · SP4 — 신고는 접수 시각부터 3개월 보관한다 */
 export const REPORT_RETENTION_MONTHS = 3;

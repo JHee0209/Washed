@@ -46,8 +46,10 @@ type ApiMine = { washer: ApiQueueEntry | null; dryer: ApiQueueEntry | null };
 
 export default function HomeClient() {
   const router = useRouter();
-  const { data: session } = useSession();
-  const myName = session?.user?.name || '';
+  // 세션이 authenticated 로 확정되기 전에는 이름을 비워 둔다 — 로딩 중
+  // 잘못된 이름(빈 값 → 실제 이름)이 잠깐 깜빡이지 않도록 한다. (#32)
+  const { data: session, status: sessionStatus } = useSession();
+  const myName = sessionStatus === 'authenticated' ? session?.user?.name || '' : '';
 
   // --- 상태 관리 ---
   const [toast, setToast] = useState({ visible: false, message: '' });
@@ -435,7 +437,7 @@ export default function HomeClient() {
           <div style={{ padding: '20px 16px 24px', display: 'flex', flexDirection: 'column', gap: '20px', position: 'relative' }}>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <h1 style={{ margin: 0, fontSize: '23px', fontWeight: 800, letterSpacing: '-0.02em', color: '#1E3557', marginTop: '-5px' }}>안녕하세요{myName ? `, ${myName}` : ''}</h1>
+              <h1 style={{ margin: 0, fontSize: '23px', fontWeight: 800, letterSpacing: '-0.02em', color: '#1E3557', marginTop: '-5px' }}>{myName ? `안녕하세요, ${myName}님` : '안녕하세요'}</h1>
               <p style={{ margin: 0, fontSize: '13px', color: '#8FAAD0' }}>오늘도 줄 서지 않고 편하게 세탁해요</p>
             </div>
 
