@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
+import { signOut } from 'next-auth/react';
 import { useUnreadCount } from '@/lib/use-unread-count';
 import { enablePush, permissionServerSnapshot, permissionSnapshot, subscribePushState } from '@/lib/push-client';
 import { useRouter } from 'next/navigation';
@@ -226,13 +227,12 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
     }
   };
 
-  // ⭐️ 확실하게 작동하는 로그아웃 및 회원탈퇴 핸들러
+  // Issue #29 — 실제 Auth.js 세션을 제거한다. redirect 기본값(true)이 서버가
+  // 세션 쿠키를 지운 응답을 받은 뒤 전체 리로드로 이동시키므로, 화면이
+  // 스스로 라우팅하지 않는다(next-auth/react의 signOut, redirectTo가 현재
+  // 설치 버전의 API — callbackUrl은 deprecated).
   const handleLogout = () => {
-    showToast('로그아웃 되었습니다.');
-    // 0.8초 뒤에 로그인 화면으로 이동합니다.
-    setTimeout(() => {
-      router.push('/login');
-    }, 800);
+    void signOut({ redirectTo: '/login' });
   };
 
   /**
