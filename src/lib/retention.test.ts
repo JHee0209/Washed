@@ -25,6 +25,7 @@ import {
   warningCutoff,
   withdrawPurgeCutoff,
   NOTIFICATION_RETENTION_DAYS,
+  WARNING_RETENTION_MONTHS,
   WITHDRAW_GRACE_DAYS,
 } from './retention.ts';
 
@@ -93,21 +94,13 @@ describe('05 P18 — 공지 원본은 등록 후 3개월', () => {
   });
 });
 
-describe('05 P17 · SP4 — 이용 내역 · 경고 · 신고는 3개월', () => {
+describe('05 P17 · SP4 — 이용 내역 · 신고는 3개월', () => {
   it('3개월이 안 된 이용 내역은 남는다', () => {
     assert.equal(isExpired(daysOld(80), usageHistoryCutoff(NOW)), false);
   });
 
   it('3개월이 지난 이용 내역은 삭제 대상이다', () => {
     assert.equal(isExpired(monthsOld(3), usageHistoryCutoff(NOW)), true);
-  });
-
-  it('3개월이 안 된 경고 기록은 남는다', () => {
-    assert.equal(isExpired(daysOld(80), warningCutoff(NOW)), false);
-  });
-
-  it('3개월이 지난 경고 기록은 삭제 대상이다', () => {
-    assert.equal(isExpired(monthsOld(3), warningCutoff(NOW)), true);
   });
 
   it('3개월이 안 된 신고는 남는다', () => {
@@ -121,6 +114,35 @@ describe('05 P17 · SP4 — 이용 내역 · 경고 · 신고는 3개월', () =>
   it('사생 조회 30일보다 보관이 길다 — 조회가 보관보다 길 수 없다 (05 P21)', () => {
     // 기록 화면은 30일만 보여주고(P21), 보관은 3개월이다(SP4).
     assert.ok(usageHistoryCutoff(NOW).getTime() < daysAgo(NOW, 30).getTime());
+  });
+});
+
+describe('05 SP4 — 경고 기록은 1개월(2026-09-17: 3개월에서 축소)', () => {
+  it('상수가 1개월이다', () => {
+    assert.equal(WARNING_RETENTION_MONTHS, 1);
+  });
+
+  it('29일 된 경고 기록은 남는다', () => {
+    assert.equal(isExpired(daysOld(29), warningCutoff(NOW)), false);
+  });
+
+  it('1개월이 지난 경고 기록은 삭제 대상이다 (경계 포함)', () => {
+    assert.equal(isExpired(monthsOld(1), warningCutoff(NOW)), true);
+  });
+
+  it('경고 보관은 이용 내역 · 신고보다 짧다 — 경고만 1개월로 따로 줄었다', () => {
+    assert.ok(warningCutoff(NOW).getTime() > usageHistoryCutoff(NOW).getTime());
+    assert.ok(warningCutoff(NOW).getTime() > reportCutoff(NOW).getTime());
+  });
+
+  it('경계값 — 딱 1개월 전에 받은 경고는 그 시각 이전엔 남고 그 시각부터는 삭제 대상이다', () => {
+    // 이슈 예시: 2026-08-17 10:00 경고 → 2026-09-17 09:59 실행이면 유지, 10:00 실행이면 삭제.
+    const issuedAt = new Date('2026-08-17T10:00:00.000Z');
+    const oneMinuteBeforeCutoff = new Date('2026-09-17T09:59:00.000Z');
+    const atCutoff = new Date('2026-09-17T10:00:00.000Z');
+
+    assert.equal(isExpired(issuedAt, warningCutoff(oneMinuteBeforeCutoff)), false);
+    assert.equal(isExpired(issuedAt, warningCutoff(atCutoff)), true);
   });
 });
 
