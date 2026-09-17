@@ -13,7 +13,6 @@ import {
   addNotice,
   cancelQueue,
   clearRestriction,
-  issueUsageIncidentWarning,
   issueWarning,
   removeMachine,
   removeNotice,
@@ -21,6 +20,7 @@ import {
   setMachineStatus,
   setReportStatus,
 } from '@/lib/admin-actions';
+import { ADMIN_WARNING_REASONS, type AdminWarningReason } from '@/lib/warning-rules';
 
 type Data = {
   machines: {
@@ -106,7 +106,7 @@ export default function AdminTabs({ tab, data }: { tab: string; data: Data }) {
   if (tab === 'history') return <History rows={data.history} />;
   if (tab === 'warnings') return <Warnings rows={data.warnings} />;
   if (tab === 'notice') return <Notices rows={data.notices} />;
-  return <Users rows={data.users} history={data.history} />;
+  return <Users rows={data.users} />;
 }
 
 // ─── 공통 표 조각 ────────────────────────────────────────────────────────────
@@ -475,7 +475,7 @@ function Reports({ rows }: { rows: Data['reports'] }) {
 
 function History({ rows }: { rows: Data['history'] }) {
   return (
-    <Table cols={['시작', '사용자', '호실', '기기', '결과', '사용 시간', '']}>
+    <Table cols={['시작', '사용자', '호실', '기기', '결과', '사용 시간']}>
       {rows.length === 0 ? (
         <EmptyRow span={7} text="최근 3개월 이용 내역이 없어요." />
       ) : (
@@ -494,25 +494,12 @@ function History({ rows }: { rows: Data['history'] }) {
               {h.used_minutes !== null ? `${h.used_minutes}분` : '—'}
             </td>
             {/*
-              05 P6 · 0008 — 이 행(usage_history)에 딸린 사건 참조 경고를 준다.
-              history_id · user_id 를 여기서 그대로 실어 보내므로 관리자는 UUID를
-              보거나 입력할 필요가 없다. 같은 행에 이미 경고(자동이든 수동이든)가
-              있으면 서버가 23505 로 거부하고 그 메시지를 그대로 보여준다.
+              2026-09-17 팀 확정 — 이용 내역에서 바로 경고를 주던 자리를 없앴다.
+              관리자가 판단하는 경고는 「순서 미준수 · 세탁물 방치」 둘뿐이고 특정
+              이용 건에 매이지 않으므로, 사용자 탭의 수동 경고 하나로 모았다.
+              (서버의 issueUsageIncidentWarning · usage_history_id 중복 방지는
+               자동 경고 쪽에서 계속 쓰이므로 그대로 둔다 — 05 P6 · 0008.)
             */}
-            <td style={cell}>
-              <Btn
-                tone="danger"
-                onClick={async () => {
-                  try {
-                    await issueUsageIncidentWarning(h.user_id, h.history_id);
-                  } catch (error) {
-                    alert(error instanceof Error ? error.message : '경고를 주지 못했어요.');
-                  }
-                }}
-              >
-                경고 주기
-              </Btn>
-            </td>
           </tr>
         ))
       )}
@@ -523,6 +510,10 @@ function History({ rows }: { rows: Data['history'] }) {
 // ─── 탭 5 · 경고 누적 사용자 (F25) ───────────────────────────────────────────
 
 function Warnings({ rows }: { rows: Data['warnings'] }) {
+  // 05 P16 · 0009 — 관리자 경고는 사유를 골라야 준다. 줄마다 따로 기억해 두어
+  // 한 줄에서 고른 사유가 다른 줄의 버튼에 딸려 가지 않게 한다.
+  const [reasonByUser, setReasonByUser] = useState<Record<string, AdminWarningReason>>({});
+
   return (
     <>
       <div
@@ -571,12 +562,37 @@ function Warnings({ rows }: { rows: Data['warnings'] }) {
               <td style={cell}>
                 <div style={{ display: 'flex', gap: 6 }}>
                   {/*
-                    05 P6 · Issue #8 — 사유는 '신고 확인'만 CHECK(db/schema.sql
-                    warnings.reason)를 통과한다. 예전 '관리자 부여'는 늘 DB 오류로
-                    실패하던 기존 버그라 최소 수정으로 고친다(이 버튼의 나머지
-                    동작·자리는 그대로다) — 특정 이용 내역과 무관한 일반 경고다.
+                    05 P16 · 0009 — 사유는 고르는 것이지 적는 것이 아니다.
+                    (배정 후 미인증 · 수거 미완료는 서버가 자동으로 준다 — 없다.)
                   */}
-                  <Btn tone="danger" onClick={() => issueWarning(w.user_id, '신고 확인')}>
+                  <select
+                    value={reasonByUser[w.user_id] ?? ADMIN_WARNING_REASONS[0]}
+                    onChange={(e) =>
+                      setReasonByUser((prev) => ({
+                        ...prev,
+                        [w.user_id]: e.target.value as AdminWarningReason,
+                      }))
+                    }
+                    style={{
+                      height: 30,
+                      padding: '0 8px',
+                      borderRadius: 9,
+                      border: '1px solid #E3EBF7',
+                      fontSize: 12,
+                    }}
+                  >
+                    {ADMIN_WARNING_REASONS.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                  <Btn
+                    tone="danger"
+                    onClick={() =>
+                      issueWarning(w.user_id, reasonByUser[w.user_id] ?? ADMIN_WARNING_REASONS[0])
+                    }
+                  >
                     경고 +1
                   </Btn>
                   <Btn onClick={() => revokeWarning(w.user_id)}>경고 −1</Btn>
@@ -749,23 +765,17 @@ function Notices({ rows }: { rows: Data['notices'] }) {
 
 // ─── 탭 7 · 사용자 목록 (F29) ────────────────────────────────────────────────
 
-function Users({ rows, history }: { rows: Data['users']; history: Data['history'] }) {
+function Users({ rows }: { rows: Data['users'] }) {
   const [target, setTarget] = useState<string | null>(null);
-  const [reason, setReason] = useState('');
-  // 05 P6 · 0008 — 일반 경고(사건 무관 · 기존 방식)와 이용 내역 관련 경고(사건 연결
-  // 필수)를 명확히 나눈다. 자유 텍스트 쪽이 usage_history_id 를 몰래 비우고
-  // 지나가는 우회로가 되지 않도록, 아예 다른 입력·다른 서버 함수로 가른다.
-  const [mode, setMode] = useState<'general' | 'incident'>('general');
-  const [historyId, setHistoryId] = useState('');
+  // 05 P16 · 0009 — 관리자가 판단하는 사유는 두 가지뿐이다. 자유 입력을 없애
+  // 고르게만 하므로, DB CHECK 를 벗어나는 값이 애초에 만들어지지 않는다.
+  // (배정 후 미인증 · 수거 미완료는 서버가 시각으로 판정한다 — 여기 없다.)
+  const [reason, setReason] = useState<AdminWarningReason>(ADMIN_WARNING_REASONS[0]);
 
   const openTarget = (userId: string) => {
     setTarget(userId);
-    setMode('general');
-    setReason('');
-    setHistoryId('');
+    setReason(ADMIN_WARNING_REASONS[0]);
   };
-
-  const targetHistory = target ? history.filter((h) => h.user_id === target) : [];
 
   return (
     <>
@@ -786,95 +796,32 @@ function Users({ rows, history }: { rows: Data['users']; history: Data['history'
             {rows.find((u) => u.user_id === target)?.name} 에게 경고
           </span>
 
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              onClick={() => setMode('general')}
-              style={{
-                padding: '6px 11px',
-                borderRadius: 9,
-                border: `1px solid ${mode === 'general' ? '#4C86D8' : '#E3EBF7'}`,
-                background: mode === 'general' ? 'rgba(76,134,216,.1)' : '#fff',
-                color: mode === 'general' ? '#2F63B8' : '#5A6E8F',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              일반 경고
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('incident')}
-              style={{
-                padding: '6px 11px',
-                borderRadius: 9,
-                border: `1px solid ${mode === 'incident' ? '#4C86D8' : '#E3EBF7'}`,
-                background: mode === 'incident' ? 'rgba(76,134,216,.1)' : '#fff',
-                color: mode === 'incident' ? '#2F63B8' : '#5A6E8F',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              이용 내역 관련 경고
-            </button>
-          </div>
-
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {mode === 'general' ? (
-              <input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="사유 (예: 신고 확인)"
-                style={{
-                  flex: '1 1 240px',
-                  height: 38,
-                  padding: '0 13px',
-                  borderRadius: 10,
-                  border: '1px solid #E3EBF7',
-                  fontSize: 13,
-                }}
-              />
-            ) : (
-              <select
-                value={historyId}
-                onChange={(e) => setHistoryId(e.target.value)}
-                style={{
-                  flex: '1 1 320px',
-                  height: 38,
-                  padding: '0 13px',
-                  borderRadius: 10,
-                  border: '1px solid #E3EBF7',
-                  fontSize: 13,
-                }}
-              >
-                <option value="">
-                  {targetHistory.length === 0 ? '최근 3개월 이용 내역이 없어요' : '이용 내역을 선택하세요'}
+            <label style={{ fontSize: 12, color: '#5A6E8F', fontWeight: 700 }}>경고 사유</label>
+            <select
+              value={reason}
+              onChange={(e) => setReason(e.target.value as AdminWarningReason)}
+              style={{
+                flex: '1 1 240px',
+                height: 38,
+                padding: '0 13px',
+                borderRadius: 10,
+                border: '1px solid #E3EBF7',
+                fontSize: 13,
+              }}
+            >
+              {ADMIN_WARNING_REASONS.map((r) => (
+                <option key={r} value={r}>
+                  {r}
                 </option>
-                {targetHistory.map((h) => (
-                  <option key={h.history_id} value={h.history_id}>
-                    {fmt(h.started_at)} · {h.machine_name ?? '삭제된 기기'} · {h.result}
-                  </option>
-                ))}
-              </select>
-            )}
+              ))}
+            </select>
             <Btn
               tone="primary"
               onClick={async () => {
                 try {
-                  if (mode === 'incident') {
-                    if (!historyId) {
-                      alert('이용 내역을 선택해주세요.');
-                      return;
-                    }
-                    await issueUsageIncidentWarning(target, historyId);
-                  } else {
-                    await issueWarning(target, reason);
-                  }
+                  await issueWarning(target, reason);
                   setTarget(null);
-                  setReason('');
-                  setHistoryId('');
                 } catch (error) {
                   alert(error instanceof Error ? error.message : '경고를 주지 못했어요.');
                 }

@@ -17,6 +17,7 @@ import { sql } from '@/lib/db';
 import { notify } from '@/lib/notify';
 import { queueCounts } from '@/lib/queries';
 import { expireRunTimers } from '@/lib/usage';
+import { ADMIN_WARNING_REASONS, isAdminWarningReason } from '@/lib/warning-rules';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 조회
@@ -493,17 +494,28 @@ function isUniqueViolation(error: unknown, constraint: string): boolean {
   return e.code === '23505' && e.constraint === constraint;
 }
 
-/** F25 · F29 — 특정 이용 내역과 무관한 일반 경고. usage_history_id 는 항상 비운다. */
+/**
+ * F29 — 관리자 수동 경고. usage_history_id 는 항상 비운다(특정 이용 건과 무관하다).
+ *
+ * **사유는 여기서 먼저 거른다.** 예전에는 화면의 자유 입력값을 그대로 INSERT 해서,
+ * warnings.reason 의 CHECK 를 벗어나는 문자열이 오면 Postgres 23514 가 그대로
+ * Server Action 밖으로 튀어나갔다 — 운영 빌드에서는 원문이 지워진 채 minified
+ * React 오류로만 보여 관리자가 무엇이 틀렸는지 알 수 없었다. 허용값을 서버가
+ * 알고 있으므로 DB 까지 보내지 않고 읽을 수 있는 메시지로 끝낸다(DB CHECK 는
+ * 마지막 방어선으로 그대로 둔다).
+ */
 export async function issueWarning(userId: string, reason: string) {
   await requireAdmin();
-  if (!reason.trim()) throw new Error('사유를 입력해주세요.');
+  if (!isAdminWarningReason(reason)) {
+    throw new Error(`경고 사유는 ${ADMIN_WARNING_REASONS.join(' · ')} 중에서 골라주세요.`);
+  }
 
   await sql`
     INSERT INTO warnings (user_id, reason, issued_by)
-    VALUES (${userId}, ${reason.trim()}, '관리자')
+    VALUES (${userId}, ${reason}, '관리자')
   `;
 
-  await applyWarningSideEffects(userId, reason.trim());
+  await applyWarningSideEffects(userId, reason);
 }
 
 /**
