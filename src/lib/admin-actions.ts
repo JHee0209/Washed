@@ -16,6 +16,7 @@ import { drainQueue } from '@/lib/assignment';
 import { sql } from '@/lib/db';
 import { notify } from '@/lib/notify';
 import { queueCounts } from '@/lib/queries';
+import { expireRunTimers } from '@/lib/usage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 조회
@@ -50,6 +51,12 @@ export async function adminMachines() {
  */
 export async function adminQueue() {
   await requireAdmin();
+
+  // F9 — 사용 타이머가 끝난 줄을 수거대기로 전환한다(전역 함수 · 05 P5 · Issue #7).
+  // 홈 화면 폴링을 거치지 않은 사용자의 줄도 관리자 화면에서 낡은 「사용중」으로
+  // 남지 않게 한다.
+  await expireRunTimers();
+
   const [rows, counts] = await Promise.all([
     sql<{
       queue_id: string;
