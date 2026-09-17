@@ -30,6 +30,11 @@ export default function LoginPage() {
   const [errorText, setErrorText] = useState('');
   const [googleOnly, setGoogleOnly] = useState(false);
   const [pending, setPending] = useState(false);
+  // Issue #29 — 「자동 로그인」. 체크(기본값)면 Auth.js 기본 장기 세션(현재 30일)을
+  // 그대로 쓰고, 체크 해제하면 세션 쿠키의 Max-Age·Expires만 제거해 브라우저를
+  // 완전히 닫으면 사라지는 세션 쿠키로 만든다(src/app/api/auth/[...nextauth]/route.ts).
+  // 토큰 값 자체나 세션 길이 정책은 건드리지 않는다.
+  const [remember, setRemember] = useState(true);
 
   /** 입력이 바뀌면 이전 결과를 지운다 — 고친 값에 옛 오류가 붙어 있으면 안 된다. */
   const clearResult = () => {
@@ -57,6 +62,10 @@ export default function LoginPage() {
         email: email.trim(),
         password,
         redirect: false,
+        // /api/auth/[...nextauth]/route.ts 의 POST 래퍼가 credentials 콜백
+        // 응답에서만 이 값을 읽는다 — 문자열로 보낸다(폼 인코딩이라 boolean이
+        // 그대로 넘어가지 않는다).
+        remember: remember ? 'true' : 'false',
       });
 
       // 로그인이 실패해도 res.ok 는 true 다 — @auth/core 가 실패를 status 없이
@@ -186,7 +195,12 @@ export default function LoginPage() {
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '16px 0 20px' }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: '9px', fontSize: '13px', fontWeight: 500, color: '#5A6E8F', cursor: 'pointer', position: 'relative' }}>
-              <input className="check" type="checkbox" defaultChecked />
+              <input
+                className="check"
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
               <span>
                 <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
                   <path d="M2.5 6.3L4.8 8.6L9.5 3.7" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"></path>
