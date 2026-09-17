@@ -114,6 +114,9 @@ export async function adminHistory() {
   await requireAdmin();
   return sql<{
     history_id: string;
+    // 05 P6 · 0008 — F28 「경고 주기」 버튼과 F29 이용 내역 드롭다운이 쓴다.
+    // 화면에는 이름 · 호실만 보이고, 이 칸은 버튼 클릭에 실려 서버로만 간다.
+    user_id: string;
     user_name: string;
     room: string;
     machine_name: string | null;
@@ -122,7 +125,7 @@ export async function adminHistory() {
     result: string;
     used_minutes: number | null;
   }>`
-    SELECT h.history_id, u.name AS user_name, u.room, m.name AS machine_name,
+    SELECT h.history_id, h.user_id, u.name AS user_name, u.room, m.name AS machine_name,
            h.started_at, h.ended_at, h.result,
            CASE WHEN h.result = '정상 이용'
                 THEN ROUND(EXTRACT(EPOCH FROM (h.ended_at - h.started_at)) / 60)::int
@@ -392,15 +395,14 @@ const WARNING_LIMIT = 3;
 /** 05 P7 — 제한 기간(일) */
 const RESTRICT_DAYS = 3;
 
-export async function issueWarning(userId: string, reason: string) {
-  await requireAdmin();
-  if (!reason.trim()) throw new Error('사유를 입력해주세요.');
-
-  await sql`
-    INSERT INTO warnings (user_id, reason, issued_by)
-    VALUES (${userId}, ${reason.trim()}, '관리자')
-  `;
-
+/**
+ * warnings INSERT **뒤**의 공통 처리 — 제한 누적(P7) · 알림(P16). issueWarning() ·
+ * issueUsageIncidentWarning() 둘 다 이 순서를 따른다: **INSERT 가 먼저, 이 처리는
+ * 그 다음**이다. INSERT 가 (05 P6 · 0008 의 부분 UNIQUE 인덱스 등으로) 실패하면
+ * 호출부에서 예외가 그대로 던져져 이 함수 자체가 불리지 않는다 — 경고 자체가
+ * 안 쌓였는데 제한 횟수만 오르거나 중복 알림이 가는 일이 없다.
+ */
+async function applyWarningSideEffects(userId: string, reasonText: string): Promise<void> {
   // 누적을 올리고, 3회가 되면 그 자리에서 3일 제한을 건다 (P7)
   await sql`
     INSERT INTO usage_restrictions (user_id, warning_count, restricted_from, restricted_until)
@@ -439,8 +441,8 @@ export async function issueWarning(userId: string, reason: string) {
       '경고',
       '경고가 1회 누적됐어요',
       daysLeft
-        ? `${reason.trim()} — 경고 ${WARNING_LIMIT}회가 되어 ${daysLeft}일 동안 줄서기를 할 수 없어요.`
-        : `${reason.trim()} — 경고 ${WARNING_LIMIT}회가 되면 ${RESTRICT_DAYS}일 동안 줄서기를 할 수 없어요.`,
+        ? `${reasonText} — 경고 ${WARNING_LIMIT}회가 되어 ${daysLeft}일 동안 줄서기를 할 수 없어요.`
+        : `${reasonText} — 경고 ${WARNING_LIMIT}회가 되면 ${RESTRICT_DAYS}일 동안 줄서기를 할 수 없어요.`,
     );
   } catch (error) {
     console.error('경고 알림 생성 실패', userId, error);
@@ -449,6 +451,69 @@ export async function issueWarning(userId: string, reason: string) {
   revalidatePath('/admin');
   revalidatePath('/history');
   revalidatePath('/notifications');
+}
+
+/** 23505 가 지정한 제약에서 났는지 — queue/[kind]/route.ts 의 constraintOf() 와 같은 관용구 */
+function isUniqueViolation(error: unknown, constraint: string): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { code?: string; constraint?: string };
+  return e.code === '23505' && e.constraint === constraint;
+}
+
+/** F25 · F29 — 특정 이용 내역과 무관한 일반 경고. usage_history_id 는 항상 비운다. */
+export async function issueWarning(userId: string, reason: string) {
+  await requireAdmin();
+  if (!reason.trim()) throw new Error('사유를 입력해주세요.');
+
+  await sql`
+    INSERT INTO warnings (user_id, reason, issued_by)
+    VALUES (${userId}, ${reason.trim()}, '관리자')
+  `;
+
+  await applyWarningSideEffects(userId, reason.trim());
+}
+
+/**
+ * F28 「경고 주기」· F29 「이용 내역 관련 경고」 — 05 P6 · 0008.
+ *
+ * 특정 usage_history 행(사건)에 연결된 관리자 경고 전용이다. `reason` 은 늘
+ * '신고 확인'(P6-1의 관리자 몫)으로 고정한다 — 자유 텍스트를 받지 않아 CHECK
+ * 위반도 나지 않는다. `usageHistoryId` 는 **필수**다(옵션이 아니다) — 이걸
+ * 선택 인자로 두면 그 사건과 무관한 issueWarning() 처럼 그냥 안 채우고 지나갈
+ * 수 있어, 자동 경고(P5 수거 미완료)와 같은 사건을 몰래 다시 벌줄 길이 남는다.
+ *
+ * 같은 usage_history_id 를 가리키는 경고가 이미 있으면(자동이든 관리자든)
+ * warnings_usage_history_id_idx 가 INSERT 를 23505 로 거부한다 — 여기서 잡아
+ * 사람이 읽을 메시지로 바꾼다. **이 INSERT 가 실패하면 함수가 그 자리에서
+ * 끝난다** — usage_restrictions 증가도 notify() 도 뒤에 있어 실행되지 않는다.
+ */
+export async function issueUsageIncidentWarning(userId: string, usageHistoryId: string) {
+  await requireAdmin();
+  if (!usageHistoryId) throw new Error('연결할 이용 내역을 선택해주세요.');
+
+  // 고른 이용 내역이 실제로 이 사용자의 것인지 확인한다 — 화면이 잘못된 history_id
+  // 를 보낼 리는 없지만, 다른 사람에게 경고가 잘못 붙는 것을 서버에서도 막는다.
+  const owner = await sql<{ user_id: string }>`
+    SELECT user_id FROM usage_history WHERE history_id = ${usageHistoryId} LIMIT 1
+  `;
+  if (!owner[0]) throw new Error('이용 내역을 찾을 수 없어요.');
+  if (owner[0].user_id !== userId) {
+    throw new Error('이 이용 내역은 선택한 사용자의 것이 아니에요.');
+  }
+
+  try {
+    await sql`
+      INSERT INTO warnings (user_id, reason, issued_by, usage_history_id)
+      VALUES (${userId}, '신고 확인', '관리자', ${usageHistoryId})
+    `;
+  } catch (error) {
+    if (isUniqueViolation(error, 'warnings_usage_history_id_idx')) {
+      throw new Error('이미 이 이용 건에 경고가 있어요.');
+    }
+    throw error;
+  }
+
+  await applyWarningSideEffects(userId, '신고 확인');
 }
 
 /**

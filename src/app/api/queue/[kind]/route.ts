@@ -15,12 +15,30 @@
 // src/lib/db.ts 의 neon 드라이버는 여러 쿼리에 걸친 BEGIN/COMMIT 을 지원하지 않으므로
 // 두 걸음 각각이 한 문장이다. 사이에서 요청이 끊겨도 `대기 중` 으로 남아 있다가 다음
 // 배정 때 이어진다 — 어긋난 상태가 남지 않는다.
+//
+// ── 만료 스윕도 여기서 부른다 (Issue #8 에서 더해진 곳)
+// assignment.ts 의 머리말이 「빈 기기 × 대기자가 바뀌는 자리에서만 부른다 — 줄서기
+// (api/queue/[kind]) · 관리자의 대기열 빼기와 강제 사용가능」이라 적어 둔 곳이 여기다.
+// expireOverdueAssignments()(05 P3)를 배정 판정 **앞에** 불러, 10분을 넘겨 방치된
+// 배정을 먼저 풀고 그 기기를 이 요청의 drainQueue() 가 곧바로 쓸 수 있게 한다 —
+// cleanup.ts 의 하루 1회 배치는 트래픽이 없을 때의 백스톱일 뿐이다.
+//
+// 05 P5 도 같은 이유로 여기서 훑는다 — transitionFinishedUsageToPickup() 이 타이머
+// 끝난 사용중 줄을 수거대기로 먼저 옮기고, expireOverduePickups() 가 3분 넘긴
+// 수거대기를 강제 종료해 기기를 사용가능으로 되돌린다. 순서(P3 → P5 전환 → P5
+// 강제종료)가 중요하다 — 방금 회수된 기기가 이 요청의 drainQueue() 에 곧바로
+// 잡히려면 이 셋이 배정 판정보다 먼저 끝나 있어야 한다.
 
 import 'server-only';
 import { auth } from '@/auth';
 import { withdrawPendingBlock } from '@/lib/account-guard';
 import { drainQueue } from '@/lib/assignment';
 import { sql } from '@/lib/db';
+import {
+  expireOverdueAssignments,
+  expireOverduePickups,
+  transitionFinishedUsageToPickup,
+} from '@/lib/expiration';
 import { isMachineKind, MachineKind } from '@/lib/report-rules';
 import { NextResponse } from 'next/server';
 
@@ -68,6 +86,26 @@ export async function POST(_request: Request, { params }: RouteParams) {
   const dbKind = toDbKind(kind);
 
   try {
+    // 05 P3 · 08 · 4번(Issue #8) — 10분 안에 QR 인증이 없는 배정을 먼저 훑어
+    // 푼다. 줄서기 때마다 여기서 지연평가하므로, 방치된 배정이 하루 치 cron
+    // 백스톱(cleanup.ts)을 기다리지 않고 이 요청 안에서 곧바로 기기를 돌려준다
+    // — 아래 drainQueue() 가 방금 풀린 기기를 바로 배정할 수 있게.
+    // 실패해도 줄서기 자체는 막지 않는다(다음 cron 백스톱이 대신 훑는다).
+    try {
+      await expireOverdueAssignments();
+    } catch (error) {
+      console.error('배정 만료 스윕 실패(줄서기는 계속 진행)', error);
+    }
+
+    // 05 P5 · F9 — 타이머 끝난 사용중 → 수거대기, 3분 넘긴 수거대기 → 강제 종료.
+    // 같은 이유로 여기서 지연평가한다. 실패해도 줄서기는 막지 않는다.
+    try {
+      await transitionFinishedUsageToPickup();
+      await expireOverduePickups();
+    } catch (error) {
+      console.error('수거 만료 스윕 실패(줄서기는 계속 진행)', error);
+    }
+
     // ── 1걸음: 대기 중으로 줄을 세운다 (한 문장)
     //
     // 05 P7(이용 제한) · P10 · P20(그 종류에 쓸 기기가 하나도 없음)을 같은 문장에서
