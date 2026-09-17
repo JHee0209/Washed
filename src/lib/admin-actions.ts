@@ -13,6 +13,7 @@ import { revalidatePath } from 'next/cache';
 
 import { requireAdmin } from '@/lib/admin-session';
 import { drainQueue } from '@/lib/assignment';
+import { notifyAssignments } from '@/lib/assignment-notify';
 import { sql } from '@/lib/db';
 import { notify } from '@/lib/notify';
 import { queueCounts } from '@/lib/queries';
@@ -249,7 +250,11 @@ export async function setMachineStatus(machineId: string, status: string) {
   // 05 P2 — 방금 빈 기기를 기다리던 다음 사람에게 넘긴다. 배정 판정은 서버가 한다
   // (08 · 3번). 다음 사람의 10분은 **기기가 사용가능이 된 지금**부터 센다 (08 · 4번).
   if (status === '사용가능') {
-    await drainQueue();
+    const assigned = await drainQueue();
+    // F5 · 05 P26 · Issue #12 — 관리자 동작으로 차례가 된 사람에게 배정 알림.
+    if (assigned.length > 0) {
+      await notifyAssignments(assigned, 'turn');
+    }
     revalidatePath('/home');
   }
   revalidatePath('/admin');
@@ -635,7 +640,12 @@ export async function cancelQueue(queueId: string) {
   // 05 P2 — 반납된 기기를 기다리던 다음 사람에게 곧바로 넘긴다. 이 호출이 없으면
   // 기기는 비어 있는데 대기자는 계속 기다리는 상태로 남는다 (08 · 3번).
   // 다음 사람의 10분은 여기서부터 센다 — 앞사람의 3분은 들어가지 않는다 (08 · 4번).
-  await drainQueue();
+  const assigned = await drainQueue();
+  // F5 · 05 P26 · Issue #12 — 관리자가 대기열을 빼며 생긴 여지로 차례가 된 사람에게
+  // 배정 알림.
+  if (assigned.length > 0) {
+    await notifyAssignments(assigned, 'turn');
+  }
   revalidatePath('/admin');
   revalidatePath('/home');
 }

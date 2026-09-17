@@ -25,6 +25,7 @@
 import 'server-only';
 import { sql } from '@/lib/db';
 import { RUN_MINUTES_BY_KIND } from '@/lib/assignment-rules';
+import { notifyUsageEnded } from '@/lib/usage-end-notify';
 
 const WASHER_MINUTES = RUN_MINUTES_BY_KIND['세탁기'];
 const DRYER_MINUTES = RUN_MINUTES_BY_KIND['건조기'];
@@ -152,12 +153,13 @@ export async function startUsageFromQr({
   return { ok: false, reason: 'expired' };
 }
 
-// F9 — 사용 타이머 종료 처리 (05 P5 · P13 · 08 · 4번 · Issue #7).
+// F9 — 사용 타이머 종료 처리 (05 P5 · P13 · P26 · 08 · 4번 · Issue #7 · #12).
 //
-// **알림 발송은 여기 없다.** "이용 시간이 끝났어요" 푸시를 이 전환에 연결하는 일은
-// Issue #12("배정 · 종료 푸시 발송 연결 · F5 · F9 · R38")가 명시적으로 맡은 범위다 —
-// Issue #7의 체크리스트에는 상태 전환(수거대기 · 수거 3분 시작)만 있고 알림 항목이
-// 없다. 이 함수는 상태만 옮긴다.
+// **알림 발송은 usage-end-notify.ts 에 맡긴다.** "이용 시간이 끝났어요" 푸시(Issue
+// #12 · R38)는 이 파일도 expiration.ts(Issue #8)도 아닌 중립 모듈을 부른다 — #7과
+// #8이 같은 전환을 각자 훑으면서(아래 주석) 서로를 import하면 순환 참조가 되므로,
+// 둘 다 usage-end-notify.ts 하나만 바라본다. 전환 조건(WHERE) 자체는 그대로다 —
+// 알림은 "이미 확정된 전환"에 얹을 뿐 언제·누가 전환되는지를 바꾸지 않는다.
 //
 // 특정 사용자에 묶이지 않은 전역 함수다 — `myQueue(userId)` 안에 CTE로 넣으면 그
 // 사용자가 홈 화면을 열어 폴링할 때만 전환이 일어나 관리자 대기열(adminQueue())이
@@ -170,8 +172,14 @@ export async function startUsageFromQr({
 // 교차 조건이 없다) — 그래서 `FOR UPDATE`·`MATERIALIZED` 없이도 UPDATE 한 문장이면
 // 충분하다. 이미 전환된 행은 `상태 = 사용중` 조건에 걸려 다시 잡히지 않으므로
 // idempotent 하다(여러 조회가 동시에 불러도 안전하다).
+//
+// **같은 전환이 expiration.ts::transitionFinishedUsageToPickup() 에도 있다**(08 ·
+// 4번 · Issue #8) — 그쪽은 줄서기 POST 때와 하루 1회 배치에서만 돈다. 이 함수는
+// 홈 화면 폴링(GET /api/queue)마다 돌아 실제로는 이쪽이 거의 항상 먼저 그 행을
+// 잡는다. 같은 `상태 = 사용중` 가드를 쓰므로 어느 쪽이 먼저 잡아도 한 행은 한 번만
+// 전환되고, RETURNING된 쪽만 알린다 — usage-end-notify.ts 머리말 참고.
 export async function expireRunTimers(): Promise<void> {
-  await sql`
+  const started = await sql<{ queue_id: string; user_id: string; machine_name: string }>`
     UPDATE queue q
        SET status = '수거대기',
            pickup_deadline_at = m.ends_at + interval '3 minutes'
@@ -179,7 +187,12 @@ export async function expireRunTimers(): Promise<void> {
      WHERE q.machine_id = m.machine_id
        AND q.status = '사용중'
        AND m.ends_at <= now()
+    RETURNING q.queue_id, q.user_id, m.name AS machine_name
   `;
+
+  for (const row of started) {
+    await notifyUsageEnded(row.user_id, row.queue_id, row.machine_name);
+  }
 }
 
 // F10 — "다했어요" (05 P5 · P6 · 08 · 4번 · Issue #7).

@@ -16,6 +16,7 @@ import 'server-only';
 import { auth } from '@/auth';
 import { withdrawPendingBlock } from '@/lib/account-guard';
 import { drainQueue } from '@/lib/assignment';
+import { notifyAssignments } from '@/lib/assignment-notify';
 import { finishUsage } from '@/lib/usage';
 import { NextResponse } from 'next/server';
 
@@ -44,7 +45,11 @@ export async function POST(request: Request) {
 
     if (result.ok) {
       // 05 P2 — 반납된 기기를 기다리던 다음 사람에게 곧바로 넘긴다.
-      await drainQueue();
+      const assigned = await drainQueue();
+      // F5 · 05 P26 · Issue #12 — 앞사람 종료로 차례가 된 사람에게 배정 알림.
+      if (assigned.length > 0) {
+        await notifyAssignments(assigned, 'turn');
+      }
       return NextResponse.json({
         ok: true,
         machineId: result.machineId,
