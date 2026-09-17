@@ -151,3 +151,140 @@ export async function startUsageFromQr({
   // 내 배정이 맞는데 실패했다면 남은 경우는 하나뿐이다 — 10분 초과(05 P3).
   return { ok: false, reason: 'expired' };
 }
+
+// F9 — 사용 타이머 종료 처리 (05 P5 · P13 · 08 · 4번 · Issue #7).
+//
+// **알림 발송은 여기 없다.** "이용 시간이 끝났어요" 푸시를 이 전환에 연결하는 일은
+// Issue #12("배정 · 종료 푸시 발송 연결 · F5 · F9 · R38")가 명시적으로 맡은 범위다 —
+// Issue #7의 체크리스트에는 상태 전환(수거대기 · 수거 3분 시작)만 있고 알림 항목이
+// 없다. 이 함수는 상태만 옮긴다.
+//
+// 특정 사용자에 묶이지 않은 전역 함수다 — `myQueue(userId)` 안에 CTE로 넣으면 그
+// 사용자가 홈 화면을 열어 폴링할 때만 전환이 일어나 관리자 대기열(adminQueue())이
+// 낡은 `사용중`을 계속 보여준다. 그래서 이 함수를 조회 경로 여럿(홈 · 관리자)이
+// 각자 자기 SELECT 앞에서 부른다 — 같은 이유로 `queries.ts::myQueue()`의 SQL 자체는
+// 바꾸지 않는다.
+//
+// 여러 행을 매만지지만 행끼리 서로 경합하지 않는다(각 행의 자격은 `상태 = 사용중
+// AND 그 기기의 ends_at이 지났는가` 뿐이라 `assignment.ts`의 기기×대기자 짝짓기 같은
+// 교차 조건이 없다) — 그래서 `FOR UPDATE`·`MATERIALIZED` 없이도 UPDATE 한 문장이면
+// 충분하다. 이미 전환된 행은 `상태 = 사용중` 조건에 걸려 다시 잡히지 않으므로
+// idempotent 하다(여러 조회가 동시에 불러도 안전하다).
+export async function expireRunTimers(): Promise<void> {
+  await sql`
+    UPDATE queue q
+       SET status = '수거대기',
+           pickup_deadline_at = m.ends_at + interval '3 minutes'
+      FROM machines m
+     WHERE q.machine_id = m.machine_id
+       AND q.status = '사용중'
+       AND m.ends_at <= now()
+  `;
+}
+
+// F10 — "다했어요" (05 P5 · P6 · 08 · 4번 · Issue #7).
+//
+// 남은 시간과 관계없이(이용 중이든 수거대기든) 그 자리에서 종료한다. 경고 판정은
+// 여기서 하지 않는다 — 수거 3분 초과의 강제 종료 · 경고 부여는 `assignment.ts`
+// 머리말이 명시적으로 Issue #8(서버 스케줄러)의 몫으로 남겨 둔 자리다. 이 함수가
+// 불릴 때는 항상 사용자가 직접 누른 정상 종료이므로 결과는 늘 '완료'다.
+export type FinishUsageResult =
+  | {
+      ok: true;
+      queueId: string;
+      machineId: string;
+      machineKind: string;
+      serverNow: string;
+    }
+  | {
+      ok: false;
+      /** 그 기기에 걸린 내 줄 자체가 없음(이미 끝났거나 애초에 없음) */
+      reason: 'not_in_use';
+    }
+  | {
+      ok: false;
+      /** 다른 사용자가 쓰고 있는 기기 */
+      reason: 'other_user';
+    }
+  | {
+      ok: false;
+      /** 내 줄은 맞지만 아직 '배정'(QR 미인증) 상태 */
+      reason: 'not_started';
+    };
+
+export async function finishUsage({
+  userId,
+  machineId,
+}: {
+  userId: string;
+  machineId: string;
+}): Promise<FinishUsageResult> {
+  // `removed`(DELETE의 RETURNING)에서만 파생시킨다 — 앞서 조회한 스냅샷에서
+  // 파생시키면 중복 클릭이나 관리자의 cancelQueue · setMachineStatus와 겹칠 때
+  // 진 쪽이 이미 없어진 기기를 다시 '사용가능'으로 바꾸거나 usage_history를
+  // 중복 기록할 수 있다(0행이면 아무 것도 하지 않는 것이 DELETE 자체가 보장한다).
+  const rows = await sql<{
+    queue_id: string;
+    machine_id: string;
+    machine_kind: string;
+    server_now: string;
+  }>`
+    WITH
+    removed AS (
+      DELETE FROM queue q
+       USING machines m
+       WHERE q.machine_id = m.machine_id
+         AND q.user_id    = ${userId}
+         AND q.machine_id = ${machineId}
+         AND q.status IN ('사용중', '수거대기')
+      RETURNING q.queue_id, q.machine_id, q.machine_kind, m.ends_at
+    ),
+    freed AS (
+      UPDATE machines m
+         SET status = '사용가능', ends_at = NULL
+        FROM removed r
+       WHERE m.machine_id = r.machine_id
+      RETURNING m.machine_id
+    ),
+    logged AS (
+      INSERT INTO usage_history (user_id, machine_id, started_at, ended_at, result)
+      SELECT ${userId}, r.machine_id,
+             r.ends_at - (
+               CASE r.machine_kind
+                 WHEN '세탁기' THEN ${WASHER_MINUTES}::int
+                 ELSE ${DRYER_MINUTES}::int
+               END * interval '1 minute'
+             ),
+             now(), '완료'
+        FROM removed r
+      RETURNING history_id
+    )
+    SELECT r.queue_id, r.machine_id, r.machine_kind, now() AS server_now
+      FROM removed r
+  `;
+
+  const row = rows[0];
+  if (row) {
+    return {
+      ok: true,
+      queueId: row.queue_id,
+      machineId: row.machine_id,
+      machineKind: row.machine_kind,
+      serverNow: row.server_now,
+    };
+  }
+
+  // 실패 원인을 가려서 알려준다 — startUsageFromQr과 같은 패턴.
+  const existingRows = await sql<{ user_id: string; status: string }>`
+    SELECT user_id, status FROM queue WHERE machine_id = ${machineId}
+  `;
+  const existing = existingRows[0];
+  if (!existing) {
+    return { ok: false, reason: 'not_in_use' };
+  }
+  if (existing.user_id !== userId) {
+    return { ok: false, reason: 'other_user' };
+  }
+  // 내 줄인데 실패했다면 남은 경우는 아직 '배정'(QR 미인증) 뿐이다.
+  return { ok: false, reason: 'not_started' };
+}

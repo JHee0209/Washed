@@ -12,8 +12,11 @@ import { useRouter } from 'next/navigation';
 //
 // **배정 10분(05 P3)은 여기 없다.** 배정 마감 시각은 서버가 정해 assign_deadline_at
 // 으로 내려주고, 화면은 「서버가 준 마감 − 지금」만 그린다 (08 · 4번 · Issue #5).
-// 아래 60분 · 45분 · 3분은 QR 인증 뒤의 흐름(F8 · F9 · F10)이라 아직 화면 몫이다
-// — Issue #6 · #7 에서 서버로 옮긴다.
+// 아래 60분 · 45분 · 3분도 서버가 판정한다(machines.ends_at · queue.pickup_deadline_at ·
+// Issue #6 · #7). 다만 서버의 「사용중 → 수거대기」 전환(usage.ts::expireRunTimers)은
+// 최대 5초(폴링 주기) 늦게 도착하므로, 화면은 서버가 준 endsAt 을 기준으로 러닝 ·
+// 수거대기 전환을 **직접 계산**해 그 지연 없이 그린다 — 실제 종료 처리 · 강제 종료 ·
+// 경고 판정은 전부 서버 몫이다.
 const RUN_MS_WASHER = 60 * 60 * 1000;
 const RUN_MS_DRYER = 45 * 60 * 1000;
 const GRACE_MS = 3 * 60 * 1000;
@@ -64,9 +67,6 @@ export default function HomePage() {
   // 서버 시각과 브라우저 시각의 차이. 카운트다운을 서버 기준으로 보정한다.
   const [clockSkewMs, setClockSkewMs] = useState(0);
 
-  // QR 인증 이후의 로컬 시뮬레이션(F8 · F9 · F10). Issue #6 · #7 에서 서버로 옮긴다 —
-  // 그때까지는 배정(서버)과 사용 중(로컬)을 **갈라서** 둔다.
-  const [queue, setQueue] = useState<Record<string, any>>({});
   const [queueCounts, setQueueCounts] = useState<ApiQueueCounts>({ washer: 0, dryer: 0 });
   const [rawMachines, setRawMachines] = useState<ApiMachine[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,32 +126,6 @@ export default function HomePage() {
     return () => clearInterval(id);
   }, [loadMine, loadMachines]);
 
-  // F8 — 서버가 이미 「사용중」으로 판정했는데 로컬 queue 에 아직 없으면(새로고침 ·
-  // 다른 기기에서 이어보기) 서버의 종료 예정 시각으로 시드한다. QR 인증에 성공한
-  // 그 순간에는 handleQrVerified 가 곧바로 채워 두므로 여기서는 새로고침·다른
-  // 기기 접속처럼 로컬 상태가 비어 있는 경우만 채운다(07 공통 인수 조건의
-  // 「다른 기기 · 새로고침에도 같은 것이 보인다」 · 요구사항 7번).
-  useEffect(() => {
-    (['washer', 'dryer'] as const).forEach((type) => {
-      const entry = mine[type];
-      const machineId = entry?.machineId;
-      if (entry?.status !== 'inuse' || !machineId || !entry.endsAt) return;
-      setQueue((prev) => {
-        if (prev[machineId]) return prev;
-        return {
-          ...prev,
-          [machineId]: {
-            phase: 'running',
-            name: entry.machineName ?? '',
-            // 서버 절대시각을 클라이언트 시계 기준으로 옮긴다 — 아래 렌더링이
-            // `now`(클라이언트 시계)와 비교하기 때문이다 (08 · 4번).
-            runDeadline: new Date(entry.endsAt as string).getTime() - clockSkewMs,
-          },
-        };
-      });
-    });
-  }, [mine, clockSkewMs]);
-
   // --- 알림(Toast) 함수 ---
   const showToast = (message: string) => {
     setToast({ visible: true, message });
@@ -166,34 +140,14 @@ export default function HomePage() {
   // 맡는다(Issue #8). 여기서는 남은 시간을 그릴 뿐이고, 마감이 지나면 0:00 에서
   // 멈춘 채 다음 폴링이 서버 판정을 가져오기를 기다린다.
   //
-  // 아래 러닝 · 유예 전환은 QR 인증 뒤(F9 · F10)라 아직 화면 몫이다 — Issue #7.
+  // 사용중 → 수거대기 전환(F9)과 "다했어요" 처리(F10)는 서버가 한다
+  // (usage.ts::expireRunTimers · finishUsage, Issue #7). 여기서는 서버가 준 endsAt 과
+  // 이 tick 이 갱신하는 serverNow 를 비교해 러닝 · 수거대기 화면을 그릴 뿐이다 —
+  // 그래서 서버의 상태 전환(최대 5초 폴링 지연)을 기다리지 않고도 타이머가 0 이
+  // 되는 즉시 빨간 수거대기 화면으로 바뀐다(아래 myCurrent).
   useEffect(() => {
-    const tick = setInterval(() => {
-      const currentTime = Date.now();
-      setNow(currentTime);
-
-      setQueue((prevQ) => {
-        const newQ = { ...prevQ };
-        let changed = false;
-
-        Object.keys(newQ).forEach((id) => {
-          const e = newQ[id];
-          if (e.phase === 'running' && currentTime >= e.runDeadline) {
-            newQ[id] = { ...e, phase: 'grace', graceDeadline: currentTime + GRACE_MS };
-            changed = true;
-            showToast(`${e.name} 이용 시간이 끝났어요. 3분 안에 "다했어요"를 눌러주세요.`);
-          } else if (e.phase === 'grace' && currentTime >= e.graceDeadline) {
-            delete newQ[id];
-            changed = true;
-            showToast(`${e.name}에서 시간 내 "다했어요"를 누르지 않아 경고가 1회 누적됐어요.`);
-            // 기기 상태 초기화
-            setRawMachines((prev) => prev.map(m => m.id === id ? { ...m, status: 'available' } : m));
-          }
-        });
-        return changed ? newQ : prevQ;
-      });
-    }, 1000);
-    return () => clearInterval(tick);
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
   }, []);
 
   // --- 핸들러 함수 ---
@@ -253,24 +207,35 @@ export default function HomePage() {
   // 정한 값이고, 클라이언트는 그리기만 한다(05 P4 · 10번 요구사항).
   const handleQrVerified = (result: QrVerifiedResult) => {
     setScanningId(null);
-    const skew = new Date(result.serverNow).getTime() - Date.now();
-    setClockSkewMs(skew);
-    setQueue((prev) => ({
-      ...prev,
-      [result.machineId]: {
-        phase: 'running',
-        name: result.machineName ?? '',
-        runDeadline: new Date(result.endsAt).getTime() - skew,
-      },
-    }));
+    setClockSkewMs(new Date(result.serverNow).getTime() - Date.now());
     showToast(`${result.machineName ?? '기기'} QR 인증 완료! 타이머가 시작됐어요.`);
     loadMine();
     loadMachines();
   };
 
-  const finish = (id: string, name: string) => {
-    setQueue((prev) => { const n = { ...prev }; delete n[id]; return n; });
-    showToast(`${name} 이용을 완료했어요. 다음 분이 이용할 수 있어요.`);
+  // F10 — "다했어요"는 서버가 판정한다(05 P5 · P6 · Issue #7). 남은 시간과
+  // 관계없이 그 자리에서 종료되고, 대기자가 있으면 곧바로 다음 사람에게 넘어간다.
+  const finish = async (machineId: string, name: string) => {
+    try {
+      const res = await fetch('/api/queue/finish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ machineId }),
+      });
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        showToast(data.message || `${name} 종료 처리에 실패했어요.`);
+        loadMine();
+        return;
+      }
+
+      showToast(`${name} 이용을 완료했어요. 다음 분이 이용할 수 있어요.`);
+      loadMine();
+      loadMachines();
+    } catch {
+      showToast('네트워크 오류로 종료 처리에 실패했어요.');
+    }
   };
 
   // --- 화면 렌더링용 연산 ---
@@ -298,8 +263,24 @@ export default function HomePage() {
     }
   });
 
-  /** 서버 배정(내 것) 또는 로컬 사용 중(QR 이후)이면 그 기기는 내가 쓰는 중이다 */
-  const isMineNow = (id: string) => assignedByMachineId.has(id) || Boolean(queue[id]);
+  // --- 서버가 준 사용 중 (F8 · F9 · F10 · 05 P4 · P5) ---
+  // 상태가 inuse(사용중) · pickup(수거대기)이면 그 기기는 내가 쓰는 중이다. endsAt 은
+  // 서버가 QR 인증 때 찍은 종료 예정 시각 — 러닝 · 수거대기 전환(F9)을 그릴 때
+  // 이 값과 serverNow 만 비교한다(서버의 상태 전환을 기다리지 않는다).
+  const inUseByMachineId = new Map<string, { type: 'washer' | 'dryer'; name: string; endsAt: number }>();
+  (['washer', 'dryer'] as const).forEach((type) => {
+    const entry = mine[type];
+    if ((entry?.status === 'inuse' || entry?.status === 'pickup') && entry.machineId && entry.endsAt) {
+      inUseByMachineId.set(entry.machineId, {
+        type,
+        name: entry.machineName ?? '',
+        endsAt: new Date(entry.endsAt).getTime(),
+      });
+    }
+  });
+
+  /** 서버 배정(내 것) 또는 서버가 사용중 · 수거대기로 판정한 것이면 그 기기는 내가 쓰는 중이다 */
+  const isMineNow = (id: string) => assignedByMachineId.has(id) || inUseByMachineId.has(id);
 
   const effectiveStatus = (r: any) => (isMineNow(r.id) ? 'inuse' : r.status);
 
@@ -321,7 +302,7 @@ export default function HomePage() {
     else if (isInspection) { badgeFg = '#70737C'; badgeDot = '#8FAAD0'; badgeLabel = '점검 중'; }
     else if (isInUse) { badgeFg = '#3B76CC'; badgeDot = '#5B93E0'; badgeLabel = '사용중'; }
 
-    const e = queue[r.id];
+    const e = inUseByMachineId.get(r.id);
     const actionOnClick = () => {};
     let actionLabel = null, actionDisabled = false, actionStyle: any = leaveBtn;
 
@@ -331,12 +312,12 @@ export default function HomePage() {
     }
 
     let showProgress = false, progressPct = 0;
-    if (e && e.phase === 'running') {
-      const msLeft = Math.max(0, e.runDeadline - now);
-      progressPct = Math.min(100, Math.max(4, 100 - (msLeft / runMsFor(r.type)) * 100));
+    if (e) {
+      const msLeft = Math.max(0, e.endsAt - serverNow);
+      progressPct = msLeft > 0
+        ? Math.min(100, Math.max(4, 100 - (msLeft / runMsFor(r.type)) * 100))
+        : 100;
       showProgress = true;
-    } else if (e && e.phase === 'grace') {
-      progressPct = 100; showProgress = true;
     }
 
     return { ...r, badgeFg, badgeDot, badgeLabel, iconInuse: isInUse, iconAvailable: !isInUse && !isFault && !isInspection, iconFault: isFault, iconInspection: isInspection, showProgress, progress: `${progressPct}%`, actionLabel, actionOnClick, actionDisabled, actionStyle };
@@ -352,7 +333,7 @@ export default function HomePage() {
     const available = list.filter((r) => effectiveStatus(r) === 'available').length;
     const inuse = list.filter((r) => effectiveStatus(r) === 'inuse').length;
     const entry = mine[type];
-    const assignedMachine = list.find((r) => assignedByMachineId.has(r.id) || queue[r.id]);
+    const assignedMachine = list.find((r) => assignedByMachineId.has(r.id) || inUseByMachineId.has(r.id));
     const isWaiting = entry?.status === 'waiting';
     const hasFreeSlot = list.length > 0;
     // 05 P2 — 대기 인원은 서버(queueCounts)가 센다. 화면이 규칙을 다시 적지 않는다.
@@ -401,17 +382,21 @@ export default function HomePage() {
     // 10분이 지났을 때의 배정 해제 · 경고는 서버가 판정한다 (05 P3 · Issue #8) —
     // 화면이 스스로 지우지 않으므로, 서버가 해제할 때까지 0:00 으로 남아 있는다.
     const assigned = assignedByMachineId.get(r.id);
-    if (assigned && !queue[r.id]) {
+    if (assigned && !inUseByMachineId.has(r.id)) {
       myCurrent.push({ ...icon, name: r.name, timeLeft: assigned.deadline === null ? '--:--' : fmt(assigned.deadline - serverNow), timeColor: '#5B93E0', message: '10분이 지나면 순서가 넘어갑니다. 시간 내에 QR 인증해 주세요.', msgColor: '#8FAAD0', btnLabel: 'QR 인증', btnStyle: { ...primaryBtn, width: '100%' }, onClick: () => setWarningId(r.id) });
       return;
     }
 
-    const e = queue[r.id];
+    // F9 · F10 — 사용중 · 수거대기는 서버가 준 종료 예정 시각(endsAt)만으로 그린다.
+    // 실제 종료 처리 · 3분 초과 강제 종료 · 경고는 서버 몫이다(Issue #7 · #8).
+    const e = inUseByMachineId.get(r.id);
     if (!e) return;
-    if (e.phase === 'running') {
-      myCurrent.push({ ...icon, name: r.name, timeLeft: `약 ${fmt(e.runDeadline - now)}`, timeColor: '#5B93E0', message: '이용 완료 후 "다했어요"를 눌러주세요.', msgColor: '#8FAAD0', btnLabel: '다했어요', btnStyle: { ...leaveBtn, width: '100%' }, onClick: () => finish(r.id, r.name) });
-    } else if (e.phase === 'grace') {
-      myCurrent.push({ ...icon, name: r.name, timeLeft: fmt(e.graceDeadline - now), timeColor: '#E0554E', message: '시간이 끝났어요! 지금 누르지 않으면 경고가 쌓여요.', msgColor: '#E0554E', btnLabel: '다했어요', btnStyle: { ...leaveBtn, width: '100%' }, onClick: () => finish(r.id, r.name) });
+    const msLeft = e.endsAt - serverNow;
+    if (msLeft > 0) {
+      myCurrent.push({ ...icon, name: r.name, timeLeft: `약 ${fmt(msLeft)}`, timeColor: '#5B93E0', message: '이용 완료 후 "다했어요"를 눌러주세요.', msgColor: '#8FAAD0', btnLabel: '다했어요', btnStyle: { ...leaveBtn, width: '100%' }, onClick: () => finish(r.id, r.name) });
+    } else {
+      const graceDeadline = e.endsAt + GRACE_MS;
+      myCurrent.push({ ...icon, name: r.name, timeLeft: fmt(graceDeadline - serverNow), timeColor: '#E0554E', message: '시간이 끝났어요! 지금 누르지 않으면 경고가 쌓여요.', msgColor: '#E0554E', btnLabel: '다했어요', btnStyle: { ...leaveBtn, width: '100%' }, onClick: () => finish(r.id, r.name) });
     }
   });
 

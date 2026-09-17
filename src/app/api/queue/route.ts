@@ -15,6 +15,7 @@
 import 'server-only';
 import { auth } from '@/auth';
 import { kindWaitEstimates, myQueue } from '@/lib/queries';
+import { expireRunTimers } from '@/lib/usage';
 import { NextResponse } from 'next/server';
 
 type ClientKind = 'washer' | 'dryer';
@@ -34,6 +35,10 @@ export async function GET() {
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // F9 — 사용 타이머가 끝난 줄을 수거대기로 전환한다(전역 함수 · 05 P5 · Issue #7).
+    // 실패해도 다음 폴링에서 다시 시도되므로 재시도 로직을 따로 두지 않는다.
+    await expireRunTimers();
 
     const [rows, estimates] = await Promise.all([myQueue(userId), kindWaitEstimates()]);
 
