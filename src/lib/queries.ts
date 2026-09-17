@@ -167,12 +167,15 @@ export async function myQueue(userId: string) {
     assigned_at: string | null;
     assign_deadline_at: string | null;
     pickup_deadline_at: string | null;
+    /** F8 — QR 인증 성공 뒤 서버가 찍은 종료 예정 시각(05 P4). 사용중이 아니면 null */
+    ends_at: string | null;
     server_now: string;
     /** 05 P2 — 내 앞에 몇 명이 더 기다리는지 (대기 중일 때만 뜻이 있다) */
     ahead: number;
   }>`
     SELECT q.queue_id, q.machine_kind, q.machine_id, m.name AS machine_name,
            q.status, q.queued_at, q.assigned_at, q.assign_deadline_at, q.pickup_deadline_at,
+           m.ends_at,
            now() AS server_now,
            (SELECT COUNT(*)::int FROM queue o
              WHERE o.machine_kind = q.machine_kind

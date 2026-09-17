@@ -49,6 +49,9 @@ export async function GET() {
         assignedAt: row.assigned_at,
         assignDeadlineAt: row.assign_deadline_at,
         pickupDeadlineAt: row.pickup_deadline_at,
+        // F8 — QR 인증 성공 뒤 서버가 찍은 종료 예정 시각(05 P4). 세탁 60분 · 건조
+        // 45분을 클라이언트가 계산하지 않고 이 값만 그린다(Issue #6).
+        endsAt: row.ends_at,
         queuedAt: row.queued_at,
         /** 05 P2 — 내 앞에 남은 대기 인원 */
         ahead: row.ahead,
