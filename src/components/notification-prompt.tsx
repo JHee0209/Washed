@@ -26,7 +26,7 @@
 // 이 안내는 P13(차례 10분 전 · 이용 가능)의 종류별 설정과 **다른 것**이다.
 // 여기는 운영체제 단위 허용이고, 종류별 설정은 v2 다 (P26 · 06 · 42줄).
 
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 
 import {
   askedServerSnapshot,
@@ -79,55 +79,111 @@ export default function NotificationPrompt() {
     installGuideSeenServerSnapshot,
   );
 
+  // 허용 · 거절이 정해진 뒤의 마무리(구독 저장 · 새로고침)는 **딱 한 번만** 돈다.
+  // 결과는 네 곳(요청 반환값 · Permissions 변경 · focus · visibilitychange)에서
+  // 동시에 감지될 수 있어서, 잠금이 없으면 새로고침이 여러 번 걸린다.
+  const finalizingRef = useRef(false);
+
+  // 아직 아무것도 정해지지 않아 물어봐야 하는 상태인지 (= 모달이 떠 있는지)
+  const needsAsk =
+    hydrated && !iosNeedsInstall && permission === 'default' && !asked;
+
+  /**
+   * 허용 · 거절이 정해졌다. 저장할 것을 먼저 저장하고 나서 화면을 새로 연다.
+   *
+   * **순서가 중요하다** — 새로고침이 먼저 걸리면 구독 저장 요청이 중간에 끊긴다.
+   */
+  async function finalizePermissionChange(alreadySynced: boolean) {
+    if (finalizingRef.current) return;
+    finalizingRef.current = true;
+    try {
+      if (permissionSnapshot() === 'granted' && !alreadySynced) {
+        await syncPushSubscription();
+      }
+    } finally {
+      window.location.reload();
+    }
+  }
+
   // 이미 허용한 기기면 서버에 구독이 남아 있도록 조용히 맞춘다.
   // (열쇠가 회전되거나 서버 행이 지워졌을 수 있다.)
   useEffect(() => {
     // allow()가 이미 enablePush()로 구독/저장을 진행 중일 때 같은 registration에
     // syncPushSubscription()이 동시에 끼어들면 두 흐름이 경쟁하다 enablePush()
     // 쪽이 settle되지 않아 "등록 중..."이 영영 풀리지 않는 경우가 있었다.
-    if (permission === 'granted' && !pending) syncPushSubscription();
+    // 마무리 중일 때도 같은 이유로 비켜선다.
+    if (permission === 'granted' && !pending && !finalizingRef.current) {
+      syncPushSubscription();
+    }
   }, [permission, pending]);
 
-  // 사이트 설정에서 직접 허용하고 돌아오는 길 — 브라우저는 허용이 바뀌어도
-  // 알려 주지 않으므로 화면이 다시 보일 때 다시 읽는다.
+  // 조용한 권한 UI(주소창 알림 아이콘) 대응 — 그 UI 에서 고른 결과는
+  // requestPermission() 이 돌려주지 않을 수 있다. 모달이 떠 있는 동안에만
+  // 지켜보다가, default 를 벗어나면 선택이 끝난 것으로 본다.
   useEffect(() => {
-    const recheck = () => refreshPushPermission();
-    window.addEventListener('focus', recheck);
-    document.addEventListener('visibilitychange', recheck);
-    return () => {
-      window.removeEventListener('focus', recheck);
-      document.removeEventListener('visibilitychange', recheck);
+    if (!needsAsk) return;
+
+    const check = () => {
+      const current = permissionSnapshot();
+      if (current === 'granted' || current === 'denied') {
+        // 여기서는 일부러 다시 그리지 않는다 — 곧 새로고침이 걸리고,
+        // 다시 그리면 위 동기화 효과와 겹친다.
+        void finalizePermissionChange(false);
+        return;
+      }
+      refreshPushPermission();
     };
-  }, []);
+
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+
+    // Permissions API 는 브라우저마다 지원이 갈린다 — 있으면 쓰고, 없으면
+    // 위의 focus · visibilitychange 로도 충분히 잡힌다.
+    let status: PermissionStatus | undefined;
+    navigator.permissions
+      ?.query({ name: 'notifications' as PermissionName })
+      .then((result) => {
+        status = result;
+        result.addEventListener('change', check);
+      })
+      .catch(() => {
+        // 이 브라우저는 알림 권한을 Permissions API 로 못 읽는다 — 무시한다
+      });
+
+    return () => {
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', check);
+      status?.removeEventListener('change', check);
+    };
+  }, [needsAsk]);
 
   async function allow() {
     if (pending) return; // 등록 중 중복 클릭 방지
     setPending(true);
     setNotice(null);
     try {
-      // 이 호출까지가 클릭과 같은 흐름이다 — 여기서 native 허용 창이 뜬다.
+      // 이 호출까지가 클릭과 같은 흐름이다 — enablePush() 는 다른 일을 하기 전에
+      // Notification.requestPermission() 부터 부른다. 여기서 native 창이 뜬다.
       const result = await enablePush();
-      if (result === 'default') {
-        // 창이 뜨지 않았거나(크롬의 조용한 권한 UI) 사용자가 그냥 닫았다.
-        // 이때도 "등록 중…" 으로 남기지 않는다.
-        setNotice(
-          '알림 창이 뜨지 않았어요. 주소창의 알림 아이콘이나 사이트 설정에서 허용한 뒤 「다시 확인」을 눌러주세요.',
-        );
-      }
-      // 'granted' — 허용 상태가 바뀌면서 이 모달은 스스로 닫힌다.
-      // 'denied' — 아래 차단 안내 화면으로 바뀐다.
+
+      // granted 면 enablePush() 안에서 구독 저장까지 이미 끝났다.
+      if (result === 'granted') return void finalizePermissionChange(true);
+      if (result === 'denied') return void finalizePermissionChange(false);
+
+      // 'default' — 창이 뜨지 않았거나(조용한 권한 UI) 사용자가 그냥 닫았다.
+      // "등록 중…" 으로 남기지 않고 다시 시도하거나 넘어갈 수 있게 한다.
+      setNotice(
+        '알림 창이 뜨지 않았어요. 주소창의 알림 아이콘에서 고르거나, 「다시 시도」를 눌러주세요.',
+      );
     } catch (error) {
       console.error('알림 등록 실패', error);
-      setNotice('알림을 켜지 못했어요. 잠시 뒤 「다시 확인」을 눌러주세요.');
+      // 허용은 됐는데 저장에만 실패했을 수 있다 — 그때는 마무리로 넘긴다.
+      if (permissionSnapshot() === 'granted') return void finalizePermissionChange(false);
+      setNotice('알림을 켜지 못했어요. 「다시 시도」를 누르거나 나중에 설정에서 켤 수 있어요.');
     } finally {
       // 어떤 경로로 끝나든 여기서 반드시 풀린다.
       setPending(false);
     }
-  }
-
-  function recheckPermission() {
-    setNotice(null);
-    refreshPushPermission();
   }
 
   const overlay: React.CSSProperties = {
@@ -233,38 +289,12 @@ export default function NotificationPrompt() {
   // (구독 동기화는 위 효과가 조용히 맞춘다.)
   if (permission === 'granted') return null;
 
-  // 05 P26 — 한 번 묻고 닫았으면 다시 붙잡지 않는다. 거절한 사람도 여기를 지나
-  // 홈을 그대로 쓰고, 설정 화면의 "알림이 꺼져 있어요" 줄에서 다시 켠다.
-  if (asked) return null;
+  // 05 P26 — 차단한 사람을 모달로 붙잡지 않는다. 홈을 그대로 쓰고, 설정 화면의
+  // "알림이 꺼져 있어요" 줄에서 다시 켠다.
+  if (permission === 'denied') return null;
 
-  // 화면 상태 4 — 브라우저가 차단을 기억하고 있다. 코드로는 창을 다시 띄울 수
-  // 없으므로 "등록 중…" 으로 만들지 않고 사이트 설정으로 안내한다. 여기서도
-  // 「나중에」로 닫고 홈을 쓸 수 있다 (P26).
-  if (permission === 'denied') {
-    return (
-      <div style={overlay} role="dialog" aria-modal="true" aria-labelledby="push-modal-title">
-        <div style={card}>
-          <span id="push-modal-title" style={titleStyle}>
-            알림이 차단되어 있어요
-          </span>
-          <span style={bodyStyle}>
-            브라우저에서 알림 권한이 차단되어 있어요. 지금 켜려면 주소창의
-            자물쇠(사이트 설정) → 알림 → <b>허용</b>으로 바꾼 뒤 「다시 확인」을
-            눌러주세요. 그냥 두셔도 앱은 그대로 쓸 수 있고, 나중에 설정에서 다시 켤
-            수 있어요.
-          </span>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" onClick={markAsked} style={ghostButton}>
-              나중에
-            </button>
-            <button type="button" onClick={recheckPermission} style={primaryButton}>
-              다시 확인
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
+  // 05 P26 — 한 번 묻고 닫았으면 다시 묻지 않는다. 새로고침해도 마찬가지다.
+  if (asked) return null;
 
   // 화면 상태 2 · 3 — 아직 묻지 않았다. 버튼을 눌러야 native 창이 뜬다.
   return (
@@ -274,9 +304,8 @@ export default function NotificationPrompt() {
           차례가 되면 알려드릴게요
         </span>
         <span style={bodyStyle}>
-          배정 · 종료 알림을 폰 알림으로 받으려면 알림을 허용해주세요. 아래 버튼을
-          누르면 브라우저의 허용 창이 떠요. 거절해도 앱은 그대로 쓸 수 있고, 설정에서
-          다시 켤 수 있어요.
+          알림을 허용하면 배정 및 사용 종료 알림을 받을 수 있어요. 허용하지 않아도
+          앱은 그대로 쓸 수 있고, 설정에서 다시 켤 수 있어요.
         </span>
         {notice ? <span style={noticeStyle}>{notice}</span> : null}
         <div style={{ display: 'flex', gap: 8 }}>
