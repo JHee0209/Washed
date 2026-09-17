@@ -22,13 +22,23 @@
 // expireOverdueAssignments()(05 P3)를 배정 판정 **앞에** 불러, 10분을 넘겨 방치된
 // 배정을 먼저 풀고 그 기기를 이 요청의 drainQueue() 가 곧바로 쓸 수 있게 한다 —
 // cleanup.ts 의 하루 1회 배치는 트래픽이 없을 때의 백스톱일 뿐이다.
+//
+// 05 P5 도 같은 이유로 여기서 훑는다 — transitionFinishedUsageToPickup() 이 타이머
+// 끝난 사용중 줄을 수거대기로 먼저 옮기고, expireOverduePickups() 가 3분 넘긴
+// 수거대기를 강제 종료해 기기를 사용가능으로 되돌린다. 순서(P3 → P5 전환 → P5
+// 강제종료)가 중요하다 — 방금 회수된 기기가 이 요청의 drainQueue() 에 곧바로
+// 잡히려면 이 셋이 배정 판정보다 먼저 끝나 있어야 한다.
 
 import 'server-only';
 import { auth } from '@/auth';
 import { withdrawPendingBlock } from '@/lib/account-guard';
 import { drainQueue } from '@/lib/assignment';
 import { sql } from '@/lib/db';
-import { expireOverdueAssignments } from '@/lib/expiration';
+import {
+  expireOverdueAssignments,
+  expireOverduePickups,
+  transitionFinishedUsageToPickup,
+} from '@/lib/expiration';
 import { isMachineKind, MachineKind } from '@/lib/report-rules';
 import { NextResponse } from 'next/server';
 
@@ -85,6 +95,15 @@ export async function POST(_request: Request, { params }: RouteParams) {
       await expireOverdueAssignments();
     } catch (error) {
       console.error('배정 만료 스윕 실패(줄서기는 계속 진행)', error);
+    }
+
+    // 05 P5 · F9 — 타이머 끝난 사용중 → 수거대기, 3분 넘긴 수거대기 → 강제 종료.
+    // 같은 이유로 여기서 지연평가한다. 실패해도 줄서기는 막지 않는다.
+    try {
+      await transitionFinishedUsageToPickup();
+      await expireOverduePickups();
+    } catch (error) {
+      console.error('수거 만료 스윕 실패(줄서기는 계속 진행)', error);
     }
 
     // ── 1걸음: 대기 중으로 줄을 세운다 (한 문장)
