@@ -88,6 +88,16 @@ export async function drainQueue(): Promise<Assignment[]> {
       SELECT q.queue_id, q.user_id, q.machine_kind, q.queued_at
         FROM queue q
        WHERE q.status = '대기 중'
+         -- 05 P20 · 06 「세탁실」 · Issue #47 — 점검 중에는 새로 배정하지 않는다.
+         -- 이미 배정 · 사용중인 줄은 status 가 '대기 중'이 아니므로 이 WHERE 에
+         -- 애초에 걸리지 않는다 — 그래서 점검을 켜도 그 줄들은 그대로 진행된다
+         -- (P20 그대로). 점검 시작 이전에 이미 대기 중이던 사람도 여기서 함께
+         -- 멈춘다 — 배정은 "새 줄서기"가 아니라 "기기를 새로 잡는 일"이라 점검의
+         -- 목적(전수 점검)과 충돌하기 때문이다. 점검을 끄면 이 WHERE 가 다시
+         -- 통과해 대기 순서 그대로 배정이 재개된다.
+         AND NOT EXISTS (
+           SELECT 1 FROM facility_status WHERE id = true AND is_under_inspection
+         )
        ORDER BY q.machine_kind, q.queued_at, q.queue_id
          FOR UPDATE
     ),

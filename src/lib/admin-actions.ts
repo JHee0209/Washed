@@ -15,6 +15,7 @@ import { requireAdmin } from '@/lib/admin-session';
 import { drainQueue } from '@/lib/assignment';
 import { notifyAssignments } from '@/lib/assignment-notify';
 import { sql } from '@/lib/db';
+import { updateFacilityInspection } from '@/lib/facility-status';
 import { notify } from '@/lib/notify';
 import { queueCounts } from '@/lib/queries';
 import { expireRunTimers } from '@/lib/usage';
@@ -308,6 +309,21 @@ export async function setMachineStatus(machineId: string, status: string) {
     revalidatePath('/home');
   }
   revalidatePath('/admin');
+}
+
+/**
+ * 세탁실 전체 점검 토글 (F33 · 05 P20 · Issue #47).
+ *
+ * machines.status 의 '점검중'(setMachineStatus)과 완전히 별개다 — 이 값은 새
+ * 줄서기·새 배정 자체를 막는 세탁실 전체 스위치이고, 개별 기기의 점검중 상태는
+ * 건드리지 않는다. 이미 배정·사용중인 줄도 그대로 진행된다(P20 — 새 배정만 막는
+ * src/lib/assignment.ts::drainQueue() 의 게이트가 그 경계를 지킨다).
+ */
+export async function setFacilityInspection(next: boolean) {
+  await requireAdmin();
+  await updateFacilityInspection(next);
+  revalidatePath('/admin');
+  revalidatePath('/home');
 }
 
 /** 기기 추가 (F24) */

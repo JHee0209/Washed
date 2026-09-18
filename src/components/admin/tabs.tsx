@@ -13,14 +13,15 @@ import {
   addNotice,
   cancelQueue,
   clearRestriction,
-  issueUsageIncidentWarning,
   issueWarning,
   removeMachine,
   removeNotice,
   revokeWarning,
+  setFacilityInspection,
   setMachineStatus,
   setReportStatus,
 } from '@/lib/admin-actions';
+import { ADMIN_WARNING_REASONS } from '@/lib/warning-rules';
 
 type Data = {
   machines: {
@@ -32,6 +33,8 @@ type Data = {
     current_user_name: string | null;
     current_user_room: string | null;
   }[];
+  // 06 「세탁실」 · F33 · Issue #47 — dashboard 탭에서만 채운다.
+  facilityStatus: { isUnderInspection: boolean } | null;
   queue: {
     rows: {
       queue_id: string;
@@ -61,7 +64,6 @@ type Data = {
   }[];
   history: {
     history_id: string;
-    /** 05 P6 · 0008 — F28 「경고 주기」 · F29 이용 내역 드롭다운이 쓴다(화면엔 안 보임) */
     user_id: string;
     user_name: string;
     room: string;
@@ -102,13 +104,15 @@ type Data = {
 };
 
 export default function AdminTabs({ tab, data }: { tab: string; data: Data }) {
-  if (tab === 'dashboard') return <Machines rows={data.machines} />;
+  if (tab === 'dashboard') {
+    return <Machines rows={data.machines} facilityStatus={data.facilityStatus} />;
+  }
   if (tab === 'queue') return <Queue rows={data.queue.rows} counts={data.queue.counts} />;
   if (tab === 'reports') return <Reports rows={data.reports} />;
   if (tab === 'history') return <History rows={data.history} />;
   if (tab === 'warnings') return <Warnings rows={data.warnings} />;
   if (tab === 'notice') return <Notices rows={data.notices} />;
-  return <Users rows={data.users} history={data.history} />;
+  return <Users rows={data.users} />;
 }
 
 // ─── 공통 표 조각 ────────────────────────────────────────────────────────────
@@ -230,7 +234,13 @@ function fmt(iso: string, withTime = true) {
 
 // ─── 탭 1 · 실시간 기기 현황 (F23 · F24) ─────────────────────────────────────
 
-function Machines({ rows }: { rows: Data['machines'] }) {
+function Machines({
+  rows,
+  facilityStatus,
+}: {
+  rows: Data['machines'];
+  facilityStatus: Data['facilityStatus'];
+}) {
   const [name, setName] = useState('');
   const [kind, setKind] = useState('세탁기');
   const [pending, start] = useTransition();
@@ -238,8 +248,42 @@ function Machines({ rows }: { rows: Data['machines'] }) {
   const color = (s: string) =>
     s === '사용가능' ? '#00BF40' : s === '사용중' ? '#2F63B8' : s === '고장' ? '#E52222' : '#FF9200';
 
+  const underInspection = facilityStatus?.isUnderInspection ?? false;
+
   return (
     <>
+      {/* 05 P20 · 06 「세탁실」 · F33 · Issue #47 — 기기 단위 점검(machines.status
+          의 '점검중')과 완전히 별개다. 개별 점검 조작 버튼은 이 화면에 두지 않고
+          세탁실 전체를 한 번에 잠그는 토글 하나만 둔다. */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <Dot color={underInspection ? '#FF9200' : '#00BF40'} />
+        <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
+          세탁실 {underInspection ? '점검 중' : '운영 중'}
+        </span>
+        <Btn
+          tone={underInspection ? 'primary' : 'danger'}
+          onClick={() => setFacilityInspection(!underInspection)}
+        >
+          {underInspection ? '점검 해제' : '세탁실 점검 시작'}
+        </Btn>
+      </div>
+      {underInspection ? (
+        <div
+          style={{
+            padding: '11px 14px',
+            marginBottom: 16,
+            borderRadius: 12,
+            background: 'rgba(255,146,0,.1)',
+            fontSize: 12.5,
+            color: '#8A5300',
+            lineHeight: 1.7,
+          }}
+        >
+          세탁실 전체가 점검 중이에요 — 모든 세탁기 · 건조기의 신규 줄서기와 배정이
+          멈춰 있어요. 이미 배정 · 사용 중인 건은 그대로 진행됩니다.
+        </div>
+      ) : null}
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         <input
           value={name}
@@ -298,39 +342,45 @@ function Machines({ rows }: { rows: Data['machines'] }) {
         {rows.length === 0 ? (
           <EmptyRow span={6} text="등록된 기기가 없어요. 위에서 추가해주세요." />
         ) : (
-          rows.map((m) => (
-            <tr key={m.machine_id}>
-              <td style={{ ...cell, fontWeight: 700 }}>{m.name}</td>
-              <td style={cell}>{m.kind}</td>
-              <td style={cell}>
-                <Dot color={color(m.status)} />
-                {m.status}
-              </td>
-              <td style={{ ...cell, color: '#8FAAD0' }}>
-                {m.minutes_left !== null ? `약 ${m.minutes_left}분` : '—'}
-              </td>
-              <td style={cell}>
-                {m.current_user_name
-                  ? `${m.current_user_name} (${m.current_user_room})`
-                  : '사용자 없음'}
-              </td>
-              <td style={cell}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {m.status === '고장' ? (
-                    <Btn onClick={() => setMachineStatus(m.machine_id, '사용가능')}>복구</Btn>
-                  ) : (
-                    <Btn tone="danger" onClick={() => setMachineStatus(m.machine_id, '고장')}>
-                      고장
+          rows.map((m) => {
+            // 05 P20 · 06 「세탁실」 · Issue #47 — 세탁실 전체 점검 중에는 화면
+            // 표시만 모든 기기를 "점검중"으로 보여준다. machines.status(실제 값)는
+            // 건드리지 않으므로 점검 해제 즉시 각 기기의 실제 상태로 돌아온다.
+            // Issue #48 의 「현재 사용자」 칸은 점검 표시와 무관하게 실제 값을 그대로 보여준다.
+            const displayStatus = underInspection ? '점검중' : m.status;
+            return (
+              <tr key={m.machine_id}>
+                <td style={{ ...cell, fontWeight: 700 }}>{m.name}</td>
+                <td style={cell}>{m.kind}</td>
+                <td style={cell}>
+                  <Dot color={color(displayStatus)} />
+                  {displayStatus}
+                </td>
+                <td style={{ ...cell, color: '#8FAAD0' }}>
+                  {m.minutes_left !== null ? `약 ${m.minutes_left}분` : '—'}
+                </td>
+                <td style={cell}>
+                  {m.current_user_name
+                    ? `${m.current_user_name} (${m.current_user_room})`
+                    : '사용자 없음'}
+                </td>
+                <td style={cell}>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {m.status === '고장' ? (
+                      <Btn onClick={() => setMachineStatus(m.machine_id, '사용가능')}>복구</Btn>
+                    ) : (
+                      <Btn tone="danger" onClick={() => setMachineStatus(m.machine_id, '고장')}>
+                        고장
+                      </Btn>
+                    )}
+                    <Btn tone="danger" onClick={() => removeMachine(m.machine_id)}>
+                      삭제
                     </Btn>
-                  )}
-                  <Btn onClick={() => setMachineStatus(m.machine_id, '점검중')}>점검</Btn>
-                  <Btn tone="danger" onClick={() => removeMachine(m.machine_id)}>
-                    삭제
-                  </Btn>
-                </div>
-              </td>
-            </tr>
-          ))
+                  </div>
+                </td>
+              </tr>
+            );
+          })
         )}
       </Table>
     </>
@@ -482,9 +532,9 @@ function Reports({ rows }: { rows: Data['reports'] }) {
 
 function History({ rows }: { rows: Data['history'] }) {
   return (
-    <Table cols={['시작', '사용자', '호실', '기기', '결과', '사용 시간', '']}>
+    <Table cols={['시작', '사용자', '호실', '기기', '결과', '사용 시간']}>
       {rows.length === 0 ? (
-        <EmptyRow span={7} text="최근 3개월 이용 내역이 없어요." />
+        <EmptyRow span={6} text="최근 3개월 이용 내역이 없어요." />
       ) : (
         rows.map((h) => (
           <tr key={h.history_id}>
@@ -499,26 +549,6 @@ function History({ rows }: { rows: Data['history'] }) {
             {/* 「배정 후 미이용」에는 사용 시간이 없다 (2026-09-15 갱신) */}
             <td style={{ ...cell, color: '#8FAAD0' }}>
               {h.used_minutes !== null ? `${h.used_minutes}분` : '—'}
-            </td>
-            {/*
-              05 P6 · 0008 — 이 행(usage_history)에 딸린 사건 참조 경고를 준다.
-              history_id · user_id 를 여기서 그대로 실어 보내므로 관리자는 UUID를
-              보거나 입력할 필요가 없다. 같은 행에 이미 경고(자동이든 수동이든)가
-              있으면 서버가 23505 로 거부하고 그 메시지를 그대로 보여준다.
-            */}
-            <td style={cell}>
-              <Btn
-                tone="danger"
-                onClick={async () => {
-                  try {
-                    await issueUsageIncidentWarning(h.user_id, h.history_id);
-                  } catch (error) {
-                    alert(error instanceof Error ? error.message : '경고를 주지 못했어요.');
-                  }
-                }}
-              >
-                경고 주기
-              </Btn>
             </td>
           </tr>
         ))
@@ -756,23 +786,8 @@ function Notices({ rows }: { rows: Data['notices'] }) {
 
 // ─── 탭 7 · 사용자 목록 (F29) ────────────────────────────────────────────────
 
-function Users({ rows, history }: { rows: Data['users']; history: Data['history'] }) {
+function Users({ rows }: { rows: Data['users'] }) {
   const [target, setTarget] = useState<string | null>(null);
-  const [reason, setReason] = useState('');
-  // 05 P6 · 0008 — 일반 경고(사건 무관 · 기존 방식)와 이용 내역 관련 경고(사건 연결
-  // 필수)를 명확히 나눈다. 자유 텍스트 쪽이 usage_history_id 를 몰래 비우고
-  // 지나가는 우회로가 되지 않도록, 아예 다른 입력·다른 서버 함수로 가른다.
-  const [mode, setMode] = useState<'general' | 'incident'>('general');
-  const [historyId, setHistoryId] = useState('');
-
-  const openTarget = (userId: string) => {
-    setTarget(userId);
-    setMode('general');
-    setReason('');
-    setHistoryId('');
-  };
-
-  const targetHistory = target ? history.filter((h) => h.user_id === target) : [];
 
   return (
     <>
@@ -790,105 +805,34 @@ function Users({ rows, history }: { rows: Data['users']; history: Data['history'
           }}
         >
           <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
-            {rows.find((u) => u.user_id === target)?.name} 에게 경고
+            {rows.find((u) => u.user_id === target)?.name} 에게 줄 경고 유형을 선택하세요
           </span>
 
-          <div style={{ display: 'flex', gap: 6 }}>
-            <button
-              type="button"
-              onClick={() => setMode('general')}
-              style={{
-                padding: '6px 11px',
-                borderRadius: 9,
-                border: `1px solid ${mode === 'general' ? '#4C86D8' : '#E3EBF7'}`,
-                background: mode === 'general' ? 'rgba(76,134,216,.1)' : '#fff',
-                color: mode === 'general' ? '#2F63B8' : '#5A6E8F',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              일반 경고
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('incident')}
-              style={{
-                padding: '6px 11px',
-                borderRadius: 9,
-                border: `1px solid ${mode === 'incident' ? '#4C86D8' : '#E3EBF7'}`,
-                background: mode === 'incident' ? 'rgba(76,134,216,.1)' : '#fff',
-                color: mode === 'incident' ? '#2F63B8' : '#5A6E8F',
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: 'pointer',
-              }}
-            >
-              이용 내역 관련 경고
-            </button>
-          </div>
-
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {mode === 'general' ? (
-              <input
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                placeholder="사유 (예: 신고 확인)"
-                style={{
-                  flex: '1 1 240px',
-                  height: 38,
-                  padding: '0 13px',
-                  borderRadius: 10,
-                  border: '1px solid #E3EBF7',
-                  fontSize: 13,
-                }}
-              />
-            ) : (
-              <select
-                value={historyId}
-                onChange={(e) => setHistoryId(e.target.value)}
-                style={{
-                  flex: '1 1 320px',
-                  height: 38,
-                  padding: '0 13px',
-                  borderRadius: 10,
-                  border: '1px solid #E3EBF7',
-                  fontSize: 13,
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {/*
+              05 P6-1 · 06 「경고」 · Issue #47 부속 — 신고를 확인한 관리자가
+              사용자 목록에서 수동으로 경고를 줄 때 직접 고르는 유형 두 가지.
+              신고 사유(reports.reason)를 자동으로 옮기지 않는다 — 관리자가 신고
+              내용을 보고 스스로 판단해서 고른다. 화면 라벨과 DB 저장값이 다르므로
+              (report-rules.ts 와 같은 패턴 · warning-rules.ts) 라벨을 보여주고
+              value 를 저장한다.
+            */}
+            {ADMIN_WARNING_REASONS.map(({ value, label }) => (
+              <Btn
+                key={value}
+                tone="danger"
+                onClick={async () => {
+                  try {
+                    await issueWarning(target, value);
+                    setTarget(null);
+                  } catch (error) {
+                    alert(error instanceof Error ? error.message : '경고를 주지 못했어요.');
+                  }
                 }}
               >
-                <option value="">
-                  {targetHistory.length === 0 ? '최근 3개월 이용 내역이 없어요' : '이용 내역을 선택하세요'}
-                </option>
-                {targetHistory.map((h) => (
-                  <option key={h.history_id} value={h.history_id}>
-                    {fmt(h.started_at)} · {h.machine_name ?? '삭제된 기기'} · {h.result}
-                  </option>
-                ))}
-              </select>
-            )}
-            <Btn
-              tone="primary"
-              onClick={async () => {
-                try {
-                  if (mode === 'incident') {
-                    if (!historyId) {
-                      alert('이용 내역을 선택해주세요.');
-                      return;
-                    }
-                    await issueUsageIncidentWarning(target, historyId);
-                  } else {
-                    await issueWarning(target, reason);
-                  }
-                  setTarget(null);
-                  setReason('');
-                  setHistoryId('');
-                } catch (error) {
-                  alert(error instanceof Error ? error.message : '경고를 주지 못했어요.');
-                }
-              }}
-            >
-              경고 주기
-            </Btn>
+                {label}
+              </Btn>
+            ))}
             <Btn onClick={() => setTarget(null)}>취소</Btn>
           </div>
         </div>
@@ -937,7 +881,7 @@ function Users({ rows, history }: { rows: Data['users']; history: Data['history'
               </td>
               <td style={cell}>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <Btn tone="danger" onClick={() => openTarget(u.user_id)}>
+                  <Btn tone="danger" onClick={() => setTarget(u.user_id)}>
                     경고 +1
                   </Btn>
                   <Btn onClick={() => revokeWarning(u.user_id)}>경고 −1</Btn>

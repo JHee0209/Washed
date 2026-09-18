@@ -72,6 +72,12 @@ export type StartUsageResult =
  * QR 검증(서명·위조 여부는 src/lib/qr.ts 가 이미 확인했다)을 통과한 뒤 실제로
  * "배정 → 사용중"을 전환하고 기기 종료 예정 시각을 서버가 정한다(05 P4 — 세탁 60분 ·
  * 건조 45분. 클라이언트가 계산해 보내는 값을 쓰지 않는다).
+ *
+ * 05 P20 · Issue #47 — 세탁실 전체 점검 상태를 여기서는 보지 않는다. 이 함수에
+ * 도달하는 사람은 이미 `queue.status = '배정'`인 사람뿐이고(아래 WHERE), 점검
+ * 중에는 src/lib/assignment.ts::drainQueue() 가 신규 배정 자체를 만들지 않으므로
+ * 점검이 켜진 뒤로 새로 이 경로에 오는 사람이 없다. P20 「이미 배정되었거나 사용
+ * 중인 건은 그대로 진행된다」를 그대로 지키려면 여기를 막지 않는 것이 맞다.
  */
 export async function startUsageFromQr({
   userId,

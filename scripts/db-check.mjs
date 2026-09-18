@@ -12,8 +12,8 @@ if (!connectionString) {
   process.exit(1);
 }
 
-// 06-data.md 의 저장 항목 순서. 저장 항목 13개 중 「언어 설정」은 기기 단위라
-// 표가 없다 (06 마지막 문단 · 05 P25) → 12개.
+// 06-data.md 의 저장 항목 순서. 저장 항목 14개 중 「언어 설정」은 기기 단위라
+// 표가 없다 (06 마지막 문단 · 05 P25) → 13개.
 const EXPECTED = [
   ['users', '사용자'],
   ['machines', '기기'],
@@ -30,6 +30,8 @@ const EXPECTED = [
   ['admin_accounts', '관리자 계정'],
   ['notices', '공지'],
   ['email_verifications', '이메일 인증코드'],
+  // 06 「세탁실」 — F33 이 Issue #47 로 MVP 로 올라오며 신설 (0010)
+  ['facility_status', '세탁실'],
 ];
 
 // 06 의 저장 항목은 아니지만 있어야 하는 표 — 마이그레이션 도구의 장부
