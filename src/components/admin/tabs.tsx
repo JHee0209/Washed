@@ -29,6 +29,8 @@ type Data = {
     kind: string;
     status: string;
     minutes_left: number | null;
+    current_user_name: string | null;
+    current_user_room: string | null;
   }[];
   queue: {
     rows: {
@@ -292,9 +294,9 @@ function Machines({ rows }: { rows: Data['machines'] }) {
         </button>
       </div>
 
-      <Table cols={['기기', '종류', '상태', '남은 시간', '']}>
+      <Table cols={['기기', '종류', '상태', '남은 시간', '현재 사용자', '']}>
         {rows.length === 0 ? (
-          <EmptyRow span={5} text="등록된 기기가 없어요. 위에서 추가해주세요." />
+          <EmptyRow span={6} text="등록된 기기가 없어요. 위에서 추가해주세요." />
         ) : (
           rows.map((m) => (
             <tr key={m.machine_id}>
@@ -306,6 +308,11 @@ function Machines({ rows }: { rows: Data['machines'] }) {
               </td>
               <td style={{ ...cell, color: '#8FAAD0' }}>
                 {m.minutes_left !== null ? `약 ${m.minutes_left}분` : '—'}
+              </td>
+              <td style={cell}>
+                {m.current_user_name
+                  ? `${m.current_user_name} (${m.current_user_room})`
+                  : '사용자 없음'}
               </td>
               <td style={cell}>
                 <div style={{ display: 'flex', gap: 6 }}>
