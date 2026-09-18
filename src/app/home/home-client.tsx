@@ -73,6 +73,9 @@ export default function HomeClient() {
   const [rawMachines, setRawMachines] = useState<ApiMachine[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  // 05 P20 · 06 「세탁실」 · F33 · Issue #47 — 기기 단위 점검(개별 배지)과 별개인
+  // 세탁실 전체 점검 상태. 서버가 판정하고 화면은 그리기만 한다.
+  const [facilityUnderInspection, setFacilityUnderInspection] = useState(false);
 
   // 종의 점은 DB 가 센다 (F18 · 05 P14 — 보관 기간까지 서버가 건다).
   const unreadCount = useUnreadCount();
@@ -87,6 +90,7 @@ export default function HomeClient() {
       const data = await res.json();
       setRawMachines(data.machines);
       setQueueCounts(data.queueCounts);
+      setFacilityUnderInspection(Boolean(data.facilityUnderInspection));
     } catch {
       setLoadError(true);
     } finally {
@@ -284,7 +288,11 @@ export default function HomeClient() {
   /** 서버 배정(내 것) 또는 서버가 사용중 · 수거대기로 판정한 것이면 그 기기는 내가 쓰는 중이다 */
   const isMineNow = (id: string) => assignedByMachineId.has(id) || inUseByMachineId.has(id);
 
-  const effectiveStatus = (r: any) => (isMineNow(r.id) ? 'inuse' : r.status);
+  // 05 P20 · 06 「세탁실」 · Issue #47 — 세탁실 전체 점검 중에는 내가 이미 쓰고
+  // 있는 기기를 뺀 나머지를 화면에서 전부 "점검 중"으로 보여준다. machines.status
+  // (실제 값)는 바꾸지 않으므로 점검 해제 즉시 각 기기의 실제 상태로 돌아온다.
+  const effectiveStatus = (r: any) =>
+    isMineNow(r.id) ? 'inuse' : facilityUnderInspection ? 'inspection' : r.status;
 
 
   const primaryBtn = { border: 'none', cursor: 'pointer', color: '#fff', background: '#4C86D8', borderRadius: '10px', padding: '9px', fontSize: '12px', fontWeight: 700, boxShadow: '0px 6px 14px -6px rgba(47,99,184,.9)' };
@@ -349,6 +357,11 @@ export default function HomeClient() {
       actionLabel = null; actionOnClick = () => {}; actionStyle = disabledBtn; actionInfo = `현재 ${waitingCount}명 대기 중이에요`;
     } else if (!hasFreeSlot) {
       actionLabel = '잠시만요'; actionOnClick = () => {}; actionDisabled = true; actionStyle = disabledBtn; actionInfo = '곧 다시 신청할 수 있어요';
+    } else if (facilityUnderInspection) {
+      // 05 P20 · 06 「세탁실」 · F33 — 이미 배정 · 대기 중인 위 분기는 그대로 두고,
+      // 새로 줄서기를 시작하려는 경우에만 막는다. 서버(POST /api/queue/[type])가
+      // 최종 방어선이고, 이 버튼은 안내일 뿐이다.
+      actionLabel = '점검 중'; actionOnClick = () => {}; actionDisabled = true; actionStyle = disabledBtn; actionInfo = '세탁실 점검 중이라 잠시 이용할 수 없어요';
     } else {
       actionLabel = '줄서기'; actionOnClick = () => autoJoin(type, label); actionStyle = primaryBtn; actionInfo = available > 0 ? '바로 배정돼요' : `현재 ${waitingCount}명 대기 중이에요`;
     }
@@ -514,6 +527,12 @@ export default function HomeClient() {
               </div>
             ) : (
               <>
+            {facilityUnderInspection && (
+              <div style={{ background: '#FFF6E9', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#8A5300' }}>세탁실 점검 중</span>
+                <span style={{ fontSize: '12px', color: '#8A5300' }}>현재 모든 기기의 신규 이용이 제한됩니다.</span>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'start' }}>
               {typeSummaries.map((ts, idx) => (
                 <div key={idx} style={{ background: '#fff', borderRadius: '18px', padding: '14px', boxShadow: '0px 10px 26px -8px rgba(47,99,184,.28)', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>

@@ -1,5 +1,6 @@
 import 'server-only';
 import { auth } from '@/auth';
+import { getFacilityStatus } from '@/lib/facility-status';
 import { listMachines, queueCounts } from '@/lib/queries';
 import { NextResponse } from 'next/server';
 
@@ -10,9 +11,10 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const [machines, qCounts] = await Promise.all([
+    const [machines, qCounts, facility] = await Promise.all([
       listMachines(),
       queueCounts(),
+      getFacilityStatus(),
     ]);
 
     return NextResponse.json({
@@ -27,6 +29,9 @@ export async function GET() {
         washer: qCounts['세탁기'] ?? 0,
         dryer: qCounts['건조기'] ?? 0,
       },
+      // 05 P20 · 06 「세탁실」 · F33 · Issue #47 — 기기 단위 상태(위 status)와 별개인
+      // 세탁실 전체 점검 상태.
+      facilityUnderInspection: facility.isUnderInspection,
     });
   } catch (error) {
     console.error('Failed to fetch machines:', error);

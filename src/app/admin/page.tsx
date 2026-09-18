@@ -22,6 +22,7 @@ import {
   adminUsers,
   adminWarnings,
 } from '@/lib/admin-actions';
+import { getFacilityStatus } from '@/lib/facility-status';
 
 export const dynamic = 'force-dynamic';
 
@@ -50,6 +51,7 @@ export default async function AdminPage({
   // 만들지 않고 그대로 재사용한다(같은 3개월 · 300건 조회).
   const data = {
     machines: tab === 'dashboard' ? await adminMachines() : [],
+    facilityStatus: tab === 'dashboard' ? await getFacilityStatus() : null,
     queue: tab === 'queue' ? await adminQueue() : { rows: [], counts: { 세탁기: 0, 건조기: 0 } },
     reports: tab === 'reports' ? await adminReports() : [],
     history: tab === 'history' || tab === 'users' ? await adminHistory() : [],
