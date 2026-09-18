@@ -38,6 +38,7 @@ import { RUN_MINUTES_BY_KIND } from '@/lib/assignment-rules';
 import { sql } from '@/lib/db';
 import { isFirstOfMonthInKst } from '@/lib/kst-date';
 import { notify } from '@/lib/notify';
+import { notifyUsageEnded } from '@/lib/usage-end-notify';
 
 /** 05 P7 — 제한이 걸리는 경고 횟수. admin-actions.ts 의 같은 상수와 값이 같아야 한다 */
 const WARNING_LIMIT = 3;
@@ -174,11 +175,16 @@ export async function expireOverdueAssignments(now: Date = new Date()): Promise<
  * 물리적으로는 기기가 점유돼 있다). `queue.status` 만 옮긴다.
  *
  * `q.status = '사용중'` 조건이 있어 이미 옮겨진 행은 다시 걸리지 않는다(idempotent).
+ *
+ * 05 P26 · Issue #12 — 전환된 행마다 "이용 시간이 끝났어요" 알림을 준다
+ * (usage-end-notify.ts). usage.ts::expireRunTimers() 도 같은 전환·같은 알림
+ * 함수를 쓴다 — 어느 쪽이 먼저 그 행을 잡아도 RETURNING된 쪽만 알린다(중복 없음,
+ * 근거는 usage-end-notify.ts 머리말).
  */
 export async function transitionFinishedUsageToPickup(now: Date = new Date()): Promise<number> {
   const nowIso = now.toISOString();
 
-  const started = await sql<{ queue_id: string }>`
+  const started = await sql<{ queue_id: string; user_id: string; machine_name: string }>`
     UPDATE queue q
        SET status = '수거대기',
            pickup_deadline_at = m.ends_at + interval '3 minutes'
@@ -188,8 +194,12 @@ export async function transitionFinishedUsageToPickup(now: Date = new Date()): P
        AND m.status = '사용중'
        AND m.ends_at IS NOT NULL
        AND m.ends_at <= ${nowIso}::timestamptz
-    RETURNING q.queue_id
+    RETURNING q.queue_id, q.user_id, m.name AS machine_name
   `;
+
+  for (const row of started) {
+    await notifyUsageEnded(row.user_id, row.queue_id, row.machine_name);
+  }
 
   return started.length;
 }

@@ -85,6 +85,17 @@ export function permissionSnapshot(): PushPermission {
   return pushSupported() ? Notification.permission : 'unsupported';
 }
 
+/**
+ * 허용 상태를 다시 읽게 한다.
+ *
+ * 브라우저는 사이트 설정에서 허용이 바뀌어도 알려 주지 않는다. 사용자가 주소창
+ * 자물쇠에서 직접 켜고 돌아오는 길이 실제로 있으므로(조용한 권한 UI), 화면이
+ * 다시 보일 때 이걸 불러 스냅샷을 새로 읽는다.
+ */
+export function refreshPushPermission(): void {
+  emit();
+}
+
 /** 서버 렌더에는 브라우저가 없다 — 아직 아무것도 묻지 않은 상태로 그린다. */
 export function permissionServerSnapshot(): PushPermission {
   return 'default';
@@ -140,6 +151,32 @@ export function markInstallGuideSeen(): void {
 }
 
 /**
+ * 허용 창이 끝내 뜨지 않을 때 기다리기를 멈추는 시간.
+ *
+ * 크롬의 "조용한 알림 권한 UI" 에서는 모달이 뜨지 않고 주소창에 종 아이콘만
+ * 생기는데, 그때 requestPermission() 이 준 약속은 사용자가 그 아이콘을 누를
+ * 때까지 **영영 풀리지 않는다**. 그대로 기다리면 화면이 "등록 중…" 에 갇힌다.
+ */
+const PERMISSION_PROMPT_TIMEOUT_MS = 15_000;
+
+/**
+ * 허용을 묻되, 답이 오지 않으면 그 시점의 허용 상태로 끝낸다.
+ *
+ * 제한 시간에 걸려도 보통 'default' 가 돌아오므로 호출부는 "창이 뜨지 않았다" 로
+ * 처리하면 된다. 뒤늦게 풀릴 수도 있는 원래 약속은 여기서 버린다 — 구독 단계로
+ * 이어지지 않으므로 나중에 허용되더라도 구독이 두 번 만들어지지 않는다.
+ * (그 경우는 refreshPushPermission() 으로 다시 읽어 조용히 동기화한다.)
+ */
+async function requestPermissionWithTimeout(): Promise<NotificationPermission> {
+  return Promise.race([
+    Notification.requestPermission(),
+    new Promise<NotificationPermission>((resolve) => {
+      window.setTimeout(() => resolve(Notification.permission), PERMISSION_PROMPT_TIMEOUT_MS);
+    }),
+  ]);
+}
+
+/**
  * 허용을 묻고, 허용했으면 구독을 만들어 서버에 저장한다.
  * 브라우저가 이미 거절을 기억하고 있으면 창이 뜨지 않고 바로 'denied' 가 돌아온다 —
  * 그때는 폰의 사이트 설정에서 직접 켜야 한다.
@@ -147,7 +184,7 @@ export function markInstallGuideSeen(): void {
 export async function enablePush(): Promise<NotificationPermission> {
   if (!pushSupported()) return 'denied';
 
-  const permission = await Notification.requestPermission();
+  const permission = await requestPermissionWithTimeout();
   emit();
   if (permission !== 'granted') return permission;
 

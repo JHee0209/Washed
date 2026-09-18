@@ -33,6 +33,7 @@ import 'server-only';
 import { auth } from '@/auth';
 import { withdrawPendingBlock } from '@/lib/account-guard';
 import { drainQueue } from '@/lib/assignment';
+import { notifyAssignments } from '@/lib/assignment-notify';
 import { sql } from '@/lib/db';
 import {
   expireOverdueAssignments,
@@ -170,7 +171,15 @@ export async function POST(_request: Request, { params }: RouteParams) {
 
     // ── 2걸음: 배정 판정 (05 P2 · P3). 빈 기기가 있고 내 앞에 아무도 없을 때만
     //    내 줄이 올라온다. 별도 재조회를 하지 않고 이 결과에서 내 것을 찾는다.
-    const mine = (await drainQueue()).find((a) => a.queue_id === queueId);
+    const assigned = await drainQueue();
+    const mine = assigned.find((a) => a.queue_id === queueId);
+
+    // F4 · 05 P26 · Issue #12 — 이 요청에서 곧바로 배정된 사람에게 배정 알림.
+    // (빈 기기가 여럿이면 다른 대기자도 같은 배정에 함께 실려 올 수 있다 — 그때도
+    // "이용 가능" 문구가 자연스럽다.)
+    if (assigned.length > 0) {
+      await notifyAssignments(assigned, 'instant');
+    }
 
     if (mine) {
       return NextResponse.json(
