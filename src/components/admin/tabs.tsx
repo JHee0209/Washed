@@ -21,7 +21,7 @@ import {
   setMachineStatus,
   setReportStatus,
 } from '@/lib/admin-actions';
-import { ADMIN_WARNING_REASONS } from '@/lib/warning-rules';
+import { ADMIN_WARNING_REASONS, warningReasonLabel } from '@/lib/warning-rules';
 
 type Data = {
   machines: {
@@ -30,6 +30,8 @@ type Data = {
     kind: string;
     status: string;
     minutes_left: number | null;
+    // Issue #54 — 배정('배정')과 실사용('사용중')을 구분하려고 함께 내려온다.
+    queue_status: string | null;
     current_user_name: string | null;
     current_user_room: string | null;
   }[];
@@ -81,7 +83,9 @@ type Data = {
     restricted_until: string | null;
     is_restricted: boolean;
     days_left: number | null;
-    last_reason: string | null;
+    // Issue #54 — 최근 1개월 안의 warnings 행 전체(최신순). recent_month_count 와
+    // 길이가 같지만, 「제재 횟수와는 다른 값」이라는 기존 의미 때문에 필드는 따로 둔다.
+    history: { reason: string; issued_at: string; issued_by: string }[];
     recent_month_count: number;
   }[];
   notices: { notice_id: string; title: string; body: string; created_at: string }[];
@@ -246,7 +250,17 @@ function Machines({
   const [pending, start] = useTransition();
 
   const color = (s: string) =>
-    s === '사용가능' ? '#00BF40' : s === '사용중' ? '#2F63B8' : s === '고장' ? '#E52222' : '#FF9200';
+    s === '사용가능'
+      ? '#00BF40'
+      : s === '사용중'
+        ? '#2F63B8'
+        : s === '고장'
+          ? '#E52222'
+          : s === '배정'
+            ? '#8FAAD0'
+            : s === '수거대기'
+              ? '#C2453E'
+              : '#FF9200';
 
   const underInspection = facilityStatus?.isUnderInspection ?? false;
 
@@ -346,8 +360,18 @@ function Machines({
             // 05 P20 · 06 「세탁실」 · Issue #47 — 세탁실 전체 점검 중에는 화면
             // 표시만 모든 기기를 "점검중"으로 보여준다. machines.status(실제 값)는
             // 건드리지 않으므로 점검 해제 즉시 각 기기의 실제 상태로 돌아온다.
-            // Issue #48 의 「현재 사용자」 칸은 점검 표시와 무관하게 실제 값을 그대로 보여준다.
-            const displayStatus = underInspection ? '점검중' : m.status;
+            //
+            // Issue #54 — 점검 표시 다음 우선순위로, 활성 queue(배정 · 사용중 ·
+            // 수거대기)가 있으면 그 단계를 그대로 보여준다. machines.status 는
+            // 배정 시점에 이미 '사용중'(중복 배정 방지 락)이 되고, 수거대기 동안도
+            // 기기 상태값 자체는 '수거대기'가 없어 '사용중'으로 남는다
+            // (expiration.ts::transitionUsageToPickup 주석 — "기기는 그대로
+            // 사용중으로 둔다"). 그 값을 그대로 보여주면 QR 미인증 · 수거 대기
+            // 중인 사람이 실제 사용중처럼 보인다. 활성 queue 가 없을 때만
+            // machines.status(사용가능 · 고장 · 점검중)로 돌아간다.
+            const displayStatus = underInspection
+              ? '점검중'
+              : (m.queue_status ?? m.status);
             return (
               <tr key={m.machine_id}>
                 <td style={{ ...cell, fontWeight: 700 }}>{m.name}</td>
@@ -580,7 +604,7 @@ function Warnings({ rows }: { rows: Data['warnings'] }) {
         「최근 1개월 경고 이력」(기록 건수)은 서로 다른 값일 수 있습니다. (05 SP4)
       </div>
 
-      <Table cols={['사용자', '학번', '호실', '경고', '최근 사유', '제한', '']}>
+      <Table cols={['사용자', '학번', '호실', '경고', '경고 이력', '제한', '']}>
         {rows.length === 0 ? (
           <EmptyRow span={7} text="경고를 받은 사용자가 없어요." />
         ) : (
@@ -601,28 +625,35 @@ function Warnings({ rows }: { rows: Data['warnings'] }) {
                   최근 1개월 경고 이력 {w.recent_month_count}건
                 </div>
               </td>
-              <td style={{ ...cell, color: '#8FAAD0' }}>{w.last_reason ?? '—'}</td>
+              {/*
+                Issue #54 — 가장 최근 사유 1건이 아니라 최근 1개월 안의 warnings 행
+                전체를 최신순으로 보여준다. 화면 라벨은 warning-rules.ts 의 매핑을
+                그대로 쓴다(자동 사유 · 예전 '신고 확인'은 매핑이 없어 DB 값 그대로).
+              */}
+              <td style={{ ...cell, whiteSpace: 'normal', color: '#5A6E8F' }}>
+                {w.history.length === 0 ? (
+                  <span style={{ color: '#A8BCD9' }}>—</span>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                    {w.history.map((h, i) => (
+                      <span key={i} style={{ fontSize: 12 }}>
+                        {warningReasonLabel(h.reason)} · {h.issued_by} · {fmt(h.issued_at)}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </td>
               <td style={cell}>
                 <RestrictionBadge isRestricted={w.is_restricted} daysLeft={w.days_left} />
               </td>
               <td style={cell}>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {/*
-                    05 P6 · Issue #8 — 사유는 '신고 확인'만 CHECK(db/schema.sql
-                    warnings.reason)를 통과한다. 예전 '관리자 부여'는 늘 DB 오류로
-                    실패하던 기존 버그라 최소 수정으로 고친다(이 버튼의 나머지
-                    동작·자리는 그대로다) — 특정 이용 내역과 무관한 일반 경고다.
-                  */}
-                  <Btn tone="danger" onClick={() => issueWarning(w.user_id, '신고 확인')}>
-                    경고 +1
+                {/* Issue #54 — "경고 +1"·"경고 −1"은 제거했다(「사용자 목록」 탭의
+                    사유 선택 경고 부여로 통일). 「제한 해제」만 유지한다. */}
+                {w.is_restricted ? (
+                  <Btn tone="primary" onClick={() => clearRestriction(w.user_id)}>
+                    제한 해제
                   </Btn>
-                  <Btn onClick={() => revokeWarning(w.user_id)}>경고 −1</Btn>
-                  {w.is_restricted ? (
-                    <Btn tone="primary" onClick={() => clearRestriction(w.user_id)}>
-                      제한 해제
-                    </Btn>
-                  ) : null}
-                </div>
+                ) : null}
               </td>
             </tr>
           ))
