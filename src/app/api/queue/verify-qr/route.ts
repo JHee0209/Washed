@@ -16,7 +16,7 @@
 import 'server-only';
 import { auth } from '@/auth';
 import { withdrawPendingBlock } from '@/lib/account-guard';
-import { verifyMachineQrPayload } from '@/lib/qr';
+import { isQrSigningConfigured, verifyMachineQrPayload } from '@/lib/qr';
 import { startUsageFromQr } from '@/lib/usage';
 import { NextResponse } from 'next/server';
 
@@ -42,6 +42,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
   }
 
+  // ── 서명 검증을 할 수 있는 서버인지 먼저 본다.
+  //
+  // QR_SIGNING_SECRET 이 없으면 verifyMachineQrPayload() 는 멀쩡한 기기 스티커까지
+  // 전부 null 로 돌려주므로(qr.ts::isQrSigningConfigured 머리말), 아래 위조 분기가
+  // 「알 수 없는 QR이에요」로 안내한다 — 사용자에게는 QR 이 잘못된 것처럼 보이고
+  // 서버에는 아무 기록도 남지 않는다. 그 사이 queue · machines 는 손도 대지 않으므로
+  // 「UI 는 있는데 DB 와 연동되지 않는다」가 된다(Issue #30). 두 경우를 갈라 둔다.
+  if (!isQrSigningConfigured()) {
+    console.error('QR 인증 불가 — 서버에 QR_SIGNING_SECRET 이 설정돼 있지 않습니다.');
+    return NextResponse.json(
+      {
+        ok: false,
+        message: '서버 설정 문제로 지금은 QR 인증을 할 수 없어요. 관리자에게 알려주세요.',
+        reason: 'qr_not_configured',
+      },
+      { status: 500 },
+    );
+  }
+
   // ── 위조 방지 — 서버만 아는 비밀키로 서명된 값인지 (14번 「단순 machineId QR 금지」)
   const verified = verifyMachineQrPayload(payload);
   if (!verified) {
@@ -65,6 +84,18 @@ export async function POST(request: Request) {
       });
     }
 
+    if (result.reason === 'unknown_machine') {
+      // 서명은 맞는데 그 기기가 DB 에 없다 — 사용자가 다시 찍어서 될 일이 아니다.
+      console.error('QR 인증 실패 — machines 에 없는 machine_id', verified.machineId);
+      return NextResponse.json(
+        {
+          ok: false,
+          message: '등록되지 않은 기기 QR이에요. 관리자에게 알려주세요.',
+          reason: 'unknown_machine',
+        },
+        { status: 404 },
+      );
+    }
     if (result.reason === 'not_assigned') {
       return NextResponse.json(
         { ok: false, message: '배정된 기기가 아니에요. 배정받은 기기의 QR을 찍어주세요.', reason: 'not_assigned' },

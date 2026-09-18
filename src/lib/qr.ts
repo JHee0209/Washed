@@ -62,3 +62,19 @@ export function verifyMachineQrPayload(payload: string): { machineId: string } |
 
   return { machineId };
 }
+
+/**
+ * 서명 비밀키가 서버에 설정돼 있는지만 알려준다 (값 자체는 절대 밖으로 내보내지
+ * 않는다).
+ *
+ * `QR_SIGNING_SECRET` 이 없으면 위 verifyMachineQrPayload() 는 `sign()` 이 던지는
+ * 예외를 삼키고 **모든** QR 에 `null` 을 돌려준다 — 즉 멀쩡한 기기 스티커도
+ * 「알 수 없는 QR」로 안내되고, 요청이 src/lib/usage.ts 까지 닿지 않아 queue ·
+ * machines 가 전혀 바뀌지 않는다. **Issue #30 의 「QR 인증이 DB 와 연동되지 않는
+ * 것처럼 보인다」가 정확히 이 모습이었다.** 설정 누락과 위조를 같은 응답으로
+ * 뭉뚱그리면 다시 못 알아보므로, 호출부(verify-qr route)가 먼저 이 값을 보고 둘을
+ * 갈라 안내·로그한다.
+ */
+export function isQrSigningConfigured(): boolean {
+  return Boolean(process.env.QR_SIGNING_SECRET);
+}
