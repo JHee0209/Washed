@@ -23,9 +23,15 @@ import { expireRunTimers } from '@/lib/usage';
 // 조회
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 탭 1 — 실시간 기기 현황 (F23 · F24) */
+/** 탭 1 — 실시간 기기 현황 (F23 · F24 · Issue #48 현재 사용자) */
 export async function adminMachines() {
   await requireAdmin();
+
+  // F9 — adminQueue() 와 같은 이유로 여기서도 부른다(05 P5 · Issue #7 · #34).
+  // 이 조회가 이제 queue 를 조인하므로, 타이머가 끝났는데도 홈 화면 폴링을
+  // 거치지 않은 줄이 낡은 「사용중」 사용자로 보이는 것을 막는다.
+  await expireRunTimers();
+
   return sql<{
     machine_id: string;
     name: string;
@@ -33,13 +39,22 @@ export async function adminMachines() {
     status: string;
     ends_at: string | null;
     minutes_left: number | null;
+    current_user_name: string | null;
+    current_user_room: string | null;
   }>`
-    SELECT machine_id, name, kind, status, ends_at,
-           CASE WHEN ends_at IS NULL THEN NULL
-                ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM (ends_at - now())) / 60))::int
-           END AS minutes_left
-      FROM machines
-     ORDER BY kind, name
+    SELECT m.machine_id, m.name, m.kind, m.status, m.ends_at,
+           CASE WHEN m.ends_at IS NULL THEN NULL
+                ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM (m.ends_at - now())) / 60))::int
+           END AS minutes_left,
+           u.name AS current_user_name,
+           u.room AS current_user_room
+      FROM machines m
+      -- queue_machine_once_idx 가 기기당 활성 줄을 하나로 보장하므로 이 LEFT JOIN 은
+      -- 행을 늘리지 않는다. '대기 중'은 machine_id 가 없어 애초에 걸리지 않는다.
+      LEFT JOIN queue q ON q.machine_id = m.machine_id
+                       AND q.status IN ('배정', '사용중', '수거대기')
+      LEFT JOIN users u ON u.user_id = q.user_id
+     ORDER BY m.kind, m.name
   `;
 }
 
