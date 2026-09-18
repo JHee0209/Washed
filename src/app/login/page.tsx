@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -13,6 +13,23 @@ import Link from 'next/link';
  * 서버가 숨긴 것(가입 여부)이 화면에서 새어 나간다.
  */
 const LOGIN_FAILED = '아이디 또는 비밀번호가 올바르지 않아요.';
+
+/**
+ * 학교 계정이 아닌 구글 계정 · 기타 구글 OAuth 실패는 auth.ts의 signIn
+ * 콜백/Auth.js가 리다이렉트로 붙이는 ?error= 값으로 온다. 서버에서는 이 쿼리를
+ * 알 수 없으므로(빌드 시점 정적 페이지) useSyncExternalStore로 읽어, 서버·
+ * 하이드레이션 시점엔 빈 값을 쓰고 하이드레이션이 끝난 뒤에만 실제 쿼리값으로
+ * 갈아탄다 — 하이드레이션 불일치 없이 마운트 후 값을 반영할 수 있다.
+ * (useSearchParams는 이 페이지에 Suspense 경계를 새로 요구해 범위를 벗어난다.)
+ */
+const noopSubscribe = () => () => {};
+function readOauthError(): string {
+  const error = new URLSearchParams(window.location.search).get('error');
+  if (!error) return '';
+  if (error === 'not_school_account') return '학교 구글 계정만 이용할 수 있어요';
+  return '구글 로그인에 실패했어요. 잠시 후 다시 시도해주세요.';
+}
+const readOauthErrorServerSnapshot = () => '';
 
 export default function LoginPage() {
   // ⭐️ 언어 설정 관련 상태
@@ -29,6 +46,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [errorText, setErrorText] = useState('');
   const [googleOnly, setGoogleOnly] = useState(false);
+  // Credentials 로그인 실패(errorText·googleOnly)와는 발생 경로가 다르므로
+  // 상태를 분리해서 섞이지 않게 한다.
+  const oauthErrorText = useSyncExternalStore(noopSubscribe, readOauthError, readOauthErrorServerSnapshot);
   const [pending, setPending] = useState(false);
   // Issue #29 — 「자동 로그인」. 체크(기본값)면 Auth.js 기본 장기 세션(현재 30일)을
   // 그대로 쓰고, 체크 해제하면 세션 쿠키의 Max-Age·Expires만 제거해 브라우저를
@@ -226,6 +246,10 @@ export default function LoginPage() {
             <div style={{ fontSize: '12px', fontWeight: 500, color: '#A8BCD9' }}>또는</div>
             <div style={{ flex: 1, height: '1px', background: '#EAF0FA' }}></div>
           </div>
+
+          {oauthErrorText && (
+            <div style={{ marginBottom: '12px', fontSize: '11.5px', color: '#E0554E', lineHeight: 1.5, textAlign: 'center' }}>{oauthErrorText}</div>
+          )}
 
           <button className="google" type="button" onClick={() => signIn('google', { callbackUrl: '/home' })}>
             <svg width="18" height="18" viewBox="0 0 18 18">
