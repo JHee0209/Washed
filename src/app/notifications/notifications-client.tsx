@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import { NOTIFICATIONS_CHANGED_EVENT } from '@/lib/use-unread-count';
 
 type NotificationKind = '공지' | '배정' | '종료' | '경고' | '결과';
 
@@ -42,9 +43,6 @@ const TABS: { value: string; label: string }[] = [
   { value: '경고', label: '경고' },
   { value: '결과', label: '신고' },
 ];
-
-/** 다른 화면의 종 표시에게 "알림이 바뀌었다" 고 알린다 (useUnreadCount 가 받는다) */
-const CHANGED_EVENT = 'washed:notifications-changed';
 
 export default function NotificationsClient() {
   const [filter, setFilter] = useState('전체');
@@ -129,7 +127,7 @@ export default function NotificationsClient() {
       setItems((prev) =>
         prev.map((n) => (n.notification_id === notificationId ? { ...n, is_read: true } : n)),
       );
-      window.dispatchEvent(new CustomEvent(CHANGED_EVENT));
+      window.dispatchEvent(new CustomEvent(NOTIFICATIONS_CHANGED_EVENT));
     } catch {
       // 실패하면 아무것도 바꾸지 않는다 — 다음에 다시 누르면 된다.
     }
@@ -147,7 +145,7 @@ export default function NotificationsClient() {
       if (!data.ok) return;
 
       setItems((prev) => prev.map((n) => ({ ...n, is_read: true })));
-      window.dispatchEvent(new CustomEvent(CHANGED_EVENT));
+      window.dispatchEvent(new CustomEvent(NOTIFICATIONS_CHANGED_EVENT));
     } catch {
       // 그대로 둔다.
     }
