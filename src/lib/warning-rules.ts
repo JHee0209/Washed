@@ -19,3 +19,15 @@ export type AdminWarningReasonValue = (typeof ADMIN_WARNING_REASONS)[number]['va
 export function isAdminWarningReasonValue(value: string): value is AdminWarningReasonValue {
   return ADMIN_WARNING_REASONS.some((r) => r.value === value);
 }
+
+/**
+ * DB 저장값 → 화면 라벨 (Issue #54 · 「경고 누적 사용자」 이력 표시).
+ *
+ * 관리자가 고를 수 있는 두 값(순서 미준수 · 세탁물 방치)만 더 읽기 쉬운 문장으로
+ * 바꾼다. 시스템 자동 사유(배정 후 미인증 · 수거 미완료)와 예전 관리자 값
+ * (신고 확인 · 더 이상 새로 고를 수 없지만 과거 행에 남아 있다)은 이미 그 자체로
+ * 읽을 수 있는 한국어라 매핑이 없으면 DB 값을 그대로 보여준다.
+ */
+export function warningReasonLabel(value: string): string {
+  return ADMIN_WARNING_REASONS.find((r) => r.value === value)?.label ?? value;
+}

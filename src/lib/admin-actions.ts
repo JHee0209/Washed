@@ -24,7 +24,17 @@ import { expireRunTimers } from '@/lib/usage';
 // 조회
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 탭 1 — 실시간 기기 현황 (F23 · F24 · Issue #48 현재 사용자) */
+/**
+ * 탭 1 — 실시간 기기 현황 (F23 · F24 · Issue #48 현재 사용자 · Issue #54 정합성)
+ *
+ * Issue #54 — machines.status 의 '사용중'은 **배정 시점**(QR 인증 전)에 이미
+ * 걸린다(assignment.ts 의 중복 배정 방지 락 · 05 P2). 그래서 이 값만 보고 화면을
+ * 그리면 QR 을 아직 안 찍은 사람도 실제 사용중처럼 보인다. queue.status
+ * (배정 / 사용중 / 수거대기)를 함께 내려줘서 화면이 실제 국면을 구분하게 하고,
+ * current_user 는 **queue.status = '사용중'일 때만** 채운다 — 배정·수거대기
+ * 중에는 아직 실사용자로 보여주지 않는다(사용자 확정). machines.status 자체는
+ * 손대지 않는다 — 락 역할은 그대로 둔다.
+ */
 export async function adminMachines() {
   await requireAdmin();
 
@@ -40,6 +50,7 @@ export async function adminMachines() {
     status: string;
     ends_at: string | null;
     minutes_left: number | null;
+    queue_status: string | null;
     current_user_name: string | null;
     current_user_room: string | null;
   }>`
@@ -47,8 +58,9 @@ export async function adminMachines() {
            CASE WHEN m.ends_at IS NULL THEN NULL
                 ELSE GREATEST(0, CEIL(EXTRACT(EPOCH FROM (m.ends_at - now())) / 60))::int
            END AS minutes_left,
-           u.name AS current_user_name,
-           u.room AS current_user_room
+           q.status AS queue_status,
+           CASE WHEN q.status = '사용중' THEN u.name END AS current_user_name,
+           CASE WHEN q.status = '사용중' THEN u.room END AS current_user_room
       FROM machines m
       -- queue_machine_once_idx 가 기기당 활성 줄을 하나로 보장하므로 이 LEFT JOIN 은
       -- 행을 늘리지 않는다. '대기 중'은 machine_id 가 없어 애초에 걸리지 않는다.
@@ -158,12 +170,21 @@ export async function adminHistory() {
 }
 
 /**
- * 탭 5 — 경고 누적 사용자 (F25 · 05 P5 · P7)
+ * 탭 5 — 경고 누적 사용자 (F25 · 05 P5 · P7 · Issue #54)
  *
  * warning_count(usage_restrictions) 와 recent_month_count(warnings)는 서로 다른
  * 값이다 — 전자는 제한 3일 종료 · 매달 1일에 0으로 되돌아가는 "현재 제재" 횟수이고,
  * 후자는 05 SP4(2026-09-17: 1개월로 축소)에 따라 **최근 1개월 warnings 행 수**다.
  * 화면에서 하나로 합치지 않고 각각 보여준다 — 두 축이 의미가 다르다.
+ *
+ * Issue #54 — 가장 최근 경고 1건(last_reason)만으로는 실제로 어떤 경고를 몇 번
+ * 받았는지 관리자가 알 수 없다. `history` 로 최근 1개월 안의 warnings 행을
+ * 최신순으로 내려준다.
+ *
+ * Issue #54 후속 — `history` 는 **현재 경고 수(warning_count, 최대 3)** 만큼만
+ * 잘라서 보여준다. `recent_month_count`(1개월 내 실제 warnings 행 수)는 이 제한과
+ * 무관하게 그대로 전체 건수다 — 표시 개수만 줄일 뿐 집계·정책은 손대지 않는다.
+ * warnings 행 자체나 warning_count 집계 규칙은 여기서 전혀 바꾸지 않는다.
  */
 export async function adminWarnings() {
   await requireAdmin();
@@ -176,8 +197,7 @@ export async function adminWarnings() {
     restricted_until: string | null;
     is_restricted: boolean;
     days_left: number | null;
-    last_reason: string | null;
-    last_issued_at: string | null;
+    history: { reason: string; issued_at: string; issued_by: string }[];
     recent_month_count: number;
   }>`
     SELECT u.user_id, u.name AS user_name, u.room, u.student_id,
@@ -187,22 +207,24 @@ export async function adminWarnings() {
            CASE WHEN r.restricted_until IS NULL OR r.restricted_until <= now() THEN NULL
                 ELSE CEIL(EXTRACT(EPOCH FROM (r.restricted_until - now())) / 86400)::int
            END AS days_left,
-           w.reason AS last_reason,
-           w.issued_at AS last_issued_at,
-           COALESCE(m.recent_month_count, 0) AS recent_month_count
+           COALESCE(w.history, '[]'::json) AS history,
+           COALESCE(w.recent_month_count, 0) AS recent_month_count
       FROM users u
       LEFT JOIN usage_restrictions r ON r.user_id = u.user_id
       LEFT JOIN LATERAL (
-        SELECT reason, issued_at FROM warnings
-         WHERE user_id = u.user_id
-           AND issued_at >= now() - interval '1 month'
-         ORDER BY issued_at DESC LIMIT 1
+        SELECT
+          (SELECT json_agg(row_to_json(t)) FROM (
+             SELECT reason, issued_at, issued_by FROM warnings
+              WHERE user_id = u.user_id
+                AND issued_at >= now() - interval '1 month'
+              ORDER BY issued_at DESC
+              -- Issue #54 후속 — 현재 경고 수만큼만, 최대 3건까지 표시한다.
+              LIMIT LEAST(COALESCE(r.warning_count, 0), 3)
+           ) t) AS history,
+          (SELECT COUNT(*)::int FROM warnings
+            WHERE user_id = u.user_id
+              AND issued_at >= now() - interval '1 month') AS recent_month_count
       ) w ON true
-      LEFT JOIN LATERAL (
-        SELECT COUNT(*)::int AS recent_month_count FROM warnings
-         WHERE user_id = u.user_id
-           AND issued_at >= now() - interval '1 month'
-      ) m ON true
      WHERE COALESCE(r.warning_count, 0) > 0
      ORDER BY COALESCE(r.warning_count, 0) DESC, u.name
   `;
