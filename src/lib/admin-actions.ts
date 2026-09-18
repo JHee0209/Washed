@@ -250,7 +250,9 @@ export async function adminUsers() {
     days_left: number | null;
   }>`
     SELECT u.user_id, u.name, u.email, u.gender, u.school, u.student_id, u.room,
-           u.signup_method, u.created_at, u.withdraw_requested_at,
+           -- Issue #46: 관리자 UI 표시값은 '구글'/'회원가입' 두 가지로만 노출한다
+           CASE WHEN u.signup_method = '구글' THEN '구글' ELSE '회원가입' END AS signup_method,
+           u.created_at, u.withdraw_requested_at,
            COALESCE(r.warning_count, 0) AS warning_count,
            r.restricted_until,
            (r.restricted_until IS NOT NULL AND r.restricted_until > now()) AS is_restricted,
