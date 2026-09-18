@@ -32,6 +32,8 @@ declare module 'next-auth' {
   interface Session {
     /** 구글로 들어왔지만 아직 가입 폼을 채우지 않은 사람 (05 P11) */
     pendingSignup?: boolean;
+    /** 탈퇴를 신청하고 아직 14일이 지나지 않은 사람 (05 P24 · F36) */
+    withdrawPending?: boolean;
     user: { id: string } & DefaultSession['user'];
   }
 }
@@ -132,12 +134,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         // 05 P11 — 구글로 처음 들어온 사람. 아직 사용자로 치지 않는다.
         token.userId = undefined;
         token.pendingSignup = true;
+        token.withdrawPending = false;
         return token;
       }
 
       token.userId = row.user_id;
       token.name = row.name;
       token.pendingSignup = false;
+
+      // 05 P24 — 탈퇴 대기 여부. findByEmail 이 이미 읽어 오던 칸이라 조회가 늘지
+      // 않는다. 이 콜백은 매 요청 users 를 다시 읽으므로, 복구하면 다음 요청부터
+      // 곧바로 풀린다 — 쿠키에 갇히지 않는다(06 「세션은 저장 항목이 아니다」).
+      token.withdrawPending = row.withdraw_requested_at !== null;
       return token;
     },
   },

@@ -12,8 +12,12 @@
 import { revalidatePath } from 'next/cache';
 
 import { requireAdmin } from '@/lib/admin-session';
+import { drainQueue } from '@/lib/assignment';
+import { notifyAssignments } from '@/lib/assignment-notify';
 import { sql } from '@/lib/db';
 import { notify } from '@/lib/notify';
+import { queueCounts } from '@/lib/queries';
+import { expireRunTimers } from '@/lib/usage';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 조회
@@ -39,28 +43,47 @@ export async function adminMachines() {
   `;
 }
 
-/** 탭 2 — 실시간 대기열 현황 (F23) */
+/**
+ * 탭 2 — 실시간 대기열 현황 (F23)
+ *
+ * `counts` 는 홈 화면(F1 · `/api/machines`)이 쓰는 것과 **같은 함수**
+ * (`queries.ts::queueCounts()`)에서 나온 값이다 — 대기 인원 세는 규칙(05 P2 · 08
+ * 3번)을 여기서 다시 계산하지 않는다. 두 화면의 숫자가 항상 같은 이유가 이것이다.
+ */
 export async function adminQueue() {
   await requireAdmin();
-  return sql<{
-    queue_id: string;
-    user_name: string;
-    room: string;
-    machine_kind: string;
-    machine_name: string | null;
-    status: string;
-    queued_at: string;
-    waited_minutes: number;
-  }>`
-    SELECT q.queue_id, u.name AS user_name, u.room, q.machine_kind,
-           m.name AS machine_name, q.status, q.queued_at,
-           FLOOR(EXTRACT(EPOCH FROM (now() - q.queued_at)) / 60)::int AS waited_minutes
-      FROM queue q
-      JOIN users u ON u.user_id = q.user_id
-      LEFT JOIN machines m ON m.machine_id = q.machine_id
-     WHERE q.status IN ('대기 중', '배정됨', '사용 중')
-     ORDER BY q.machine_kind, q.queued_at
-  `;
+
+  // F9 — 사용 타이머가 끝난 줄을 수거대기로 전환한다(전역 함수 · 05 P5 · Issue #7).
+  // 홈 화면 폴링을 거치지 않은 사용자의 줄도 관리자 화면에서 낡은 「사용중」으로
+  // 남지 않게 한다.
+  await expireRunTimers();
+
+  const [rows, counts] = await Promise.all([
+    sql<{
+      queue_id: string;
+      user_name: string;
+      room: string;
+      machine_kind: string;
+      machine_name: string | null;
+      status: string;
+      queued_at: string;
+      waited_minutes: number;
+    }>`
+      SELECT q.queue_id, u.name AS user_name, u.room, q.machine_kind,
+             m.name AS machine_name, q.status, q.queued_at,
+             FLOOR(EXTRACT(EPOCH FROM (now() - q.queued_at)) / 60)::int AS waited_minutes
+        FROM queue q
+        JOIN users u ON u.user_id = q.user_id
+        LEFT JOIN machines m ON m.machine_id = q.machine_id
+       WHERE q.status IN ('대기 중', '배정', '사용중', '수거대기')
+       ORDER BY q.machine_kind, q.queued_at
+    `,
+    queueCounts(),
+  ]);
+  return {
+    rows,
+    counts: { 세탁기: counts['세탁기'] ?? 0, 건조기: counts['건조기'] ?? 0 },
+  };
 }
 
 /** 탭 3 — 신고 내역 (F27) */
@@ -92,6 +115,9 @@ export async function adminHistory() {
   await requireAdmin();
   return sql<{
     history_id: string;
+    // 05 P6 · 0008 — F28 「경고 주기」 버튼과 F29 이용 내역 드롭다운이 쓴다.
+    // 화면에는 이름 · 호실만 보이고, 이 칸은 버튼 클릭에 실려 서버로만 간다.
+    user_id: string;
     user_name: string;
     room: string;
     machine_name: string | null;
@@ -100,7 +126,7 @@ export async function adminHistory() {
     result: string;
     used_minutes: number | null;
   }>`
-    SELECT h.history_id, u.name AS user_name, u.room, m.name AS machine_name,
+    SELECT h.history_id, h.user_id, u.name AS user_name, u.room, m.name AS machine_name,
            h.started_at, h.ended_at, h.result,
            CASE WHEN h.result = '정상 이용'
                 THEN ROUND(EXTRACT(EPOCH FROM (h.ended_at - h.started_at)) / 60)::int
@@ -115,7 +141,14 @@ export async function adminHistory() {
   `;
 }
 
-/** 탭 5 — 경고 누적 사용자 (F25 · 05 P5 · P7) */
+/**
+ * 탭 5 — 경고 누적 사용자 (F25 · 05 P5 · P7)
+ *
+ * warning_count(usage_restrictions) 와 recent_month_count(warnings)는 서로 다른
+ * 값이다 — 전자는 제한 3일 종료 · 매달 1일에 0으로 되돌아가는 "현재 제재" 횟수이고,
+ * 후자는 05 SP4(2026-09-17: 1개월로 축소)에 따라 **최근 1개월 warnings 행 수**다.
+ * 화면에서 하나로 합치지 않고 각각 보여준다 — 두 축이 의미가 다르다.
+ */
 export async function adminWarnings() {
   await requireAdmin();
   return sql<{
@@ -129,6 +162,7 @@ export async function adminWarnings() {
     days_left: number | null;
     last_reason: string | null;
     last_issued_at: string | null;
+    recent_month_count: number;
   }>`
     SELECT u.user_id, u.name AS user_name, u.room, u.student_id,
            COALESCE(r.warning_count, 0) AS warning_count,
@@ -138,13 +172,21 @@ export async function adminWarnings() {
                 ELSE CEIL(EXTRACT(EPOCH FROM (r.restricted_until - now())) / 86400)::int
            END AS days_left,
            w.reason AS last_reason,
-           w.issued_at AS last_issued_at
+           w.issued_at AS last_issued_at,
+           COALESCE(m.recent_month_count, 0) AS recent_month_count
       FROM users u
       LEFT JOIN usage_restrictions r ON r.user_id = u.user_id
       LEFT JOIN LATERAL (
         SELECT reason, issued_at FROM warnings
-         WHERE user_id = u.user_id ORDER BY issued_at DESC LIMIT 1
+         WHERE user_id = u.user_id
+           AND issued_at >= now() - interval '1 month'
+         ORDER BY issued_at DESC LIMIT 1
       ) w ON true
+      LEFT JOIN LATERAL (
+        SELECT COUNT(*)::int AS recent_month_count FROM warnings
+         WHERE user_id = u.user_id
+           AND issued_at >= now() - interval '1 month'
+      ) m ON true
      WHERE COALESCE(r.warning_count, 0) > 0
      ORDER BY COALESCE(r.warning_count, 0) DESC, u.name
   `;
@@ -167,7 +209,13 @@ export async function adminNotices() {
   `;
 }
 
-/** 탭 7 — 사용자 목록 (F29) */
+/**
+ * 탭 7 — 사용자 목록 (F29 · 07-screens.md F29 행 — 이름·학번·호실·경고 횟수·제한 여부)
+ *
+ * 경고 횟수·제한 여부는 adminWarnings() 와 같은 usage_restrictions 조인을 그대로
+ * 재사용한다 — Issue #28: 사용자 목록과 경고 누적 화면이 같은 user_id 기준으로
+ * 서로 이어지도록.
+ */
 export async function adminUsers() {
   await requireAdmin();
   return sql<{
@@ -181,11 +229,22 @@ export async function adminUsers() {
     signup_method: string;
     created_at: string;
     withdraw_requested_at: string | null;
+    warning_count: number;
+    restricted_until: string | null;
+    is_restricted: boolean;
+    days_left: number | null;
   }>`
-    SELECT user_id, name, email, gender, school, student_id, room,
-           signup_method, created_at, withdraw_requested_at
-      FROM users
-     ORDER BY created_at DESC
+    SELECT u.user_id, u.name, u.email, u.gender, u.school, u.student_id, u.room,
+           u.signup_method, u.created_at, u.withdraw_requested_at,
+           COALESCE(r.warning_count, 0) AS warning_count,
+           r.restricted_until,
+           (r.restricted_until IS NOT NULL AND r.restricted_until > now()) AS is_restricted,
+           CASE WHEN r.restricted_until IS NULL OR r.restricted_until <= now() THEN NULL
+                ELSE CEIL(EXTRACT(EPOCH FROM (r.restricted_until - now())) / 86400)::int
+           END AS days_left
+      FROM users u
+      LEFT JOIN usage_restrictions r ON r.user_id = u.user_id
+     ORDER BY u.created_at DESC
   `;
 }
 
@@ -193,18 +252,44 @@ export async function adminUsers() {
 // 동작
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 기기 상태 바꾸기 — 고장 표시 · 복구 (F24 · 05 P13) */
+/**
+ * 기기 상태 바꾸기 — 고장 표시 · 복구 · 강제 사용가능 (F24 · 05 P10)
+ *
+ * 05 P10 — 「사용 중인 기기는 관리자 페이지에서 **강제 사용가능** 처리로 비운 뒤에만
+ * 고장으로 바꿀 수 있다」. 그 「비운다」가 기기 상태만 바꾸는 것이 아니다 — 그 기기를
+ * 물고 있던 **줄도 함께 놓아야** 한다. 안 놓으면 queue 행이 그 machine_id 를 계속
+ * 쥐고 있어서 `queue_machine_once_idx` 때문에 **그 기기는 다시는 배정되지 않는다**
+ * (cancelQueue 가 같은 이유로 기기를 반납한다 · src/lib/assignment.ts 의 NOT EXISTS).
+ */
 export async function setMachineStatus(machineId: string, status: string) {
   await requireAdmin();
   if (!['사용가능', '사용중', '고장', '점검중'].includes(status)) {
     throw new Error('알 수 없는 상태입니다.');
   }
+
+  // 기기를 사용자 손에서 떼어내는 상태로 갈 때는 물려 있던 줄을 먼저 지운다.
+  // 「종료」는 저장되는 상태가 아니라 행 자체를 지우는 것이다 (05 상태값 · 06 「줄서기」).
+  if (status !== '사용중') {
+    await sql`DELETE FROM queue WHERE machine_id = ${machineId}`;
+  }
+
   await sql`
     UPDATE machines
        SET status = ${status},
            ends_at = CASE WHEN ${status} = '사용중' THEN ends_at ELSE NULL END
      WHERE machine_id = ${machineId}
   `;
+
+  // 05 P2 — 방금 빈 기기를 기다리던 다음 사람에게 넘긴다. 배정 판정은 서버가 한다
+  // (08 · 3번). 다음 사람의 10분은 **기기가 사용가능이 된 지금**부터 센다 (08 · 4번).
+  if (status === '사용가능') {
+    const assigned = await drainQueue();
+    // F5 · 05 P26 · Issue #12 — 관리자 동작으로 차례가 된 사람에게 배정 알림.
+    if (assigned.length > 0) {
+      await notifyAssignments(assigned, 'turn');
+    }
+    revalidatePath('/home');
+  }
   revalidatePath('/admin');
 }
 
@@ -217,9 +302,38 @@ export async function addMachine(name: string, kind: string) {
   revalidatePath('/admin');
 }
 
-/** 기기 삭제 (F24) — 이용 내역은 machine_id 가 NULL 로 남는다(내역은 지우지 않는다) */
+/**
+ * 기기 삭제 (F24) — 이용 내역은 machine_id 가 NULL 로 남는다(내역은 지우지 않는다).
+ *
+ * Issue #5 — **배정 · 사용중 · 수거대기인 줄이 이 기기를 물고 있는 동안은 지우지
+ * 않는다.** `queue.machine_id` 의 FK 는 `ON DELETE SET NULL` 이라 지워도 SQL
+ * 오류는 나지 않지만, 그러면 `queue.status` 는 '배정'(또는 '사용중' · '수거대기')
+ * 그대로인데 `machine_id` 만 NULL 로 남는 고아 줄이 생긴다 — 그 사람은 QR 을 찍을
+ * 기기가 없는 채로 10분(05 P3) 타이머만 돌게 된다.
+ *
+ * 자동으로 다른 기기에 옮겨 주는 것(재배정)은 여기서 만들지 않는다 — 그 판정은
+ * drainQueue() 의 몫이 아니고, 정상적으로 대기 중(machine_id 가 아직 없는) 사람들
+ * 사이에 새치기를 만들 뿐이다. 가장 보수적으로 **삭제 자체를 막아**, 관리자가 먼저
+ * 그 사람의 줄을 정리(취소 · 사용 종료 — Issue #6 · #7 · #8 범위)한 뒤 지우게 한다.
+ *
+ * 대기 중(machine_id 가 NULL)인 일반 대기열은 이 기기를 가리키지 않으므로 영향이
+ * 없다 — 아래 조회가 machine_id 로 좁히기 때문에 애초에 걸리지 않는다.
+ */
 export async function removeMachine(machineId: string) {
   await requireAdmin();
+
+  const blocking = await sql<{ status: string; n: number }>`
+    SELECT status, COUNT(*)::int AS n
+      FROM queue
+     WHERE machine_id = ${machineId}
+       AND status IN ('배정', '사용중', '수거대기')
+     GROUP BY status
+  `;
+  if (blocking.length > 0) {
+    const detail = blocking.map((b) => `${b.status} ${b.n}건`).join(', ');
+    throw new Error(`이 기기를 이용 중인 줄이 있어 삭제할 수 없습니다 (${detail}). 먼저 정리한 뒤 다시 시도해주세요.`);
+  }
+
   await sql`DELETE FROM machines WHERE machine_id = ${machineId}`;
   revalidatePath('/admin');
 }
@@ -278,7 +392,15 @@ export async function setReportStatus(reportId: string, status: string) {
   `;
   if (updated.length === 0) return;
 
-  // P19 — 신고자에게만. 알림함 기록이 핵심이고 푸시는 그 뒤 best-effort 다(P26).
+  // P19 — **신고자에게만.** 「신고당한 사람에게는 누가 신고했는지 알리지 않는다」
+  //
+  // 받는 사람은 위에서 **DB 에서 읽은** row.reporter_user_id 다 — 이 함수의 인자는
+  // reportId 와 status 뿐이고 받는 사람을 밖에서 넣을 길이 없다. 관리자 화면이
+  // 무엇을 보내든 알림은 그 신고를 쓴 사람에게만 간다.
+  //
+  // notify() 는 user_id 하나에 한 줄을 넣는다 — addNotice() 의 공지처럼 users 를
+  // 훑지 않는다. 전체 · 같은 호수 · 피신고자 · 관리자로 새는 경로가 없다.
+  // (피신고자는 애초에 reports 에 적히지도 않는다 — 06 「신고」에 그런 칸이 없다.)
   try {
     await notify(
       row.reporter_user_id,
@@ -311,15 +433,14 @@ const WARNING_LIMIT = 3;
 /** 05 P7 — 제한 기간(일) */
 const RESTRICT_DAYS = 3;
 
-export async function issueWarning(userId: string, reason: string) {
-  await requireAdmin();
-  if (!reason.trim()) throw new Error('사유를 입력해주세요.');
-
-  await sql`
-    INSERT INTO warnings (user_id, reason, issued_by)
-    VALUES (${userId}, ${reason.trim()}, '관리자')
-  `;
-
+/**
+ * warnings INSERT **뒤**의 공통 처리 — 제한 누적(P7) · 알림(P16). issueWarning() ·
+ * issueUsageIncidentWarning() 둘 다 이 순서를 따른다: **INSERT 가 먼저, 이 처리는
+ * 그 다음**이다. INSERT 가 (05 P6 · 0008 의 부분 UNIQUE 인덱스 등으로) 실패하면
+ * 호출부에서 예외가 그대로 던져져 이 함수 자체가 불리지 않는다 — 경고 자체가
+ * 안 쌓였는데 제한 횟수만 오르거나 중복 알림이 가는 일이 없다.
+ */
+async function applyWarningSideEffects(userId: string, reasonText: string): Promise<void> {
   // 누적을 올리고, 3회가 되면 그 자리에서 3일 제한을 건다 (P7)
   await sql`
     INSERT INTO usage_restrictions (user_id, warning_count, restricted_from, restricted_until)
@@ -358,8 +479,8 @@ export async function issueWarning(userId: string, reason: string) {
       '경고',
       '경고가 1회 누적됐어요',
       daysLeft
-        ? `${reason.trim()} — 경고 ${WARNING_LIMIT}회가 되어 ${daysLeft}일 동안 줄서기를 할 수 없어요.`
-        : `${reason.trim()} — 경고 ${WARNING_LIMIT}회가 되면 ${RESTRICT_DAYS}일 동안 줄서기를 할 수 없어요.`,
+        ? `${reasonText} — 경고 ${WARNING_LIMIT}회가 되어 ${daysLeft}일 동안 줄서기를 할 수 없어요.`
+        : `${reasonText} — 경고 ${WARNING_LIMIT}회가 되면 ${RESTRICT_DAYS}일 동안 줄서기를 할 수 없어요.`,
     );
   } catch (error) {
     console.error('경고 알림 생성 실패', userId, error);
@@ -368,6 +489,69 @@ export async function issueWarning(userId: string, reason: string) {
   revalidatePath('/admin');
   revalidatePath('/history');
   revalidatePath('/notifications');
+}
+
+/** 23505 가 지정한 제약에서 났는지 — queue/[kind]/route.ts 의 constraintOf() 와 같은 관용구 */
+function isUniqueViolation(error: unknown, constraint: string): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { code?: string; constraint?: string };
+  return e.code === '23505' && e.constraint === constraint;
+}
+
+/** F25 · F29 — 특정 이용 내역과 무관한 일반 경고. usage_history_id 는 항상 비운다. */
+export async function issueWarning(userId: string, reason: string) {
+  await requireAdmin();
+  if (!reason.trim()) throw new Error('사유를 입력해주세요.');
+
+  await sql`
+    INSERT INTO warnings (user_id, reason, issued_by)
+    VALUES (${userId}, ${reason.trim()}, '관리자')
+  `;
+
+  await applyWarningSideEffects(userId, reason.trim());
+}
+
+/**
+ * F28 「경고 주기」· F29 「이용 내역 관련 경고」 — 05 P6 · 0008.
+ *
+ * 특정 usage_history 행(사건)에 연결된 관리자 경고 전용이다. `reason` 은 늘
+ * '신고 확인'(P6-1의 관리자 몫)으로 고정한다 — 자유 텍스트를 받지 않아 CHECK
+ * 위반도 나지 않는다. `usageHistoryId` 는 **필수**다(옵션이 아니다) — 이걸
+ * 선택 인자로 두면 그 사건과 무관한 issueWarning() 처럼 그냥 안 채우고 지나갈
+ * 수 있어, 자동 경고(P5 수거 미완료)와 같은 사건을 몰래 다시 벌줄 길이 남는다.
+ *
+ * 같은 usage_history_id 를 가리키는 경고가 이미 있으면(자동이든 관리자든)
+ * warnings_usage_history_id_idx 가 INSERT 를 23505 로 거부한다 — 여기서 잡아
+ * 사람이 읽을 메시지로 바꾼다. **이 INSERT 가 실패하면 함수가 그 자리에서
+ * 끝난다** — usage_restrictions 증가도 notify() 도 뒤에 있어 실행되지 않는다.
+ */
+export async function issueUsageIncidentWarning(userId: string, usageHistoryId: string) {
+  await requireAdmin();
+  if (!usageHistoryId) throw new Error('연결할 이용 내역을 선택해주세요.');
+
+  // 고른 이용 내역이 실제로 이 사용자의 것인지 확인한다 — 화면이 잘못된 history_id
+  // 를 보낼 리는 없지만, 다른 사람에게 경고가 잘못 붙는 것을 서버에서도 막는다.
+  const owner = await sql<{ user_id: string }>`
+    SELECT user_id FROM usage_history WHERE history_id = ${usageHistoryId} LIMIT 1
+  `;
+  if (!owner[0]) throw new Error('이용 내역을 찾을 수 없어요.');
+  if (owner[0].user_id !== userId) {
+    throw new Error('이 이용 내역은 선택한 사용자의 것이 아니에요.');
+  }
+
+  try {
+    await sql`
+      INSERT INTO warnings (user_id, reason, issued_by, usage_history_id)
+      VALUES (${userId}, '신고 확인', '관리자', ${usageHistoryId})
+    `;
+  } catch (error) {
+    if (isUniqueViolation(error, 'warnings_usage_history_id_idx')) {
+      throw new Error('이미 이 이용 건에 경고가 있어요.');
+    }
+    throw error;
+  }
+
+  await applyWarningSideEffects(userId, '신고 확인');
 }
 
 /**
@@ -468,9 +652,33 @@ export async function removeNotice(noticeId: string) {
   revalidatePath('/notifications');
 }
 
-/** 대기열에서 빼기 (F23) — 관리자가 막힌 줄을 푸는 자리 */
+/**
+ * 대기열에서 빼기 (F23) — 관리자가 막힌 줄을 푸는 자리.
+ *
+ * 「종료」는 저장되는 상태가 아니다(05 상태값) — `queue` 에는 취소됨 같은 상태값이
+ * 없고(`db/schema.sql` 의 CHECK 는 대기 중 · 배정 · 사용중 · 수거대기 뿐이다), 끝난
+ * 줄은 행 자체를 지운다. 배정된 줄을 지울 때는 물려 있던 기기도 함께 반납해야
+ * 한다 — 안 그러면 그 기기가 영원히 「사용중」으로 남는다.
+ */
 export async function cancelQueue(queueId: string) {
   await requireAdmin();
-  await sql`UPDATE queue SET status = '취소됨' WHERE queue_id = ${queueId}`;
+  await sql`
+    WITH removed AS (
+      DELETE FROM queue WHERE queue_id = ${queueId} RETURNING machine_id
+    )
+    UPDATE machines SET status = '사용가능', ends_at = NULL
+     WHERE machine_id = (SELECT machine_id FROM removed WHERE machine_id IS NOT NULL)
+  `;
+
+  // 05 P2 — 반납된 기기를 기다리던 다음 사람에게 곧바로 넘긴다. 이 호출이 없으면
+  // 기기는 비어 있는데 대기자는 계속 기다리는 상태로 남는다 (08 · 3번).
+  // 다음 사람의 10분은 여기서부터 센다 — 앞사람의 3분은 들어가지 않는다 (08 · 4번).
+  const assigned = await drainQueue();
+  // F5 · 05 P26 · Issue #12 — 관리자가 대기열을 빼며 생긴 여지로 차례가 된 사람에게
+  // 배정 알림.
+  if (assigned.length > 0) {
+    await notifyAssignments(assigned, 'turn');
+  }
   revalidatePath('/admin');
+  revalidatePath('/home');
 }

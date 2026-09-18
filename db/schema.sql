@@ -114,10 +114,12 @@ CREATE TABLE IF NOT EXISTS machines (
   -- 06 「종류(세탁기 / 건조기)」
   kind        text        NOT NULL CHECK (kind IN ('세탁기', '건조기')),
 
-  -- 06 「상태값(사용가능 / 사용중 / 고장)」 · 05 상태값 · P10
-  -- 고장은 관리자가 수동 전환한다. 사용중일 때는 강제 사용가능 처리 뒤에만 고장으로 바꾼다.
+  -- 06 「상태값(사용가능 / 사용중 / 고장 / 점검중)」 · 05 상태값 · P10 · P20
+  -- 고장 · 점검중은 관리자가 수동 전환한다. 사용중일 때는 강제 사용가능
+  -- 처리 뒤에만 고장 · 점검중으로 바꾼다. 점검중은 기기 단위 상태이며
+  -- P20 의 세탁실 전체 점검 모드(v2 · 06-data.md 에 저장 항목 없음)와는 다르다.
   status      text        NOT NULL DEFAULT '사용가능'
-                          CHECK (status IN ('사용가능', '사용중', '고장')),
+                          CHECK (status IN ('사용가능', '사용중', '고장', '점검중')),
 
   -- 06 「종료 예정 시각(세탁 60분 · 건조 45분)」 · 05 P4
   -- 사용중이 아닐 때는 비어 있다. 60분 · 45분은 서버 코드의 값이고 여기에 박지 않는다
@@ -206,11 +208,19 @@ CREATE TABLE IF NOT EXISTS warnings (
 
   -- 06 「부여 시각」
   issued_at  timestamptz NOT NULL DEFAULT now()
+
+  -- 06 「사건 참조(이용 내역, 선택 · 05 P6)」는 usage_history 뒤에서 ALTER 로 붙인다
+  -- (0008) — usage_history 가 이 표보다 뒤(8번)에 있어 여기서는 아직 참조할 수 없다.
 );
 
--- 기록 화면(최근 30일 · 05 P21) · 관리자 조회 · 3개월 삭제 배치 (05 SP4 · 08 · 9번)
+-- 기록 화면(최근 30일 · 05 P21) · 관리자 조회 (05 SP4)
 CREATE INDEX IF NOT EXISTS warnings_user_issued_at_idx
   ON warnings (user_id, issued_at DESC);
+
+-- 3개월 삭제 배치 (05 SP4 · 08 · 9번 · 0007). 배치는 사람을 가리지 않고 시각만 보므로
+-- 위의 (user_id, issued_at) 인덱스가 쓰이지 않는다.
+CREATE INDEX IF NOT EXISTS warnings_issued_at_idx
+  ON warnings (issued_at);
 
 
 -- -----------------------------------------------------------------------------
@@ -263,9 +273,12 @@ CREATE TABLE IF NOT EXISTS reports (
   -- 06 「증거 사진」 · 05 P15 · P23
   -- 「세탁물 있음」에만 있고 필수다 — 남의 세탁물을 꺼내는 근거라 사진 없이는 접수되지 않는다.
   -- 나머지 세 사유에는 칸 자체가 없다(= 반드시 비어 있다). 아래 CHECK 가 그것을 막는다.
-  -- 화면만이 아니라 서버도 같은 조건을 본다 (08 · 7번).
-  -- 파일 자체는 외부 저장소에 두고 여기에는 그 주소만 둔다 (08 · 7번).
+  -- 화면만이 아니라 서버도 같은 조건을 본다 (08 · 7번 · src/lib/report-rules.ts).
+  -- 여기에는 **주소만** 둔다. 파일 자체는 아래 14번 report_evidence 에 있고,
+  -- 이 칸에는 서버가 조립한 `/api/reports/<report_id>/evidence` 가 들어간다 (0005).
+  -- 주소를 클라이언트가 보내는 것이 아니라 서버가 만든다 — 임의 경로를 넣을 수 없다.
   -- 올린 시점부터 3개월 보관 후 삭제 · 신고자가 탈퇴하면 그 전이라도 함께 삭제한다 (05 P23).
+  -- 그때 지우는 것은 14번의 파일이고 **이 주소 칸은 남는다** — 이유는 14번 주석에 있다.
   evidence_photo_url text        NULL,
 
   -- 06 「기타 내용」
@@ -292,9 +305,14 @@ CREATE TABLE IF NOT EXISTS reports (
   )
 );
 
--- 관리자 신고 내역 목록 (F24) · 3개월 삭제 배치 (05 SP4 · P23 · 08 · 9번)
+-- 관리자 신고 내역 목록 (F24)
 CREATE INDEX IF NOT EXISTS reports_status_created_at_idx
   ON reports (status, created_at DESC);
+
+-- 3개월 삭제 배치 (05 SP4 · P23 · 08 · 9번 · 0007). 배치는 상태를 가리지 않고 접수
+-- 시각만 보므로 위의 (status, created_at) 인덱스가 쓰이지 않는다.
+CREATE INDEX IF NOT EXISTS reports_created_at_idx
+  ON reports (created_at);
 
 
 -- -----------------------------------------------------------------------------
@@ -334,9 +352,14 @@ CREATE TABLE IF NOT EXISTS notifications (
   received_at     timestamptz NOT NULL DEFAULT now()
 );
 
--- 알림함 목록 · 안 읽은 개수 · 30일 삭제 배치 (05 P14 · 08 · 5번)
+-- 알림함 목록 · 안 읽은 개수 (05 P14 · 08 · 5번)
 CREATE INDEX IF NOT EXISTS notifications_user_received_at_idx
   ON notifications (user_id, received_at DESC);
+
+-- 30일 · 「공지」 3개월 삭제 배치 (05 P14 · 08 · 9번 · 0007). 배치는 사람을 가리지
+-- 않고 받은 시각만 보므로 위의 (user_id, received_at) 인덱스가 쓰이지 않는다.
+CREATE INDEX IF NOT EXISTS notifications_received_at_idx
+  ON notifications (received_at);
 
 
 -- -----------------------------------------------------------------------------
@@ -362,9 +385,25 @@ CREATE TABLE IF NOT EXISTS usage_history (
   -- 사생 기록 화면은 최근 30일만 보여준다 (05 P21 · SP4 · 08 · 9번).
 );
 
--- 기록 화면 30일 · 관리자 3개월 조회 · 삭제 배치 (05 P17 · P21 · 08 · 9번)
+-- 기록 화면 30일 · 관리자 3개월 조회 (05 P17 · P21)
 CREATE INDEX IF NOT EXISTS usage_history_user_started_at_idx
   ON usage_history (user_id, started_at DESC);
+
+-- 3개월 삭제 배치 (05 P17 · SP4 · 08 · 9번 · 0007). 배치는 사람을 가리지 않고 시작
+-- 시각만 보므로 위의 (user_id, started_at) 인덱스가 쓰이지 않는다.
+CREATE INDEX IF NOT EXISTS usage_history_started_at_idx
+  ON usage_history (started_at);
+
+-- 05 P6 · 0008 — 경고의 「사건 참조」. usage_history 뒤에 두는 이유는 warnings 표
+-- 자체(4번)의 주석에 있다. 자동(P5 수거 미완료)·관리자(F28 「경고 주기」) 양쪽이
+-- 같은 usage_history 행을 가리키면 아래 부분 UNIQUE 인덱스가 두 번째를 거부한다.
+ALTER TABLE warnings
+  ADD COLUMN IF NOT EXISTS usage_history_id uuid NULL
+    REFERENCES usage_history(history_id) ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS warnings_usage_history_id_idx
+  ON warnings (usage_history_id)
+  WHERE usage_history_id IS NOT NULL;
 
 
 -- -----------------------------------------------------------------------------
@@ -533,5 +572,52 @@ ALTER TABLE notifications
 
 CREATE INDEX IF NOT EXISTS notifications_notice_id_idx
   ON notifications (notice_id);
+
+-- -----------------------------------------------------------------------------
+-- 14. 신고 증거 사진  (0005 · 06 「신고」 → 「증거 사진」 · 05 P15 · P23 · 08 · 7번)
+-- -----------------------------------------------------------------------------
+-- 6번 reports 의 evidence_photo_url 이 가리키는 **파일 자체**가 여기 있다.
+--
+-- 08 · 7번이 말한 저장소를 외부(S3 등)가 아니라 DB 안에 둔다 — 이 저장소에는
+-- 붙어 있는 외부 저장소도 credential 도 없어서, 지금 외부를 들이면 키가 생기기
+-- 전까지 F11 이 통째로 동작하지 않는다. 증거 사진에는 남의 세탁물이 찍히므로
+-- 주소만 알면 보이는 곳이 아니라 **권한을 보고 내려주는** 자리여야 하기도 하다
+-- (/api/reports/[id]/evidence — 신고자 본인과 관리자만).
+-- 외부 저장소로 옮길 때 고칠 곳은 src/lib/evidence-storage.ts 하나다.
+--
+-- 신고 1건에 사진 1장이다 — 07 설정 화면의 첨부 슬롯이 하나이고 06 「신고」의
+-- 예시도 `(사진)` 한 장이다. 여러 장이 필요해지면 기본키를 따로 둔다.
+CREATE TABLE IF NOT EXISTS report_evidence (
+  -- 신고가 지워지면 사진도 함께 사라진다. users → reports 도 ON DELETE CASCADE 라
+  -- 신고자가 지워지면 신고를 거쳐 사진까지 한 번에 사라진다 (05 P23 · P24).
+  report_id    uuid        PRIMARY KEY REFERENCES reports(report_id) ON DELETE CASCADE,
+
+  -- 서버가 실제 파일을 보고 정한 값만 들어온다.
+  -- src/lib/report-rules.ts 의 ALLOWED_EVIDENCE_MIME 과 같은 집합이어야 한다.
+  mime_type    text        NOT NULL CHECK (mime_type IN ('image/jpeg', 'image/png', 'image/webp')),
+
+  -- 실제로 읽은 바이트 수 — Content-Length 헤더가 아니다(그것은 위조된다)
+  byte_size    integer     NOT NULL CHECK (byte_size > 0),
+
+  -- 파일 자체. base64 로 실려 와 decode(..., 'base64') 로 들어간다.
+  bytes        bytea       NOT NULL,
+
+  -- 05 P23 「올린 시점부터 3개월」의 기산점
+  uploaded_at  timestamptz NOT NULL DEFAULT now(),
+
+  -- 05 P23 — **삭제 기준 시점을 행에 박아 둔다.** 보관 기간을 나중에 바꿔도 이미
+  -- 올라온 사진은 올릴 때 약속한 시점에 지워진다. 배치는 이 칸만 본다.
+  delete_after timestamptz NOT NULL
+);
+
+-- 3개월 삭제 배치가 훑는 자리 (05 P23 · 08 · 9번 · src/lib/cleanup.ts)
+CREATE INDEX IF NOT EXISTS report_evidence_delete_after_idx
+  ON report_evidence (delete_after);
+
+-- 배치는 이 표의 행만 지우고 6번 reports 의 evidence_photo_url 은 그대로 둔다.
+-- 그 칸까지 비우려면 reports_evidence_only_for_laundry_left CHECK 를 풀어야 하는데,
+-- 그러면 P15 의 「사진 없이는 접수되지 않는다」를 DB 가 더는 지키지 못한다.
+-- 접수 시점의 무결성이 보관 기간보다 앞선다 — 파일이 없어지면 서빙 라우트가 410 을
+-- 돌려주고 화면에서 사진이 사라진다(P23 의 확인 방법 그대로다).
 
 COMMIT;

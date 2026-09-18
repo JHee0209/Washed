@@ -5,6 +5,7 @@
 
 'use client';
 
+import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
 import {
@@ -12,6 +13,7 @@ import {
   addNotice,
   cancelQueue,
   clearRestriction,
+  issueUsageIncidentWarning,
   issueWarning,
   removeMachine,
   removeNotice,
@@ -29,14 +31,18 @@ type Data = {
     minutes_left: number | null;
   }[];
   queue: {
-    queue_id: string;
-    user_name: string;
-    room: string;
-    machine_kind: string;
-    machine_name: string | null;
-    status: string;
-    waited_minutes: number;
-  }[];
+    rows: {
+      queue_id: string;
+      user_name: string;
+      room: string;
+      machine_kind: string;
+      machine_name: string | null;
+      status: string;
+      waited_minutes: number;
+    }[];
+    // 홈 화면(F1)과 같은 규칙(05 P2 · queries.ts::queueCounts())으로 센 값이다.
+    counts: { 세탁기: number; 건조기: number };
+  };
   reports: {
     report_id: string;
     user_name: string;
@@ -44,12 +50,17 @@ type Data = {
     reason: string;
     machine_kind: string | null;
     machine_no: number | null;
+    // 05 P15 — 「세탁물 있음」에만 값이 있다. 3개월이 지나 사진이 지워져도
+    // 이 주소는 남고 열면 410 이 온다 (0005 · 05 P23).
+    evidence_photo_url: string | null;
     etc_content: string | null;
     status: string;
     created_at: string;
   }[];
   history: {
     history_id: string;
+    /** 05 P6 · 0008 — F28 「경고 주기」 · F29 이용 내역 드롭다운이 쓴다(화면엔 안 보임) */
+    user_id: string;
     user_name: string;
     room: string;
     machine_name: string | null;
@@ -67,6 +78,7 @@ type Data = {
     is_restricted: boolean;
     days_left: number | null;
     last_reason: string | null;
+    recent_month_count: number;
   }[];
   notices: { notice_id: string; title: string; body: string; created_at: string }[];
   users: {
@@ -80,17 +92,21 @@ type Data = {
     signup_method: string;
     created_at: string;
     withdraw_requested_at: string | null;
+    warning_count: number;
+    restricted_until: string | null;
+    is_restricted: boolean;
+    days_left: number | null;
   }[];
 };
 
 export default function AdminTabs({ tab, data }: { tab: string; data: Data }) {
   if (tab === 'dashboard') return <Machines rows={data.machines} />;
-  if (tab === 'queue') return <Queue rows={data.queue} />;
+  if (tab === 'queue') return <Queue rows={data.queue.rows} counts={data.queue.counts} />;
   if (tab === 'reports') return <Reports rows={data.reports} />;
   if (tab === 'history') return <History rows={data.history} />;
   if (tab === 'warnings') return <Warnings rows={data.warnings} />;
   if (tab === 'notice') return <Notices rows={data.notices} />;
-  return <Users rows={data.users} />;
+  return <Users rows={data.users} history={data.history} />;
 }
 
 // ─── 공통 표 조각 ────────────────────────────────────────────────────────────
@@ -316,32 +332,61 @@ function Machines({ rows }: { rows: Data['machines'] }) {
 
 // ─── 탭 2 · 실시간 대기열 (F23) ──────────────────────────────────────────────
 
-function Queue({ rows }: { rows: Data['queue'] }) {
+function Queue({
+  rows,
+  counts,
+}: {
+  rows: Data['queue']['rows'];
+  counts: Data['queue']['counts'];
+}) {
   return (
-    <Table cols={['사용자', '호실', '종류', '배정 기기', '상태', '대기', '']}>
-      {rows.length === 0 ? (
-        <EmptyRow span={7} text="지금 줄 선 사람이 없어요." />
-      ) : (
-        rows.map((q) => (
-          <tr key={q.queue_id}>
-            <td style={{ ...cell, fontWeight: 700 }}>{q.user_name}</td>
-            <td style={cell}>{q.room}</td>
-            <td style={cell}>{q.machine_kind}</td>
-            <td style={{ ...cell, color: '#8FAAD0' }}>{q.machine_name ?? '—'}</td>
-            <td style={cell}>
-              <Dot color={q.status === '배정됨' ? '#FF9200' : '#2F63B8'} />
-              {q.status}
-            </td>
-            <td style={{ ...cell, color: '#8FAAD0' }}>{q.waited_minutes}분</td>
-            <td style={cell}>
-              <Btn tone="danger" onClick={() => cancelQueue(q.queue_id)}>
-                취소
-              </Btn>
-            </td>
-          </tr>
-        ))
-      )}
-    </Table>
+    <>
+      {/*
+        05 P2 · 08 3번 — 대기 인원은 그 종류에 바로 쓸 수 있는 기기가 있으면 0명이다.
+        이 숫자는 홈 화면(F1)과 같은 함수(queueCounts())가 낸 값이라 항상 일치한다.
+      */}
+      <div
+        style={{
+          display: 'flex',
+          gap: 16,
+          padding: '11px 14px',
+          marginBottom: 14,
+          borderRadius: 12,
+          background: 'rgba(47,99,184,.06)',
+          fontSize: 12.5,
+          color: '#33456B',
+          fontWeight: 600,
+        }}
+      >
+        <span>세탁기 대기 {counts.세탁기}명</span>
+        <span>건조기 대기 {counts.건조기}명</span>
+      </div>
+
+      <Table cols={['사용자', '호실', '종류', '배정 기기', '상태', '대기', '']}>
+        {rows.length === 0 ? (
+          <EmptyRow span={7} text="지금 줄 선 사람이 없어요." />
+        ) : (
+          rows.map((q) => (
+            <tr key={q.queue_id}>
+              <td style={{ ...cell, fontWeight: 700 }}>{q.user_name}</td>
+              <td style={cell}>{q.room}</td>
+              <td style={cell}>{q.machine_kind}</td>
+              <td style={{ ...cell, color: '#8FAAD0' }}>{q.machine_name ?? '—'}</td>
+              <td style={cell}>
+                <Dot color={q.status === '배정' ? '#FF9200' : '#2F63B8'} />
+                {q.status}
+              </td>
+              <td style={{ ...cell, color: '#8FAAD0' }}>{q.waited_minutes}분</td>
+              <td style={cell}>
+                <Btn tone="danger" onClick={() => cancelQueue(q.queue_id)}>
+                  취소
+                </Btn>
+              </td>
+            </tr>
+          ))
+        )}
+      </Table>
+    </>
   );
 }
 
@@ -349,9 +394,9 @@ function Queue({ rows }: { rows: Data['queue'] }) {
 
 function Reports({ rows }: { rows: Data['reports'] }) {
   return (
-    <Table cols={['접수', '신고자', '호실', '사유', '대상', '상태', '']}>
+    <Table cols={['접수', '신고자', '호실', '사유', '대상', '증거', '상태', '']}>
       {rows.length === 0 ? (
-        <EmptyRow span={7} text="접수된 신고가 없어요." />
+        <EmptyRow span={8} text="접수된 신고가 없어요." />
       ) : (
         rows.map((r) => (
           <tr key={r.report_id}>
@@ -363,6 +408,26 @@ function Reports({ rows }: { rows: Data['reports'] }) {
             </td>
             <td style={{ ...cell, color: '#8FAAD0' }}>
               {r.machine_kind ? `${r.machine_kind} ${r.machine_no ?? ''}` : '—'}
+            </td>
+            {/*
+              05 P15 — 증거 사진은 「세탁물 있음」에만 있다. 관리자가 처리완료(사실)와
+              반려(거짓)를 가르는 근거라(P9) 여기서 열어 볼 수 있어야 한다.
+              주소는 권한을 보고 내려주는 라우트다 — 관리자 세션으로 통과한다.
+              05 P23 의 3개월이 지나 사진이 지워지면 그 주소가 410 을 돌려준다.
+            */}
+            <td style={cell}>
+              {r.evidence_photo_url ? (
+                <a
+                  href={r.evidence_photo_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{ color: '#2F63B8', fontWeight: 600 }}
+                >
+                  사진
+                </a>
+              ) : (
+                <span style={{ color: '#8FAAD0' }}>—</span>
+              )}
             </td>
             <td style={cell}>
               <Dot
@@ -410,9 +475,9 @@ function Reports({ rows }: { rows: Data['reports'] }) {
 
 function History({ rows }: { rows: Data['history'] }) {
   return (
-    <Table cols={['시작', '사용자', '호실', '기기', '결과', '사용 시간']}>
+    <Table cols={['시작', '사용자', '호실', '기기', '결과', '사용 시간', '']}>
       {rows.length === 0 ? (
-        <EmptyRow span={6} text="최근 3개월 이용 내역이 없어요." />
+        <EmptyRow span={7} text="최근 3개월 이용 내역이 없어요." />
       ) : (
         rows.map((h) => (
           <tr key={h.history_id}>
@@ -427,6 +492,26 @@ function History({ rows }: { rows: Data['history'] }) {
             {/* 「배정 후 미이용」에는 사용 시간이 없다 (2026-09-15 갱신) */}
             <td style={{ ...cell, color: '#8FAAD0' }}>
               {h.used_minutes !== null ? `${h.used_minutes}분` : '—'}
+            </td>
+            {/*
+              05 P6 · 0008 — 이 행(usage_history)에 딸린 사건 참조 경고를 준다.
+              history_id · user_id 를 여기서 그대로 실어 보내므로 관리자는 UUID를
+              보거나 입력할 필요가 없다. 같은 행에 이미 경고(자동이든 수동이든)가
+              있으면 서버가 23505 로 거부하고 그 메시지를 그대로 보여준다.
+            */}
+            <td style={cell}>
+              <Btn
+                tone="danger"
+                onClick={async () => {
+                  try {
+                    await issueUsageIncidentWarning(h.user_id, h.history_id);
+                  } catch (error) {
+                    alert(error instanceof Error ? error.message : '경고를 주지 못했어요.');
+                  }
+                }}
+              >
+                경고 주기
+              </Btn>
             </td>
           </tr>
         ))
@@ -453,6 +538,9 @@ function Warnings({ rows }: { rows: Data['warnings'] }) {
       >
         경고 <strong>3회</strong>가 쌓이면 <strong>3일</strong> 동안 줄서기가 자동으로 제한됩니다.
         제한이 끝나면 경고는 0회로 초기화되고, 매달 1일에도 초기화됩니다. (05 P7)
+        <br />
+        경고 기록은 <strong>최근 1개월</strong>만 보관·조회할 수 있어요 — 「현재 경고」(제재 횟수)와
+        「최근 1개월 경고 이력」(기록 건수)은 서로 다른 값일 수 있습니다. (05 SP4)
       </div>
 
       <Table cols={['사용자', '학번', '호실', '경고', '최근 사유', '제한', '']}>
@@ -460,38 +548,35 @@ function Warnings({ rows }: { rows: Data['warnings'] }) {
           <EmptyRow span={7} text="경고를 받은 사용자가 없어요." />
         ) : (
           rows.map((w) => (
-            <tr key={w.user_id}>
-              <td style={{ ...cell, fontWeight: 700 }}>{w.user_name}</td>
+            <tr key={w.user_id} id={`user-${w.user_id}`}>
+              <td style={{ ...cell, fontWeight: 700 }}>
+                {/* Issue #28 — 사용자 목록 탭의 같은 사용자 행으로 이동 */}
+                <Link href={`/admin?tab=users#user-${w.user_id}`} style={{ color: 'inherit' }}>
+                  {w.user_name}
+                </Link>
+              </td>
               <td style={cell}>{w.student_id}</td>
               <td style={cell}>{w.room}</td>
               <td style={cell}>
                 <Gauge count={w.warning_count} />
+                {/* 05 SP4 — 현재 경고(제재 횟수)와 최근 1개월 경고 이력(기록 건수)은 다른 값이라 나눠 보여준다 */}
+                <div style={{ fontSize: 11, color: '#8FAAD0', marginTop: 4, whiteSpace: 'nowrap' }}>
+                  최근 1개월 경고 이력 {w.recent_month_count}건
+                </div>
               </td>
               <td style={{ ...cell, color: '#8FAAD0' }}>{w.last_reason ?? '—'}</td>
               <td style={cell}>
-                {w.is_restricted ? (
-                  <span
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 5,
-                      padding: '4px 9px',
-                      borderRadius: 8,
-                      background: 'rgba(229,34,34,.1)',
-                      color: '#C2453E',
-                      fontSize: 11.5,
-                      fontWeight: 700,
-                    }}
-                  >
-                    이용정지 · {w.days_left}일 남음
-                  </span>
-                ) : (
-                  <span style={{ color: '#A8BCD9' }}>—</span>
-                )}
+                <RestrictionBadge isRestricted={w.is_restricted} daysLeft={w.days_left} />
               </td>
               <td style={cell}>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <Btn tone="danger" onClick={() => issueWarning(w.user_id, '관리자 부여')}>
+                  {/*
+                    05 P6 · Issue #8 — 사유는 '신고 확인'만 CHECK(db/schema.sql
+                    warnings.reason)를 통과한다. 예전 '관리자 부여'는 늘 DB 오류로
+                    실패하던 기존 버그라 최소 수정으로 고친다(이 버튼의 나머지
+                    동작·자리는 그대로다) — 특정 이용 내역과 무관한 일반 경고다.
+                  */}
+                  <Btn tone="danger" onClick={() => issueWarning(w.user_id, '신고 확인')}>
                     경고 +1
                   </Btn>
                   <Btn onClick={() => revokeWarning(w.user_id)}>경고 −1</Btn>
@@ -507,6 +592,34 @@ function Warnings({ rows }: { rows: Data['warnings'] }) {
         )}
       </Table>
     </>
+  );
+}
+
+/** 05 P7 — 제한 상태 배지. 경고 탭·사용자 목록 탭 둘 다에서 쓴다(Issue #28). */
+function RestrictionBadge({
+  isRestricted,
+  daysLeft,
+}: {
+  isRestricted: boolean;
+  daysLeft: number | null;
+}) {
+  if (!isRestricted) return <span style={{ color: '#A8BCD9' }}>—</span>;
+  return (
+    <span
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 5,
+        padding: '4px 9px',
+        borderRadius: 8,
+        background: 'rgba(229,34,34,.1)',
+        color: '#C2453E',
+        fontSize: 11.5,
+        fontWeight: 700,
+      }}
+    >
+      이용정지 · {daysLeft}일 남음
+    </span>
   );
 }
 
@@ -636,9 +749,23 @@ function Notices({ rows }: { rows: Data['notices'] }) {
 
 // ─── 탭 7 · 사용자 목록 (F29) ────────────────────────────────────────────────
 
-function Users({ rows }: { rows: Data['users'] }) {
+function Users({ rows, history }: { rows: Data['users']; history: Data['history'] }) {
   const [target, setTarget] = useState<string | null>(null);
   const [reason, setReason] = useState('');
+  // 05 P6 · 0008 — 일반 경고(사건 무관 · 기존 방식)와 이용 내역 관련 경고(사건 연결
+  // 필수)를 명확히 나눈다. 자유 텍스트 쪽이 usage_history_id 를 몰래 비우고
+  // 지나가는 우회로가 되지 않도록, 아예 다른 입력·다른 서버 함수로 가른다.
+  const [mode, setMode] = useState<'general' | 'incident'>('general');
+  const [historyId, setHistoryId] = useState('');
+
+  const openTarget = (userId: string) => {
+    setTarget(userId);
+    setMode('general');
+    setReason('');
+    setHistoryId('');
+  };
+
+  const targetHistory = target ? history.filter((h) => h.user_id === target) : [];
 
   return (
     <>
@@ -651,53 +778,143 @@ function Users({ rows }: { rows: Data['users'] }) {
             marginBottom: 16,
             boxShadow: '0 2px 10px rgba(47,99,184,.06)',
             display: 'flex',
+            flexDirection: 'column',
             gap: 8,
-            alignItems: 'center',
-            flexWrap: 'wrap',
           }}
         >
           <span style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}>
             {rows.find((u) => u.user_id === target)?.name} 에게 경고
           </span>
-          <input
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="사유 (예: 배정 후 미이용)"
-            style={{
-              flex: '1 1 240px',
-              height: 38,
-              padding: '0 13px',
-              borderRadius: 10,
-              border: '1px solid #E3EBF7',
-              fontSize: 13,
-            }}
-          />
-          <Btn
-            tone="primary"
-            onClick={async () => {
-              await issueWarning(target, reason);
-              setTarget(null);
-              setReason('');
-            }}
-          >
-            경고 주기
-          </Btn>
-          <Btn onClick={() => setTarget(null)}>취소</Btn>
+
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              type="button"
+              onClick={() => setMode('general')}
+              style={{
+                padding: '6px 11px',
+                borderRadius: 9,
+                border: `1px solid ${mode === 'general' ? '#4C86D8' : '#E3EBF7'}`,
+                background: mode === 'general' ? 'rgba(76,134,216,.1)' : '#fff',
+                color: mode === 'general' ? '#2F63B8' : '#5A6E8F',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              일반 경고
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('incident')}
+              style={{
+                padding: '6px 11px',
+                borderRadius: 9,
+                border: `1px solid ${mode === 'incident' ? '#4C86D8' : '#E3EBF7'}`,
+                background: mode === 'incident' ? 'rgba(76,134,216,.1)' : '#fff',
+                color: mode === 'incident' ? '#2F63B8' : '#5A6E8F',
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: 'pointer',
+              }}
+            >
+              이용 내역 관련 경고
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {mode === 'general' ? (
+              <input
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                placeholder="사유 (예: 신고 확인)"
+                style={{
+                  flex: '1 1 240px',
+                  height: 38,
+                  padding: '0 13px',
+                  borderRadius: 10,
+                  border: '1px solid #E3EBF7',
+                  fontSize: 13,
+                }}
+              />
+            ) : (
+              <select
+                value={historyId}
+                onChange={(e) => setHistoryId(e.target.value)}
+                style={{
+                  flex: '1 1 320px',
+                  height: 38,
+                  padding: '0 13px',
+                  borderRadius: 10,
+                  border: '1px solid #E3EBF7',
+                  fontSize: 13,
+                }}
+              >
+                <option value="">
+                  {targetHistory.length === 0 ? '최근 3개월 이용 내역이 없어요' : '이용 내역을 선택하세요'}
+                </option>
+                {targetHistory.map((h) => (
+                  <option key={h.history_id} value={h.history_id}>
+                    {fmt(h.started_at)} · {h.machine_name ?? '삭제된 기기'} · {h.result}
+                  </option>
+                ))}
+              </select>
+            )}
+            <Btn
+              tone="primary"
+              onClick={async () => {
+                try {
+                  if (mode === 'incident') {
+                    if (!historyId) {
+                      alert('이용 내역을 선택해주세요.');
+                      return;
+                    }
+                    await issueUsageIncidentWarning(target, historyId);
+                  } else {
+                    await issueWarning(target, reason);
+                  }
+                  setTarget(null);
+                  setReason('');
+                  setHistoryId('');
+                } catch (error) {
+                  alert(error instanceof Error ? error.message : '경고를 주지 못했어요.');
+                }
+              }}
+            >
+              경고 주기
+            </Btn>
+            <Btn onClick={() => setTarget(null)}>취소</Btn>
+          </div>
         </div>
       ) : null}
 
-      <Table cols={['가입', '이름', '학번', '호실', '이메일', '가입 방식', '상태', '']}>
+      <Table cols={['가입', '이름', '학번', '호실', '이메일', '가입 방식', '경고', '제한', '상태', '']}>
         {rows.length === 0 ? (
-          <EmptyRow span={8} text="가입한 사용자가 없어요." />
+          <EmptyRow span={10} text="가입한 사용자가 없어요." />
         ) : (
           rows.map((u) => (
-            <tr key={u.user_id}>
+            <tr key={u.user_id} id={`user-${u.user_id}`}>
               <td style={{ ...cell, color: '#8FAAD0' }}>{fmt(u.created_at, false)}</td>
               <td style={{ ...cell, fontWeight: 700 }}>{u.name}</td>
               <td style={cell}>{u.student_id}</td>
               <td style={cell}>{u.room}</td>
               <td style={{ ...cell, color: '#8FAAD0' }}>{u.email}</td>
               <td style={cell}>{u.signup_method}</td>
+              <td style={cell}>
+                {u.warning_count > 0 ? (
+                  // Issue #28 — 경고 누적 사용자 탭의 같은 사용자 행으로 이동
+                  <Link
+                    href={`/admin?tab=warnings#user-${u.user_id}`}
+                    style={{ color: 'inherit', textDecoration: 'none' }}
+                  >
+                    <Gauge count={u.warning_count} />
+                  </Link>
+                ) : (
+                  <Gauge count={0} />
+                )}
+              </td>
+              <td style={cell}>
+                <RestrictionBadge isRestricted={u.is_restricted} daysLeft={u.days_left} />
+              </td>
               <td style={cell}>
                 {u.withdraw_requested_at ? (
                   <>
@@ -713,7 +930,7 @@ function Users({ rows }: { rows: Data['users'] }) {
               </td>
               <td style={cell}>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <Btn tone="danger" onClick={() => setTarget(u.user_id)}>
+                  <Btn tone="danger" onClick={() => openTarget(u.user_id)}>
                     경고 +1
                   </Btn>
                   <Btn onClick={() => revokeWarning(u.user_id)}>경고 −1</Btn>

@@ -52,8 +52,21 @@ export function pushSupported(): boolean {
 
 export type PushPermission = NotificationPermission | 'unsupported';
 
-/** 홈 첫 진입 배너를 이미 띄웠는지 (기기 단위 · 05 P26 · washed_lang 과 같은 방식) */
+/**
+ * 실제 **허용을 물어봤는지** (기기 단위 · 05 P26 · washed_lang 과 같은 방식).
+ * "한 번만 묻는다" 가 걸리는 자리는 여기 하나다.
+ */
 const ASKED_KEY = 'washed_push_asked';
+
+/**
+ * 아이폰 홈 화면 추가 안내를 **읽었는지** (F41).
+ *
+ * 위의 ASKED_KEY 와 섞지 않는다. 사파리로 연 아이폰에서는 허용을 물어봐야
+ * 알림이 오지 않으므로 설치 안내부터 하는데, 그 안내를 닫았다고 해서
+ * "허용을 물어봤다" 가 되면 안 된다 — 홈 화면에 추가해 앱으로 다시 열었을 때
+ * 정작 허용 안내가 영영 뜨지 않는다.
+ */
+const INSTALL_GUIDE_KEY = 'washed_push_install_guide_seen';
 
 let listeners: (() => void)[] = [];
 
@@ -70,6 +83,17 @@ export function subscribePushState(callback: () => void): () => void {
 
 export function permissionSnapshot(): PushPermission {
   return pushSupported() ? Notification.permission : 'unsupported';
+}
+
+/**
+ * 허용 상태를 다시 읽게 한다.
+ *
+ * 브라우저는 사이트 설정에서 허용이 바뀌어도 알려 주지 않는다. 사용자가 주소창
+ * 자물쇠에서 직접 켜고 돌아오는 길이 실제로 있으므로(조용한 권한 UI), 화면이
+ * 다시 보일 때 이걸 불러 스냅샷을 새로 읽는다.
+ */
+export function refreshPushPermission(): void {
+  emit();
 }
 
 /** 서버 렌더에는 브라우저가 없다 — 아직 아무것도 묻지 않은 상태로 그린다. */
@@ -99,6 +123,59 @@ export function markAsked(): void {
   emit();
 }
 
+/** 홈 화면 추가 안내를 이미 읽었는지 (F41) */
+export function installGuideSeenSnapshot(): boolean {
+  try {
+    return !!window.localStorage.getItem(INSTALL_GUIDE_KEY);
+  } catch {
+    return true; // 저장소를 못 쓰면 매번 띄우지 않는다
+  }
+}
+
+/** 서버 렌더에는 브라우저가 없다 — 깜빡였다 사라지는 안내를 막는다. */
+export function installGuideSeenServerSnapshot(): boolean {
+  return true;
+}
+
+/**
+ * 홈 화면 추가 안내를 읽었다고 표시한다.
+ * **허용을 물어본 것과는 다르다** — markAsked() 를 부르지 않는다.
+ */
+export function markInstallGuideSeen(): void {
+  try {
+    window.localStorage.setItem(INSTALL_GUIDE_KEY, '1');
+  } catch {
+    // 저장소를 못 써도 이번 화면에서는 안내가 닫힌다
+  }
+  emit();
+}
+
+/**
+ * 허용 창이 끝내 뜨지 않을 때 기다리기를 멈추는 시간.
+ *
+ * 크롬의 "조용한 알림 권한 UI" 에서는 모달이 뜨지 않고 주소창에 종 아이콘만
+ * 생기는데, 그때 requestPermission() 이 준 약속은 사용자가 그 아이콘을 누를
+ * 때까지 **영영 풀리지 않는다**. 그대로 기다리면 화면이 "등록 중…" 에 갇힌다.
+ */
+const PERMISSION_PROMPT_TIMEOUT_MS = 15_000;
+
+/**
+ * 허용을 묻되, 답이 오지 않으면 그 시점의 허용 상태로 끝낸다.
+ *
+ * 제한 시간에 걸려도 보통 'default' 가 돌아오므로 호출부는 "창이 뜨지 않았다" 로
+ * 처리하면 된다. 뒤늦게 풀릴 수도 있는 원래 약속은 여기서 버린다 — 구독 단계로
+ * 이어지지 않으므로 나중에 허용되더라도 구독이 두 번 만들어지지 않는다.
+ * (그 경우는 refreshPushPermission() 으로 다시 읽어 조용히 동기화한다.)
+ */
+async function requestPermissionWithTimeout(): Promise<NotificationPermission> {
+  return Promise.race([
+    Notification.requestPermission(),
+    new Promise<NotificationPermission>((resolve) => {
+      window.setTimeout(() => resolve(Notification.permission), PERMISSION_PROMPT_TIMEOUT_MS);
+    }),
+  ]);
+}
+
 /**
  * 허용을 묻고, 허용했으면 구독을 만들어 서버에 저장한다.
  * 브라우저가 이미 거절을 기억하고 있으면 창이 뜨지 않고 바로 'denied' 가 돌아온다 —
@@ -107,7 +184,7 @@ export function markAsked(): void {
 export async function enablePush(): Promise<NotificationPermission> {
   if (!pushSupported()) return 'denied';
 
-  const permission = await Notification.requestPermission();
+  const permission = await requestPermissionWithTimeout();
   emit();
   if (permission !== 'granted') return permission;
 
@@ -125,11 +202,21 @@ export async function enablePush(): Promise<NotificationPermission> {
     });
   }
 
-  await fetch('/api/push/subscribe', {
+  // fetch 는 401 · 500 에도 resolve 한다. 여기서 ok 를 보지 않으면 브라우저가
+  // 허용했다는 것만으로 성공처럼 끝나고, 서버에는 구독이 없어 알림이 오지 않는다.
+  const res = await fetch('/api/push/subscribe', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(subscription.toJSON()),
   });
+
+  if (!res.ok) {
+    const message = await res
+      .json()
+      .then((data: { message?: string }) => data?.message)
+      .catch(() => undefined);
+    throw new Error(message ?? `구독 정보를 저장하지 못했어요. (${res.status})`);
+  }
 
   return permission;
 }
@@ -156,11 +243,13 @@ export async function syncPushSubscription(): Promise<void> {
     }
 
     if (subscription) {
-      await fetch('/api/push/subscribe', {
+      const res = await fetch('/api/push/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(subscription.toJSON()),
       });
+      // 배경 동기화라 밖으로 던지지는 않지만, 4xx · 5xx 를 성공으로 보지는 않는다.
+      if (!res.ok) throw new Error(`구독 동기화 실패 (${res.status})`);
     }
   } catch (error) {
     console.error('푸시 구독 동기화 실패', error);
