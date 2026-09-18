@@ -165,6 +165,20 @@ export async function expireOverdueAssignments(now: Date = new Date()): Promise<
 /**
  * 05 P5 · F9 — 사용 타이머(machines.ends_at)가 끝난 사용중 줄을 수거대기로 옮긴다.
  *
+ * **Issue #34 — 이 전환의 유일한 구현체다.** 예전에는 usage.ts::expireRunTimers()가
+ * 거의 같은 SQL을 따로 갖고 있었지만(각자 훑는 구조), 정책이 두 곳에 있으면 한쪽만
+ * 고쳐질 위험이 있어 이 함수 하나로 모았다. expireRunTimers()는 지금 이 함수를 그대로
+ * 부르는 wrapper다(usage.ts 머리말 참고).
+ *
+ * `now` 는 **선택 인자다** — 두 호출부가 원래 쓰던 시각 기준이 서로 달랐고, 리팩터링이
+ * 그 의미를 바꾸면 안 되므로 그대로 갈랐다.
+ *   · 안 넘기면(`undefined`) SQL 의 `now()`(DB 서버 시각, UPDATE 실행 시점)를 쓴다 —
+ *     expireRunTimers() 가 원래 쓰던 기준 그대로.
+ *   · `Date` 를 넘기면 그 값을 쓴다 — transitionFinishedUsageToPickup() 이 원래 쓰던
+ *     기준(호출 시점에 고정한 Node 서버 시각) 그대로.
+ * 아래 `COALESCE(${...}::timestamptz, now())` 한 줄이 그 갈림을 SQL 문장 하나 안에서
+ * 처리한다 — 조건마다 별도 SQL을 쓰지 않는다.
+ *
  * 06 「수거 마감 시각(타이머 0 + 3분)」의 "타이머 0" 이 곧 `ends_at` 이다 — 스윕이
  * 늦게 돌아도 마감은 **실제로 타이머가 끝난 시각**을 기준으로 잡는다(스윕이 도는
  * 순간을 기준으로 잡지 않는다 · assign_deadline_at 이 assigned_at 을 기준으로
@@ -175,14 +189,18 @@ export async function expireOverdueAssignments(now: Date = new Date()): Promise<
  * 물리적으로는 기기가 점유돼 있다). `queue.status` 만 옮긴다.
  *
  * `q.status = '사용중'` 조건이 있어 이미 옮겨진 행은 다시 걸리지 않는다(idempotent).
+ * 이 한 문장의 `UPDATE ... RETURNING`이 유일한 쓰기라 두 호출(GET /api/queue 폴링 ·
+ * POST /api/queue/[kind] · cleanup 배치)이 겹쳐도 Postgres가 같은 행의 UPDATE를
+ * 직렬화한다 — 뒤 호출은 앞 호출이 이미 바꾼 행을 조건 불일치로 0행만 본다.
  *
- * 05 P26 · Issue #12 — 전환된 행마다 "이용 시간이 끝났어요" 알림을 준다
- * (usage-end-notify.ts). usage.ts::expireRunTimers() 도 같은 전환·같은 알림
- * 함수를 쓴다 — 어느 쪽이 먼저 그 행을 잡아도 RETURNING된 쪽만 알린다(중복 없음,
- * 근거는 usage-end-notify.ts 머리말).
+ * 05 P26 · Issue #12 — 전환된 행마다(RETURNING된 행에만) "이용 시간이 끝났어요"
+ * 알림을 준다(usage-end-notify.ts). 알림 호출이 이 함수 안 한 곳에만 있으므로 같은
+ * 행에 알림이 두 번 붙을 수 없다.
  */
-export async function transitionFinishedUsageToPickup(now: Date = new Date()): Promise<number> {
-  const nowIso = now.toISOString();
+export async function transitionUsageToPickup(
+  now?: Date,
+): Promise<{ queue_id: string; user_id: string; machine_name: string }[]> {
+  const nowOverride = now ? now.toISOString() : null;
 
   const started = await sql<{ queue_id: string; user_id: string; machine_name: string }>`
     UPDATE queue q
@@ -193,7 +211,7 @@ export async function transitionFinishedUsageToPickup(now: Date = new Date()): P
        AND q.status = '사용중'
        AND m.status = '사용중'
        AND m.ends_at IS NOT NULL
-       AND m.ends_at <= ${nowIso}::timestamptz
+       AND m.ends_at <= COALESCE(${nowOverride}::timestamptz, now())
     RETURNING q.queue_id, q.user_id, m.name AS machine_name
   `;
 
@@ -201,6 +219,12 @@ export async function transitionFinishedUsageToPickup(now: Date = new Date()): P
     await notifyUsageEnded(row.user_id, row.queue_id, row.machine_name);
   }
 
+  return started;
+}
+
+/** POST /api/queue/[kind] · cleanup.ts 가 쓰는 얇은 wrapper — 전환 건수만 필요하다. */
+export async function transitionFinishedUsageToPickup(now: Date = new Date()): Promise<number> {
+  const started = await transitionUsageToPickup(now);
   return started.length;
 }
 
