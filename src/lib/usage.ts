@@ -30,6 +30,9 @@ import { notifyUsageEnded } from '@/lib/usage-end-notify';
 const WASHER_MINUTES = RUN_MINUTES_BY_KIND['세탁기'];
 const DRYER_MINUTES = RUN_MINUTES_BY_KIND['건조기'];
 
+/** db/schema.sql 의 machine_id 는 uuid 다 — 질의에 넣기 전에 모양만 본다 */
+const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export type StartUsageResult =
   | {
       ok: true;
@@ -44,6 +47,15 @@ export type StartUsageResult =
       ok: false;
       /** 다른 사람 소유거나 다른 기기라 내 배정을 찾지 못함 */
       reason: 'not_assigned';
+    }
+  | {
+      ok: false;
+      /**
+       * 서명은 맞지만 그 machine_id 가 machines 에 없다 — 기기를 지운 뒤에도 남아
+       * 있는 스티커거나, `npm run qr:print` 에 잘못된 id 를 넣어 뽑은 QR 이다
+       * (Issue #30 「존재하지 않는 machine_id · DB 에 없는 기기는 거부」).
+       */
+      reason: 'unknown_machine';
     }
   | {
       ok: false;
@@ -68,6 +80,14 @@ export async function startUsageFromQr({
   userId: string;
   machineId: string;
 }): Promise<StartUsageResult> {
+  // machines.machine_id 는 uuid 다. 서명은 맞지만 uuid 가 아닌 값이 담긴 QR(예:
+  // `npm run qr:print washer-1` 로 잘못 뽑아 붙인 스티커)을 그대로 질의에 넘기면
+  // Postgres 가 22P02 로 죽어 호출부가 500 을 돌려준다 — 「거부」가 아니라 「장애」로
+  // 보인다. 모양부터 걸러 다른 잘못된 QR 과 같은 자리로 보낸다 (Issue #30).
+  if (!UUID_SHAPE.test(machineId)) {
+    return { ok: false, reason: 'unknown_machine' };
+  }
+
   const rows = await sql<{
     queue_id: string;
     machine_kind: string;
@@ -102,9 +122,19 @@ export async function startUsageFromQr({
     ),
     -- 새로 전환된 경우에만 타이머를 세운다 — idempotent 재호출은 다시 늘리지 않는다
     -- (8번 요구사항: "사용 시작 시간이 계속 갱신되지 않도록").
+    --
+    -- status 도 여기서 함께 못 박는다. 보통은 assignment.ts::drainQueue() 가 배정할
+    -- 때 이미 「사용중」 으로 바꿔 두므로 값이 달라지지 않지만(그래서 이 줄이 평소에는
+    -- 아무것도 하지 않는다), 그 말은 **이 기기가 지금 사용중이라는 사실을 QR 인증이
+    -- 아니라 앞 단계가 기억하고 있다**는 뜻이기도 하다. queue 는 「사용중」 인데
+    -- machines 는 「사용가능」 인 조합이 한 번이라도 생기면 홈 기기 목록(F1)과
+    -- queries.ts::queueCounts() 가 그 기기를 빈 기기로 세어 화면과 DB 가 어긋난다
+    -- (Issue #30 완료 조건 「QR 인증 결과와 홈 UI 상태가 일치한다」). 사용 시작을
+    -- 확정하는 이 자리에서 같이 쓰면 그 조합 자체가 남지 않는다.
     started AS (
       UPDATE machines m
-         SET ends_at = now() + (
+         SET status = '사용중',
+             ends_at = now() + (
                CASE t.machine_kind
                  WHEN '세탁기' THEN ${WASHER_MINUTES}::int
                  ELSE ${DRYER_MINUTES}::int
@@ -143,6 +173,15 @@ export async function startUsageFromQr({
   `;
   const existing = reasonRows[0];
   if (!existing) {
+    // 줄이 안 붙은 기기다. 「아직 배정되지 않은 기기」와 「DB 에 아예 없는 기기」는
+    // 사용자가 할 수 있는 일이 다르다 — 앞은 배정을 기다리면 되고, 뒤는 스티커가
+    // 잘못된 것이라 관리자가 QR 을 다시 붙여야 한다 (Issue #30).
+    const machineRows = await sql<{ machine_id: string }>`
+      SELECT machine_id FROM machines WHERE machine_id = ${machineId}
+    `;
+    if (machineRows.length === 0) {
+      return { ok: false, reason: 'unknown_machine' };
+    }
     return { ok: false, reason: 'not_assigned' };
   }
   if (existing.user_id !== userId) {
