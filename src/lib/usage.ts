@@ -290,7 +290,10 @@ export async function finishUsage({
       RETURNING m.machine_id
     ),
     logged AS (
-      INSERT INTO usage_history (user_id, machine_id, started_at, ended_at, result)
+      -- 05 P6 · 0013 — source_queue_id 로 원래 줄서기 사건을 남긴다. 이 행을 만드는
+      -- 바로 그 문장이 위 removed 에서 그 queue 행을 지우므로, 여기서 적어 두지 않으면
+      -- 사건 이름이 영영 사라진다(관리자 경고의 canonical 사건 키가 이 값을 되짚는다).
+      INSERT INTO usage_history (user_id, machine_id, started_at, ended_at, result, source_queue_id)
       SELECT ${userId}, r.machine_id,
              r.ends_at - (
                CASE r.machine_kind
@@ -298,7 +301,7 @@ export async function finishUsage({
                  ELSE ${DRYER_MINUTES}::int
                END * interval '1 minute'
              ),
-             now(), '완료'
+             now(), '완료', r.queue_id
         FROM removed r
       RETURNING history_id
     )
