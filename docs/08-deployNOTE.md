@@ -1,6 +1,6 @@
 # 배포 · 데이터베이스 전환 시 수정 지점 — Washed
 
-> 문서: 08-deployNOTE.md · 마지막 갱신: 2026-09-17 (**[?] Production 에 `CRON_SECRET` 미설정 확인 — 정리 배치 실행 여부 미확인, 후속 이슈로 남김**(Issue #28 조사 중 발견) · 앞선 갱신: **경고 기록(`expiredWarnings`) 보관을 3개월 → 1개월로 줄임**(05 SP4 갱신 · `src/lib/retention.ts` 의 `WARNING_RETENTION_MONTHS`) · 앞선 갱신: **QR 인증(F8 · Issue #6) 카메라 · 서버 검증 완료 반영** — 정적 QR + HMAC 서명으로 위조는 막되, 사진 재사용 방지는 이번 범위에서 제외하고 위치기반 인증으로 추후 보완하기로 팀 확정(6번) · 앞선 갱신: **구글 가입자의 비밀번호 찾기 · 로그인 분기 추가**(05 P22 팀 확정) · 앞선 갱신: **1번의 인증 세 줄이 서버로 옮겨졌다** — 로그인 검증 · 고정 인증코드 · 가입 자격. 아래 표에 ~~취소선~~ 으로 표시하고 「이미 옮긴 것」 절을 새로 뒀다 · 앞선 갱신: 조회 컷오프가 화면마다 흩어져 있는 자리를 8번에 모아 적음 · 앞선 갱신: **F23 · F25 · F26 · F28 이 MVP 로 올라옴** — 9번에 공지 삭제/조회 층 정리 · 앞선 갱신: 관리자 콘솔 조회 개편 반영 — `washed_typequeue` 가 **대기열 스냅샷**이 됨(2번 · 3번) · 8번 가짜 데이터 정리 · 9번에 공지 3개월 추가 · 번호가 겹쳐 있던 「6. 폰 알림」을 **12번**으로 옮김 · 앞선 갱신: 폰 알림 확정 — 12번 신설 · 앞선 갱신: 프로토타입 추가분 반영 — 언어 · 학번 · 증거 사진 · 프로필 수정 전화번호 → 학번)
+> 문서: 08-deployNOTE.md · 마지막 갱신: 2026-09-18 (**migration 적용 상태를 읽기 전용으로 보는 절차를 13번에 신설**(Issue #59) — `npm run db:migrate:status` 가 `db/migrations/` 파일과 DB 의 `schema_migrations` 를 견줘 **미적용** 과 **장부에만 있는 기록**(지금의 `0009`)을 알려준다. 아무것도 적용하지 않고 접속 문자열도 찍지 않는다. **Production 자동 적용은 만들지 않는다** · 앞선 갱신: **[?] Production 에 `CRON_SECRET` 미설정 확인 — 정리 배치 실행 여부 미확인, 후속 이슈로 남김**(Issue #28 조사 중 발견) · 앞선 갱신: **경고 기록(`expiredWarnings`) 보관을 3개월 → 1개월로 줄임**(05 SP4 갱신 · `src/lib/retention.ts` 의 `WARNING_RETENTION_MONTHS`) · 앞선 갱신: **QR 인증(F8 · Issue #6) 카메라 · 서버 검증 완료 반영** — 정적 QR + HMAC 서명으로 위조는 막되, 사진 재사용 방지는 이번 범위에서 제외하고 위치기반 인증으로 추후 보완하기로 팀 확정(6번) · 앞선 갱신: **구글 가입자의 비밀번호 찾기 · 로그인 분기 추가**(05 P22 팀 확정) · 앞선 갱신: **1번의 인증 세 줄이 서버로 옮겨졌다** — 로그인 검증 · 고정 인증코드 · 가입 자격. 아래 표에 ~~취소선~~ 으로 표시하고 「이미 옮긴 것」 절을 새로 뒀다 · 앞선 갱신: 조회 컷오프가 화면마다 흩어져 있는 자리를 8번에 모아 적음 · 앞선 갱신: **F23 · F25 · F26 · F28 이 MVP 로 올라옴** — 9번에 공지 삭제/조회 층 정리 · 앞선 갱신: 관리자 콘솔 조회 개편 반영 — `washed_typequeue` 가 **대기열 스냅샷**이 됨(2번 · 3번) · 8번 가짜 데이터 정리 · 9번에 공지 3개월 추가 · 번호가 겹쳐 있던 「6. 폰 알림」을 **12번**으로 옮김 · 앞선 갱신: 폰 알림 확정 — 12번 신설 · 앞선 갱신: 프로토타입 추가분 반영 — 언어 · 학번 · 증거 사진 · 프로필 수정 전화번호 → 학번)
 
 > 지금 구조: 모든 데이터가 **브라우저 localStorage** 에 있고, 남은 시간 · 만료 판정을 **각 브라우저가 따로 계산**한다.
 > 목표 구조: 데이터는 서버 DB 에, 판정은 서버가, 화면은 결과만 받아 그린다.
@@ -274,6 +274,83 @@ F14 가입 이메일 인증 · F35 비밀번호 재설정 · F38 로그인 · F3
 
 ---
 
+## 13. DB migration 적용 상태 확인 — **읽기 전용 (Issue #59)**
+
+**코드에 migration 파일이 있다고 그 환경 DB 에 적용된 것이 아니다.** Issue #47 을 하다가 개발 DB 의 migration 이 여러 개 밀려 있던 것이 드러났다. 지금까지는 `npm run db:migrate` 를 **실제로 돌려 봐야만** 무엇이 밀렸는지 알 수 있었고(그 순간 DB 가 바뀐다), `npm run db:check` 는 06 기준 표 · 칸만 보고 `schema_migrations` 는 쳐다보지도 않았다.
+
+배포 전에 **아무것도 바꾸지 않고** 상태만 보는 자리를 하나 뒀다.
+
+```
+npm run db:migrate:status
+```
+
+| 새 파일 | 하는 일 |
+|---|---|
+| `scripts/db-migrate-status.mjs` | 접속 · 조회 · 출력. **`SELECT` 두 개가 전부다** — `INSERT` · `UPDATE` · `DELETE` · `CREATE` 가 없다. `db:migrate` 와 달리 `schema_migrations` 표를 **만들지도 않는다**(그것도 DB 를 바꾸는 일이다) — `to_regclass` 로 있는지만 묻는다 |
+| `scripts/migration-status.mjs` | 파일 목록과 장부를 견주는 판정만. I/O 가 없다 |
+| `scripts/migration-status.test.mjs` | 위 판정의 단위 테스트 (`npm test`) |
+
+**비교 기준은 파일 이름이지 번호가 아니다.** `db:migrate` 가 `schema_migrations` 에 파일 이름을 그대로 넣고 이름으로만 적용 여부를 가리기 때문에, 여기서도 같은 기준을 쓴다. **번호가 이어지는지는 보지 않는다** — 지금 `0009` 가 비어 있다는 것만으로는 아무 보고도 하지 않는다.
+
+**보는 DB 는 지문으로 밝힌다.** 출력 첫 줄은 `DATABASE_URL · DB neondb · 지문 93d9ddaf` 처럼 나온다. 지문은 host 와 DB 이름의 SHA-256 앞 8자리다 — 되돌릴 수 없고, 같은 DB 면 늘 같은 값이라 **지금 보고 있는 것이 정말 그 환경인지** 눈으로 대조할 수 있다. 접속 문자열 · host · 사용자 · 비밀번호는 어디에도 찍히지 않는다. 드라이버가 주는 오류 문구에 끼는 host 도 지우고 내보낸다.
+
+### 세 가지 결과
+
+| 결과 | 뜻 | 종료 코드 |
+|---|---|---|
+| `미적용 migration 없음` | 파일과 장부가 일치한다 | 0 |
+| `[미적용] 아직 적용되지 않은 migration N개` | 파일은 있는데 DB 에 없다 — **적용이 밀렸다** | 2 |
+| `[경고] repository 에 파일이 없는데 장부에만 있는 기록 N개` | 장부에는 있는데 파일이 없다 | 0 (경고) |
+| `DB 에 연결하지 못했습니다` · 환경변수 없음 | — | 1 |
+| `schema_migrations 를 읽지 못했습니다` | 표는 있는데 조회가 막혔다 | 3 |
+
+**`[경고]` 를 실패로 만들지 않은 이유.** 아직 병합되지 않은 팀원 브랜치의 migration 이 그 DB 에 먼저 적용된 상태는 **협업 중에 정상적으로 생긴다**. 지금이 바로 그 경우다 — `0009_warning_admin_reasons.sql` 은 `origin/fix/admin-warning-reason` 에만 있고 `integration-total` 에는 없다(`db/migrations/0010_facility_inspection_status.sql` 머리말의 번호 메모가 그것이다). 그 브랜치의 migration 을 돌린 DB 에서는 `[경고]` 가 뜨는 것이 맞다. **답은 그 브랜치가 병합되기를 기다리는 것이지, 그 번호로 파일을 새로 만들거나 이미 적용된 migration 의 번호를 바꾸는 것이 아니다.**
+
+`schema_migrations` 표 자체가 없으면 「한 번도 `db:migrate` 를 돌리지 않았습니다」로 나오고 전 파일이 미적용이 된다. `db:push` 로 세운 새 DB 는 표 · 칸은 이미 있고 장부만 비어 있을 수 있다 — `db/migrations/README.md` 가 다루는 상황이다.
+
+### 배포 전 절차
+
+1. **상태 확인** — `npm run db:migrate:status` (아무것도 바꾸지 않는다)
+2. **미적용 확인** — `[미적용]` 목록에 무엇이 있는지 본다
+3. **장부 불일치 확인** — `[경고]` 가 있으면 어떤 파일인지 본다
+4. **사람이 검토** — 미적용은 지금 배포할 코드가 정말 필요로 하는 것인지, 경고는 어느 브랜치의 것인지 확인한다
+5. **필요할 때만 사람이 적용** — `npm run db:migrate`. **어느 환경에 대고 도는지 지문으로 먼저 확인하고 직접 돌린다**
+6. **다시 읽기 전용 점검** — `npm run db:migrate:status`
+7. **`미적용 migration 없음`(종료 코드 0) 을 본 뒤에 배포**
+
+> **Production migration 을 자동으로 적용하지 않는다.** 이 절은 **확인 절차**다. `db:migrate` 를 배포 파이프라인이나 Preview · Production 에 자동으로 거는 장치를 만들지 않았고, 만들지 않는다. 스키마를 바꾸는 순간은 사람이 고른다.
+
+### 환경별로 보는 방법
+
+`npm run db:migrate:status` 는 `.env.local` 을 읽는다 — **개발 DB** 다. 다른 환경은 `.env.local` 을 **덮어쓰지 말고** 별도 파일로 받는다(`.gitignore` 의 `.env*` 에 이미 걸려 있다).
+
+```bash
+# 개발
+npm run db:migrate:status
+
+# Preview
+vercel env pull .env.preview --environment=preview
+node --env-file=.env.preview scripts/db-migrate-status.mjs
+
+# Production — 확인만 한다
+vercel env pull .env.production --environment=production
+node --env-file=.env.production scripts/db-migrate-status.mjs
+```
+
+`vercel env pull` 은 인자로 받은 파일에 쓴다. **인자를 빼면 `.env.local` 을 덮어쓰니** 반드시 파일 이름을 적는다. `vercel link` 가 먼저 되어 있어야 한다.
+
+Vercel CLI 없이 볼 때는 셸에 값을 직접 넣어도 된다 — Node 는 **셸 환경을 `--env-file` 보다 먼저** 본다.
+
+```bash
+DATABASE_URL='<그 환경의 주소>' npm run db:migrate:status
+```
+
+다만 이러면 접속 문자열이 **셸 기록에 남는다.** 임시 셸에서만 쓰고 기록을 지운다.
+
+**읽기 전용이라 Production 에 대고 돌려도 안전하다.** 그래도 5번(`db:migrate`)은 Production 에 함부로 대지 않는다 — 2 · 3번의 결과를 팀이 보고 정한다.
+
+---
+
 ## 순서 제안
 
 1. 인증 · 세션 (1번) — 이게 없으면 나머지가 전부 "누구의 데이터인지" 를 모른다
@@ -283,5 +360,7 @@ F14 가입 이메일 인증 · F35 비밀번호 재설정 · F38 로그인 · F3
 5. QR · 사진 업로드 (6 · 7번)
 6. 보관 배치 · 다중 세탁실 (9 · 10번)
 7. 다국어 정리 (11번) — 화면 문구가 굳은 뒤에 키 기반 파일로 옮긴다
+
+배포할 때마다 — **배포 전에 `npm run db:migrate:status` 로 그 환경의 migration 상태를 먼저 본다 (13번).** 순서가 아니라 매번 거치는 관문이다.
 
 ---
