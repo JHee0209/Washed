@@ -13,10 +13,10 @@ import { useRouter } from 'next/navigation';
 // **배정 10분(05 P3)은 여기 없다.** 배정 마감 시각은 서버가 정해 assign_deadline_at
 // 으로 내려주고, 화면은 「서버가 준 마감 − 지금」만 그린다 (08 · 4번 · Issue #5).
 // 아래 60분 · 45분 · 3분도 서버가 판정한다(machines.ends_at · queue.pickup_deadline_at ·
-// Issue #6 · #7). 다만 서버의 「사용중 → 수거대기」 전환(usage.ts::expireRunTimers)은
-// 최대 5초(폴링 주기) 늦게 도착하므로, 화면은 서버가 준 endsAt 을 기준으로 러닝 ·
-// 수거대기 전환을 **직접 계산**해 그 지연 없이 그린다 — 실제 종료 처리 · 강제 종료 ·
-// 경고 판정은 전부 서버 몫이다.
+// Issue #6 · #7). 다만 서버의 「사용중 → 수거대기」 전환(expiration.ts::
+// transitionUsageToPickup)은 폴링·스윕 주기만큼 늦게 도착하므로, 화면은 서버가 준
+// endsAt 을 기준으로 러닝 · 수거대기 전환을 **직접 계산**해 그 지연 없이 그린다 —
+// 실제 종료 처리 · 강제 종료 · 경고 판정은 전부 서버 몫이다.
 const RUN_MS_WASHER = 60 * 60 * 1000;
 const RUN_MS_DRYER = 45 * 60 * 1000;
 const GRACE_MS = 3 * 60 * 1000;
@@ -24,6 +24,21 @@ const runMsFor = (type: string) => (type === 'dryer' ? RUN_MS_DRYER : RUN_MS_WAS
 
 /** 서버가 정한 배정 결과를 받아 오는 주기 (05 P2 — 앞사람이 끝나면 내 차례가 온다) */
 const POLL_MS = 5000;
+
+/**
+ * 서버의 「사용중 → 수거대기」 전환을 부르는 주기 (F9 · 05 P5 · Issue #35).
+ *
+ * **POLL_MS 와 같은 값을 쓴다.** Issue #35 는 refactor다 — 조회(GET)와 상태 변경
+ * (POST)의 책임을 가르는 것이 목적이고, 사용자가 느끼는 타이밍을 바꾸는 것이 아니다.
+ * 예전에는 GET /api/queue 가 조회와 전환을 함께 했으므로 전환과 종료 알림(#12)이
+ * 5초 안에 닿았다. 스윕 주기를 늘리면 그만큼 알림이 늦어지므로 같은 5초로 둔다.
+ *
+ * POLL_MS 를 참조하지 않고 값을 따로 적는 이유는 **뜻이 다르기 때문이다** — 위는
+ * 조회 주기, 이쪽은 쓰기 주기다. 지금 값이 같은 것은 기존 동작을 유지하기 때문이고,
+ * Issue #8 에서 서버 스케줄러가 완성되면 이 클라이언트 스윕 자체를 없애거나 주기를
+ * 다시 설계한다 — 그때 조회 주기(POLL_MS)까지 함께 끌려가면 안 된다.
+ */
+const SWEEP_MS = 5000;
 
 type ApiMachine = { id: string; type: string; name: string; status: string; remaining: number };
 type ApiQueueCounts = { washer: number; dryer: number };
@@ -116,10 +131,33 @@ export default function HomeClient() {
     }
   }, []);
 
+  // --- 사용 타이머 종료 스윕 (F9 · 05 P5 · Issue #35) ---
+  //
+  // 조회가 아니라 **명시적인 상태 변경 요청**이라 위의 두 조회와 분리해 둔다. 전역
+  // 스윕이므로 내 줄만이 아니라 만료된 줄 전체가 전환된다 — 예전에 GET /api/queue 가
+  // 갖고 있던 성질 그대로다. 실패해도 삼키는 이유는 ① 다음 스윕이 다시 시도하고
+  // ② 조회는 이 요청과 독립이라 화면이 깨지지 않기 때문이다(Issue #35 의 목적).
+  const runSweep = useCallback(async () => {
+    try {
+      const res = await fetch('/api/queue/sweep', { method: 'POST' });
+      if (!res.ok) return;
+      const data = await res.json();
+      // 전환된 줄이 있을 때만 다시 읽는다 — 없으면 화면에 바뀔 것이 없다.
+      if (data?.transitioned > 0) {
+        loadMine();
+        loadMachines();
+      }
+    } catch {
+      // 다음 스윕에서 다시 시도한다.
+    }
+  }, [loadMine, loadMachines]);
+
   useEffect(() => {
     loadMachines();
     loadMine();
-  }, [loadMachines, loadMine]);
+    // 화면을 열 때 한 번 훑는다 — 예전에 첫 조회가 겸했던 자리다.
+    runSweep();
+  }, [loadMachines, loadMine, runSweep]);
 
   // 주기적으로 서버 상태를 다시 읽는다. **이 폴링이 없으면 서버가 배정을 올려도
   // 열려 있는 화면에는 영원히 닿지 않는다** — 예전처럼 한 번만 읽고 나머지를 화면이
@@ -131,6 +169,13 @@ export default function HomeClient() {
     }, POLL_MS);
     return () => clearInterval(id);
   }, [loadMine, loadMachines]);
+
+  // 쓰기는 조회와 **같은 주기지만 별도 요청**으로 나간다 (SWEEP_MS 주석 참고) —
+  // 한쪽이 실패해도 다른 쪽은 그대로 돈다. 이것이 Issue #35 가 가른 지점이다.
+  useEffect(() => {
+    const id = setInterval(runSweep, SWEEP_MS);
+    return () => clearInterval(id);
+  }, [runSweep]);
 
   // --- 알림(Toast) 함수 ---
   const showToast = (message: string) => {
