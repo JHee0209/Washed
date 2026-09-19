@@ -28,13 +28,7 @@ import {
   deleteEvidenceForWithdrawnUsers,
   deleteExpiredEvidence,
 } from '@/lib/evidence-storage';
-import {
-  expireOverdueAssignments,
-  expireOverduePickups,
-  liftExpiredRestrictions,
-  resetMonthlyWarnings,
-  transitionFinishedUsageToPickup,
-} from '@/lib/expiration';
+import { resetMonthlyWarnings } from '@/lib/expiration';
 import {
   noticeCutoff,
   notificationCutoffs,
@@ -44,6 +38,7 @@ import {
   warningCutoff,
   withdrawPurgeCutoff,
 } from '@/lib/retention';
+import { runExpirationSweep } from '@/lib/scheduler';
 
 export type CleanupResult = {
   /** 05 P23 — 보관 기간이 지나 지운 증거 사진 장수 */
@@ -73,20 +68,27 @@ export type CleanupResult = {
   /**
    * 05 P3 — 10분 안에 QR 인증이 없어 배정이 풀리고 경고가 매겨진 건수.
    *
-   * 이 배치는 **백스톱일 뿐**이다 — 실제로는 POST /api/queue/[kind] 가 줄서기 때마다
-   * 먼저 훑어 하루를 기다리지 않는다(트래픽이 없을 때만 이 값이 의미를 갖는다).
+   * 이 배치는 **백스톱일 뿐**이다 — Issue #8 이후로는 주기 스케줄러
+   * (GET /api/cron/expiration)가 상시 훑고, POST /api/queue/[kind] 도 줄서기 때마다
+   * 먼저 훑는다. 이 값은 그 둘이 모두 놓쳤을 때만 의미를 갖는다.
    */
   expiredAssignments: number;
   /**
-   * 05 P5 · F9 — 사용 타이머가 끝나 수거대기로 넘어간 건수(백스톱). 실제로는
-   * POST /api/queue/[kind] 가 줄서기 때마다 먼저 훑는다.
+   * 05 P5 · F9 — 사용 타이머가 끝나 수거대기로 넘어간 건수(백스톱). 위와 같다.
    */
   startedPickupWaits: number;
   /**
-   * 05 P5 — 수거대기 3분을 넘겨 강제 종료·경고가 매겨진 건수(백스톱). 위와 같은
-   * 이유로 이 값은 트래픽이 없을 때만 의미가 있다.
+   * 05 P5 — 수거대기 3분을 넘겨 강제 종료·경고가 매겨진 건수(백스톱). 위와 같다.
    */
   expiredPickups: number;
+  /**
+   * 05 P2 — 위 만료로 풀린 기기에 FIFO 로 새로 배정된 사람 수.
+   *
+   * Issue #8 이전에는 이 배치가 기기를 풀어 놓고도 다음 사람을 배정하지 않았다
+   * (drainQueue() 호출부에 이 파일이 없었다). 이제 runExpirationSweep() 이
+   * 그 걸음까지 함께 돈다.
+   */
+  assignedNext: number;
   /** 실패한 단계의 이름. 비어 있으면 전부 성공이다 */
   failed: string[];
 };
@@ -289,6 +291,7 @@ export async function runDailyCleanup(now: Date = new Date()): Promise<CleanupRe
     expiredAssignments: 0,
     startedPickupWaits: 0,
     expiredPickups: 0,
+    assignedNext: 0,
     failed: [],
   };
 
@@ -348,35 +351,28 @@ export async function runDailyCleanup(now: Date = new Date()): Promise<CleanupRe
     result.purgedUserEvidence = purged.evidence;
   });
 
-  // 05 P3 — 배정 10분 만료의 **백스톱**이다. 실제로는 POST /api/queue/[kind] 가
-  // 줄서기 때마다 먼저 훑으므로, 이 단계는 그 사이 트래픽이 없었을 때만 의미가 있다.
-  await step('expiredAssignments', async () => {
-    result.expiredAssignments = await expireOverdueAssignments(now);
-  });
-
-  // 05 P5 · F9 — 사용 타이머 종료의 **백스톱**이다(줄서기 때 먼저 훑는다).
-  // 강제 종료(expiredPickups)보다 **먼저** 돈다 — 늦게 도는 스윕이 한 번에 두
-  // 상태를 모두 지나칠 수 있게(타이머도 끝나고 3분도 이미 지났으면 이 회차 안에서
-  // 수거대기를 거쳐 곧바로 강제 종료까지 간다).
-  await step('startedPickupWaits', async () => {
-    result.startedPickupWaits = await transitionFinishedUsageToPickup(now);
-  });
-
-  // 05 P5 — 수거대기 3분 초과의 백스톱이다.
-  await step('expiredPickups', async () => {
-    result.expiredPickups = await expireOverduePickups(now);
-  });
-
-  // 05 P7 — 3일 제한이 끝난 사람. 아래 매달 1일 초기화와 최종 상태가 같아
-  // 순서에 의존하지 않는다.
-  try {
-    result.liftedRestrictions = await liftExpiredRestrictions(now);
-  } catch (error) {
-    console.error('이용 제한 자동 해제 실패', error);
-    result.failed.push('liftedRestrictions');
-  }
+  // 05 P3 · P5 · P7 — 만료 스윕의 **백스톱**이다. Issue #8 이후로는 주기 스케줄러
+  // (GET /api/cron/expiration)가 상시 돌고, POST /api/queue/[kind] 도 줄서기 때마다
+  // 훑으므로 이 단계는 그 둘이 모두 놓쳤을 때만 의미가 있다.
+  //
+  // **순서를 여기 다시 적지 않는다** — 단계와 그 이유는 scheduler.ts 의
+  // runExpirationSweep() 한 곳에만 있다. 예전에는 이 파일이 같은 순서를 따로
+  // 나열하고 있어서 한쪽만 고쳐질 위험이 있었다(#34 가 expireRunTimers() 에 했던
+  // 정리와 같은 이유). 실패한 단계 이름은 그쪽에서 모아 오므로 그대로 합친다.
+  const sweep = await runExpirationSweep(now);
+  result.expiredAssignments = sweep.expiredAssignments;
+  result.startedPickupWaits = sweep.startedPickupWaits;
+  result.expiredPickups = sweep.expiredPickups;
+  result.assignedNext = sweep.assignedNext;
+  result.liftedRestrictions = sweep.liftedRestrictions;
+  result.failed.push(...sweep.failed);
 
   // 05 P7 — 매달 1일(KST). 그날이 아니면 0을 돌려주고 아무것도 바꾸지 않는다.
+  //
+  // **이것만 위 스윕에 넣지 않았다.** P7 의 "매달 1일 초기화" 는 하루 1회를 뜻하는데,
+  // runExpirationSweep() 은 분 단위로도 돌 수 있어서 거기 넣으면 1일 하루 내내 매
+  // 회차마다 누적을 0 으로 밀어 **그날 새로 쌓인 경고까지 지워 버린다.** 하루 한 번
+  // 도는 이 배치가 제자리다(18:00 UTC = 한국 03:00 → isFirstOfMonthInKst 가 참).
   try {
     result.monthlyWarningReset = await resetMonthlyWarnings(now);
   } catch (error) {

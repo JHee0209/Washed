@@ -11,6 +11,7 @@ import { useState, useTransition } from 'react';
 import {
   addMachine,
   addNotice,
+  adminUserIncidents,
   cancelQueue,
   clearRestriction,
   issueWarning,
@@ -21,7 +22,14 @@ import {
   setMachineStatus,
   setReportStatus,
 } from '@/lib/admin-actions';
-import { ADMIN_WARNING_REASONS, warningReasonLabel } from '@/lib/warning-rules';
+import {
+  ADMIN_WARNING_REASONS,
+  decodeWarningIncident,
+  encodeWarningIncident,
+  requiresWarningIncident,
+  warningReasonLabel,
+  type WarningIncidentOption,
+} from '@/lib/warning-rules';
 
 type Data = {
   machines: {
@@ -192,12 +200,16 @@ function Btn({
   children,
   onClick,
   tone = 'plain',
+  disabled = false,
 }: {
   children: React.ReactNode;
   onClick: () => void;
   tone?: 'plain' | 'danger' | 'primary';
+  /** 바깥 조건으로 잠글 때 (05 P6 — 사건 목록을 못 받았으면 경고를 줄 수 없다) */
+  disabled?: boolean;
 }) {
   const [pending, start] = useTransition();
+  const off = pending || disabled;
   const p = {
     plain: { bg: '#fff', fg: '#5A6E8F', bd: '#E3EBF7' },
     danger: { bg: '#fff', fg: '#C2453E', bd: '#F3C9C6' },
@@ -207,18 +219,18 @@ function Btn({
   return (
     <button
       onClick={() => start(onClick)}
-      disabled={pending}
+      disabled={off}
       style={{
         padding: '6px 11px',
         borderRadius: 9,
         border: `1px solid ${p.bd}`,
         background: p.bg,
         color: p.fg,
-        cursor: pending ? 'default' : 'pointer',
+        cursor: off ? 'default' : 'pointer',
         fontSize: 12,
         fontWeight: 600,
         whiteSpace: 'nowrap',
-        opacity: pending ? 0.5 : 1,
+        opacity: off ? 0.5 : 1,
       }}
     >
       {children}
@@ -820,6 +832,35 @@ function Notices({ rows }: { rows: Data['notices'] }) {
 function Users({ rows }: { rows: Data['users'] }) {
   const [target, setTarget] = useState<string | null>(null);
 
+  // 05 P6 · Issue #8 — 어느 사건에 대한 경고인지 관리자가 고른다. 서버는 이 값으로
+  // canonical 사건 키(warnings.incident_queue_id · 0012 · 0013)를 정해 자동 경고와의
+  // 중복을 막는다. 사유만으로는 다른 날 · 다른 이용 건의 같은 사유와 구분할 수 없어
+  // 막을 수도 허용할 수도 없다.
+  //
+  // 'loading' · 'failed' 를 빈 배열과 **구분**하는 것이 중요하다 — 빈 배열은 "사건이
+  // 없다"는 서버의 답이라 사건 없는 일반 경고가 정당하지만, 실패는 답이 아니라서
+  // 그대로 통과시키면 중복 방지가 통째로 비켜간다. 그래서 실패면 버튼을 잠근다.
+  const [incidents, setIncidents] = useState<'loading' | 'failed' | WarningIncidentOption[]>(
+    'loading',
+  );
+  const [picked, setPicked] = useState('');
+  const [notice, setNotice] = useState('');
+
+  /** 경고 패널을 연다 — 그 사용자의 사건 목록을 서버에서 받아온다 */
+  async function openFor(userId: string) {
+    setTarget(userId);
+    setPicked('');
+    setNotice('');
+    setIncidents('loading');
+    try {
+      setIncidents(await adminUserIncidents(userId));
+    } catch {
+      setIncidents('failed');
+    }
+  }
+
+  const incidentsPending = incidents === 'loading' || incidents === 'failed';
+
   return (
     <>
       {target ? (
@@ -839,6 +880,51 @@ function Users({ rows }: { rows: Data['users'] }) {
             {rows.find((u) => u.user_id === target)?.name} 에게 줄 경고 유형을 선택하세요
           </span>
 
+          {/*
+            05 P6 · Issue #8 — 어느 사건에 대한 경고인지 고른다. 이미 경고가 있는 사건은
+            고를 수 없고(최종 판정은 DB 의 부분 UNIQUE 가 한다), 목록을 받지 못했으면
+            아래 버튼이 잠긴다 — 사건을 모르는 채로 주면 중복 방지가 비켜가기 때문이다.
+          */}
+          {incidents === 'loading' ? (
+            <span style={{ fontSize: 12, color: '#8FAAD0' }}>사건 목록을 불러오는 중이에요…</span>
+          ) : incidents === 'failed' ? (
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: '#C2453E' }}>
+                사건 목록을 불러오지 못했어요. 다시 시도한 뒤 경고를 주세요.
+              </span>
+              <Btn onClick={() => openFor(target)}>다시 시도</Btn>
+            </div>
+          ) : (
+            <select
+              value={picked}
+              onChange={(e) => {
+                setPicked(e.target.value);
+                setNotice('');
+              }}
+              style={{
+                height: 40,
+                padding: '0 11px',
+                borderRadius: 10,
+                border: '1px solid #E3EBF7',
+                fontSize: 13,
+              }}
+            >
+              <option value="">특정 사건 아님 (자동 판정 사유에는 쓸 수 없어요)</option>
+              {incidents.map((i) => (
+                <option
+                  key={`${i.kind}:${i.id}`}
+                  value={encodeWarningIncident(i)}
+                  disabled={i.already_warned}
+                >
+                  {i.label}
+                  {i.already_warned ? ' · 이미 경고 있음' : ''}
+                </option>
+              ))}
+            </select>
+          )}
+
+          {notice ? <span style={{ fontSize: 12, color: '#C2453E' }}>{notice}</span> : null}
+
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {/*
               05 P6-1 · 06 「경고」 · Issue #47 부속 — 신고를 확인한 관리자가
@@ -852,9 +938,16 @@ function Users({ rows }: { rows: Data['users'] }) {
               <Btn
                 key={value}
                 tone="danger"
+                disabled={incidentsPending}
                 onClick={async () => {
+                  // 05 P6 — 자동 경고와 겹칠 수 있는 사유는 사건을 골라야 한다.
+                  // 서버도 같은 규칙을 다시 보지만(issueWarning), 먼저 알려준다.
+                  if (requiresWarningIncident(value) && !picked) {
+                    setNotice('이 경고는 관련 사건을 선택해야 해요.');
+                    return;
+                  }
                   try {
-                    await issueWarning(target, value);
+                    await issueWarning(target, value, decodeWarningIncident(picked));
                     setTarget(null);
                   } catch (error) {
                     alert(error instanceof Error ? error.message : '경고를 주지 못했어요.');
@@ -912,7 +1005,7 @@ function Users({ rows }: { rows: Data['users'] }) {
               </td>
               <td style={cell}>
                 <div style={{ display: 'flex', gap: 6 }}>
-                  <Btn tone="danger" onClick={() => setTarget(u.user_id)}>
+                  <Btn tone="danger" onClick={() => openFor(u.user_id)}>
                     경고 +1
                   </Btn>
                   <Btn onClick={() => revokeWarning(u.user_id)}>경고 −1</Btn>

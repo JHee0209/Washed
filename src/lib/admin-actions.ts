@@ -19,6 +19,12 @@ import { updateFacilityInspection } from '@/lib/facility-status';
 import { notify } from '@/lib/notify';
 import { queueCounts } from '@/lib/queries';
 import { expireRunTimers } from '@/lib/usage';
+import {
+  isWarningIncidentRef,
+  requiresWarningIncident,
+  type WarningIncidentOption,
+  type WarningIncidentRef,
+} from '@/lib/warning-rules';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 조회
@@ -547,22 +553,180 @@ async function applyWarningSideEffects(userId: string, reasonText: string): Prom
 }
 
 /** 23505 가 지정한 제약에서 났는지 — queue/[kind]/route.ts 의 constraintOf() 와 같은 관용구 */
-function isUniqueViolation(error: unknown, constraint: string): boolean {
+function isUniqueViolation(error: unknown, ...constraints: string[]): boolean {
   if (!error || typeof error !== 'object') return false;
   const e = error as { code?: string; constraint?: string };
-  return e.code === '23505' && e.constraint === constraint;
+  return e.code === '23505' && constraints.includes(e.constraint ?? '');
 }
 
-/** F25 · F29 — 특정 이용 내역과 무관한 일반 경고. usage_history_id 는 항상 비운다. */
-export async function issueWarning(userId: string, reason: string) {
+/**
+ * F29 — 경고를 줄 때 고를 수 있는 「사건」 목록 (05 P6 · 08 · 4번 · Issue #8).
+ *
+ * 관리자가 사유만 보내면 서버는 그 경고가 **어느 사건**에서 나왔는지 알 수 없어
+ * 자동 경고와 겹치는지 판별할 방법이 없다. 사유만으로 막으면 다른 날 · 다른 이용
+ * 건의 같은 사유까지 막혀 버리는데, 그건 정책이 아니다(05 P16 — 경고는 사람 단위로
+ * 누적되고, 사건마다 따로 쌓인다). 그래서 고를 거리를 내려준다.
+ *
+ * 두 종류를 한 목록으로 합쳐 최신순으로 준다.
+ *   · queue — 아직 진행 중인 줄서기 한 줄. 여기에 먼저 경고를 주면 나중에 스케줄러가
+ *     같은 줄을 만료시켜도 경고를 더 얹지 않는다(0012).
+ *   · usage — 이미 끝난 이용 한 건. 스케줄러가 강제 종료하며 경고를 매긴 건은
+ *     already_warned 로 표시된다(0008).
+ *
+ * **already_warned 는 안내일 뿐 검사가 아니다** — 조회와 INSERT 사이에 스케줄러가
+ * 끼어들 수 있으므로 실제 차단은 DB 의 부분 UNIQUE 인덱스가 한다.
+ *
+ * 기간은 경고 기록 보관과 같은 **1개월**이다(05 SP4) — 그보다 오래된 이용 건은
+ * 경고를 줘도 곧 지워질 기록이라 고를 이유가 없다.
+ */
+export async function adminUserIncidents(userId: string): Promise<WarningIncidentOption[]> {
+  await requireAdmin();
+  const rows = await sql<{
+    kind: string;
+    id: string;
+    label: string;
+    already_warned: boolean;
+  }>`
+    SELECT kind, id, label, already_warned
+      FROM (
+        -- 진행 중인 줄서기 (05 상태값 — 「종료」는 행이 사라지는 것이라 여기 없다)
+        SELECT 'queue' AS kind,
+               q.queue_id::text AS id,
+               '진행 중 · ' || COALESCE(m.name, q.machine_kind) || ' · ' || q.status AS label,
+               EXISTS (SELECT 1 FROM warnings w WHERE w.incident_queue_id = q.queue_id) AS already_warned,
+               q.queued_at AS sort_at
+          FROM queue q
+          LEFT JOIN machines m ON m.machine_id = q.machine_id
+         WHERE q.user_id = ${userId}
+
+        UNION ALL
+
+        -- 끝난 이용 (06 「이용 내역」)
+        SELECT 'usage' AS kind,
+               h.history_id::text AS id,
+               to_char(h.ended_at AT TIME ZONE 'Asia/Seoul', 'MM/DD HH24:MI') || ' 종료 · '
+                 || COALESCE(m.name, '기기 삭제됨')
+                 || CASE WHEN h.result = '경고' THEN ' · 경고' ELSE '' END AS label,
+               -- canonical 사건 키(0013)를 먼저 본다 — 만료 **전에** 그 줄서기에 경고를
+               -- 줬어도 같은 사건으로 잡힌다. usage_history_id 는 0013 이전 행을 위한
+               -- fallback 이다(그 행들은 source_queue_id 가 없다).
+               EXISTS (
+                 SELECT 1 FROM warnings w
+                  WHERE w.incident_queue_id = h.source_queue_id
+                     OR w.usage_history_id = h.history_id
+               ) AS already_warned,
+               h.ended_at AS sort_at
+          FROM usage_history h
+          LEFT JOIN machines m ON m.machine_id = h.machine_id
+         WHERE h.user_id = ${userId}
+           AND h.ended_at >= now() - interval '1 month'
+      ) incidents
+     ORDER BY sort_at DESC
+     LIMIT 30
+  `;
+
+  // SQL 이 'queue' · 'usage' 리터럴만 내지만 화면까지 string 으로 흘려보내지 않는다 —
+  // 여기서 한 번 좁혀 두면 호출부에 cast 가 필요 없고, 모르는 값은 조용히 빠진다.
+  return rows.flatMap((r) => {
+    const ref = { kind: r.kind, id: r.id };
+    if (!isWarningIncidentRef(ref)) return [];
+    return [{ ...ref, label: r.label, already_warned: r.already_warned }];
+  });
+}
+
+/**
+ * 관리자 경고 한 줄을 INSERT 한다 — issueWarning() · issueUsageIncidentWarning() 의 공통 몸통.
+ *
+ * 사건(`incident`)이 있으면 그 참조 칸을 채우고, 없으면 예전처럼 비운다. 사건이 있을
+ * 때는 **그 행이 정말 이 사용자의 것인지** 서버가 먼저 확인한다 — 화면이 잘못된 id 를
+ * 보낼 리는 없지만, 다른 사람에게 경고가 잘못 붙는 것을 서버에서도 막는다.
+ *
+ * 같은 사건을 가리키는 경고가 이미 있으면(자동이든 관리자든) 부분 UNIQUE 인덱스가
+ * INSERT 를 23505 로 거부한다 — 여기서 잡아 사람이 읽을 메시지로 바꾼다.
+ * **이 INSERT 가 실패하면 호출부가 그 자리에서 끝난다** — usage_restrictions 증가도
+ * notify() 도 뒤에 있어 실행되지 않는다.
+ */
+async function insertAdminWarning(
+  userId: string,
+  reason: string,
+  incident: WarningIncidentRef | null,
+): Promise<void> {
+  let usageHistoryId: string | null = null;
+  let incidentQueueId: string | null = null;
+
+  if (incident) {
+    // 서버 액션의 인자는 클라이언트 입력이다 — 모양부터 본다. 모르는 kind 를 queue 로
+    // 넘겨짚으면 엉뚱한 표의 uuid 가 사건 키로 들어가 중복 검사가 조용히 빗나간다.
+    if (!isWarningIncidentRef(incident)) {
+      throw new Error('사건 정보가 올바르지 않아요.');
+    }
+
+    if (incident.kind === 'usage') {
+      const row = await sql<{ user_id: string; source_queue_id: string | null }>`
+        SELECT user_id, source_queue_id FROM usage_history WHERE history_id = ${incident.id} LIMIT 1
+      `;
+      if (!row[0]) throw new Error('이용 내역을 찾을 수 없어요.');
+      if (row[0].user_id !== userId) throw new Error('이 사건은 선택한 사용자의 것이 아니에요.');
+
+      usageHistoryId = incident.id;
+      // 05 P6 · 0013 — 이 이용이 나온 줄서기가 사건의 canonical 이름이다. 만료 전에
+      // 그 줄에 이미 경고가 있으면 아래 INSERT 가 같은 값에 부딪혀 막힌다.
+      // 0013 이전 행은 이 값이 없어 usage_history_id UNIQUE(0008)로만 보호된다.
+      incidentQueueId = row[0].source_queue_id;
+    } else {
+      const row = await sql<{ user_id: string }>`
+        SELECT user_id FROM queue WHERE queue_id = ${incident.id} LIMIT 1
+      `;
+      if (!row[0]) {
+        throw new Error('그 줄서기가 이미 끝났어요. 목록을 새로 고친 뒤 다시 골라주세요.');
+      }
+      if (row[0].user_id !== userId) throw new Error('이 사건은 선택한 사용자의 것이 아니에요.');
+
+      incidentQueueId = incident.id;
+    }
+  }
+
+  try {
+    await sql`
+      INSERT INTO warnings (user_id, reason, issued_by, usage_history_id, incident_queue_id)
+      VALUES (${userId}, ${reason}, '관리자', ${usageHistoryId}, ${incidentQueueId})
+    `;
+  } catch (error) {
+    if (isUniqueViolation(error, 'warnings_usage_history_id_idx', 'warnings_incident_queue_id_idx')) {
+      throw new Error('이미 이 사건에 경고가 있어요.');
+    }
+    throw error;
+  }
+}
+
+/**
+ * F25 · F29 — 관리자가 손으로 주는 경고.
+ *
+ * `incident` 는 **선택**이다(05 P6 · Issue #8). 고르면 그 사건에 경고가 한 번만
+ * 붙도록 DB 가 지켜 준다 — 자동 경고가 이미 그 사건에 있으면 여기서 막히고, 반대로
+ * 여기서 먼저 주면 나중에 스케줄러가 그 사건을 만료시켜도 경고를 더 얹지 않는다
+ * (expiration.ts 의 applySystemWarning). 고르지 않으면 예전과 똑같이 사건 없는
+ * 경고가 되고, 그 경우 자동 경고와의 교차 중복은 막을 수 없다 — 사건을 모르면
+ * 판별할 근거가 없기 때문이다.
+ *
+ * **사유만으로 막지 않는다.** 다른 날 · 다른 이용 건에서 같은 사유가 나오면 각각
+ * 정상적으로 경고가 쌓여야 한다.
+ */
+export async function issueWarning(
+  userId: string,
+  reason: string,
+  incident: WarningIncidentRef | null = null,
+) {
   await requireAdmin();
   if (!reason.trim()) throw new Error('사유를 입력해주세요.');
 
-  await sql`
-    INSERT INTO warnings (user_id, reason, issued_by)
-    VALUES (${userId}, ${reason.trim()}, '관리자')
-  `;
+  // 05 P6 — 자동 경고와 겹칠 수 있는 사유는 사건 없이 줄 수 없다. **화면을 믿지 않는다**
+  // — 서버 액션은 클라이언트가 직접 부를 수 있으므로 여기서 다시 본다.
+  if (requiresWarningIncident(reason) && !incident) {
+    throw new Error('이 경고는 관련 사건을 선택해야 해요.');
+  }
 
+  await insertAdminWarning(userId, reason.trim(), incident);
   await applyWarningSideEffects(userId, reason.trim());
 }
 
@@ -570,42 +734,18 @@ export async function issueWarning(userId: string, reason: string) {
  * F28 「경고 주기」· F29 「이용 내역 관련 경고」 — 05 P6 · 0008.
  *
  * 특정 usage_history 행(사건)에 연결된 관리자 경고 전용이다. `reason` 은 늘
- * '신고 확인'(P6-1의 관리자 몫)으로 고정한다 — 자유 텍스트를 받지 않아 CHECK
- * 위반도 나지 않는다. `usageHistoryId` 는 **필수**다(옵션이 아니다) — 이걸
- * 선택 인자로 두면 그 사건과 무관한 issueWarning() 처럼 그냥 안 채우고 지나갈
- * 수 있어, 자동 경고(P5 수거 미완료)와 같은 사건을 몰래 다시 벌줄 길이 남는다.
+ * '신고 확인'(P6-1의 관리자 몫)으로 고정하고, `usageHistoryId` 는 **필수**다.
  *
- * 같은 usage_history_id 를 가리키는 경고가 이미 있으면(자동이든 관리자든)
- * warnings_usage_history_id_idx 가 INSERT 를 23505 로 거부한다 — 여기서 잡아
- * 사람이 읽을 메시지로 바꾼다. **이 INSERT 가 실패하면 함수가 그 자리에서
- * 끝난다** — usage_restrictions 증가도 notify() 도 뒤에 있어 실행되지 않는다.
+ * Issue #8 이후 몸통은 issueWarning() 과 같은 insertAdminWarning() 하나다 —
+ * 소유자 확인도 23505 처리도 그쪽에 있다. 이 함수는 사유를 '신고 확인'으로
+ * 고정하고 사건 종류를 'usage' 로 못박는 얇은 껍데기로만 남는다(같은 INSERT 를
+ * 두 벌 두지 않는다).
  */
 export async function issueUsageIncidentWarning(userId: string, usageHistoryId: string) {
   await requireAdmin();
   if (!usageHistoryId) throw new Error('연결할 이용 내역을 선택해주세요.');
 
-  // 고른 이용 내역이 실제로 이 사용자의 것인지 확인한다 — 화면이 잘못된 history_id
-  // 를 보낼 리는 없지만, 다른 사람에게 경고가 잘못 붙는 것을 서버에서도 막는다.
-  const owner = await sql<{ user_id: string }>`
-    SELECT user_id FROM usage_history WHERE history_id = ${usageHistoryId} LIMIT 1
-  `;
-  if (!owner[0]) throw new Error('이용 내역을 찾을 수 없어요.');
-  if (owner[0].user_id !== userId) {
-    throw new Error('이 이용 내역은 선택한 사용자의 것이 아니에요.');
-  }
-
-  try {
-    await sql`
-      INSERT INTO warnings (user_id, reason, issued_by, usage_history_id)
-      VALUES (${userId}, '신고 확인', '관리자', ${usageHistoryId})
-    `;
-  } catch (error) {
-    if (isUniqueViolation(error, 'warnings_usage_history_id_idx')) {
-      throw new Error('이미 이 이용 건에 경고가 있어요.');
-    }
-    throw error;
-  }
-
+  await insertAdminWarning(userId, '신고 확인', { kind: 'usage', id: usageHistoryId });
   await applyWarningSideEffects(userId, '신고 확인');
 }
 

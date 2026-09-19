@@ -218,11 +218,31 @@ CREATE TABLE IF NOT EXISTS warnings (
   issued_by  text        NOT NULL CHECK (issued_by IN ('시스템 자동', '관리자')),
 
   -- 06 「부여 시각」
-  issued_at  timestamptz NOT NULL DEFAULT now()
+  issued_at  timestamptz NOT NULL DEFAULT now(),
+
+  -- 06 「사건 참조(줄서기, 선택 · 05 P6)」 · 0012 — 이 경고가 나온 줄서기 사건.
+  -- 한 queue 행이 곧 한 사건(대기 중 → 배정 → 사용중 → 수거대기)이고, 그 행은
+  -- 배정 단계에서 만료되거나(배정 후 미인증) 수거 단계에서 만료되거나 둘 중
+  -- 하나만 일어나므로(QR 인증을 하면 status 가 바뀌어 배정 만료 조건에 다시는
+  -- 걸리지 않는다) 이 칸 하나가 P6 의 「통합 1회」를 그대로 표현한다.
+  --
+  -- **FK 가 아니다.** 경고를 쓰는 시점에 그 queue 행은 이미 지워진 뒤라
+  -- (05 상태값 — 「종료」는 행이 사라지는 것이다) ON DELETE SET NULL 을 걸면
+  -- 키가 즉시 NULL 이 되어 아래 UNIQUE 가 무의미해진다. 지워진 행을 가리키는
+  -- 역사적 참조값이라 순수 uuid 로 둔다.
+  incident_queue_id uuid NULL
 
   -- 06 「사건 참조(이용 내역, 선택 · 05 P6)」는 usage_history 뒤에서 ALTER 로 붙인다
   -- (0008) — usage_history 가 이 표보다 뒤(8번)에 있어 여기서는 아직 참조할 수 없다.
 );
+
+-- 05 P6 · 0012 — 같은 줄서기 사건에는 경고가 하나뿐이다. 자동이든 관리자든 두 번째
+-- INSERT 를 DB 가 23505 로 거부한다. NULL 끼리는 충돌하지 않아, 사건과 무관한
+-- 관리자 자유 텍스트 경고는 이 검사에 걸리지 않는다
+-- (queue_machine_once_idx 와 같은 관용구).
+CREATE UNIQUE INDEX IF NOT EXISTS warnings_incident_queue_id_idx
+  ON warnings (incident_queue_id)
+  WHERE incident_queue_id IS NOT NULL;
 
 -- 기록 화면(최근 30일 · 05 P21) · 관리자 조회 (05 SP4)
 CREATE INDEX IF NOT EXISTS warnings_user_issued_at_idx
@@ -390,11 +410,32 @@ CREATE TABLE IF NOT EXISTS usage_history (
   ended_at   timestamptz NOT NULL,
 
   -- 06 「결과(완료 / 경고)」 · 05 상태값
-  result     text        NOT NULL CHECK (result IN ('완료', '경고'))
+  result     text        NOT NULL CHECK (result IN ('완료', '경고')),
+
+  -- 06 「사건 참조(줄서기, 선택)」 · 05 P6 · 0013 — 이 이용이 나온 줄서기 행.
+  -- 05 P6 의 「겹쳐도 통합 1회」를 지키려면 한 실제 사건이 만료 전후로 **같은 이름**을
+  -- 가져야 한다. 만료되면 queue 행은 사라지므로, 이용 내역이 원래 줄서기 id 를 들고
+  -- 있어야 나중에도 warnings.incident_queue_id(canonical 사건 키 · 0012)로 되짚을 수
+  -- 있다. 관리자가 진행 중인 줄에서 경고를 주든 끝난 이용에서 주든 같은 값을 향해
+  -- INSERT 되어, 부분 UNIQUE 하나가 순서와 무관하게 중복을 막는다.
+  --
+  -- **FK 가 아니다.** 이 행을 만드는 바로 그 문장이 같은 queue 행을 지운다
+  -- (usage.ts finishUsage · expiration.ts expireOverduePickups).
+  --
+  -- 0013 이전 행은 NULL 이고 소급할 근거가 없다 — 그 행들은 예전처럼
+  -- warnings.usage_history_id(0008)로만 보호되는 legacy 데이터다.
+  source_queue_id uuid NULL
 
   -- 06 「보관」은 칸이 아니라 규칙이다 — 3개월 또는 탈퇴 후 14일 중 먼저 오는 때에 삭제하고,
   -- 사생 기록 화면은 최근 30일만 보여준다 (05 P21 · SP4 · 08 · 9번).
 );
+
+-- 05 P6 · 0013 — 한 줄서기 사건은 이용 내역을 최대 하나만 남긴다(정상 종료와 강제
+-- 종료가 같은 queue 행을 두고 경쟁해 한쪽만 이긴다). H → Q 해석이 항상 한 값이 되도록
+-- 그 불변식을 적는다. legacy 행(NULL)은 서로 충돌하지 않아 걸리지 않는다.
+CREATE UNIQUE INDEX IF NOT EXISTS usage_history_source_queue_id_idx
+  ON usage_history (source_queue_id)
+  WHERE source_queue_id IS NOT NULL;
 
 -- 기록 화면 30일 · 관리자 3개월 조회 (05 P17 · P21)
 CREATE INDEX IF NOT EXISTS usage_history_user_started_at_idx

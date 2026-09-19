@@ -21,14 +21,17 @@
 //
 // ── P6 · P26 은 별도 스윕이 아니라 이 파일의 습관이다
 // 05 P6 — 한 queue 행은 DELETE...RETURNING 으로 **한 번만** 걸리므로(이미 지운
-// 행은 다시 안 걸린다) 같은 사건에 경고가 두 번 붙지 않는다 — **단, 이건 자동
-// 경고끼리의 중복만 막는다.** "자동 판정과 관리자 수동 부여가 같은 건에 두 번
-// 붙지 않게"는 아직 못 막는다 — warnings 에 사건을 가리키는 칸이 없고, 관리자
-// 수동 경고(admin-actions.ts issueWarning)는 어떤 신고 · 사건에서 나왔는지 전혀
-// 남기지 않는 자유 텍스트라(reports 테이블도 애초에 "누구를 신고하는지" 칸이
-// 없다) 지금 구조로는 정확히 판별할 방법이 없다. 이 자리를 채우려면 warnings에
-// 사건 참조 칸을 추가하는 마이그레이션과, 관리자 신고 처리 화면이 그 참조를
-// 채워 넣는 기능(별도 작업)이 함께 필요하다 — 이번 범위에서는 하지 않는다.
+// 행은 다시 안 걸린다) 같은 사건에 경고가 두 번 붙지 않는다. Issue #8 이 이 스윕을
+// 분 단위 스케줄러로 올리면서, 코드상의 그 성질에만 기대지 않고 **DB 가 직접**
+// 막도록 사건 키를 더했다 — 0012 의 `warnings.incident_queue_id` 와 그 부분 UNIQUE
+// 인덱스다. 한 queue 행이 곧 한 사건이고, 그 행은 배정 단계에서 만료되거나
+// 수거 단계에서 만료되거나 둘 중 하나만 일어나므로(QR 인증을 하면 status 가 바뀌어
+// 배정 만료 조건에 다시는 걸리지 않는다) 키 하나가 P6 의 "통합 1회" 를 그대로
+// 표현한다. 관리자 쪽 교차 중복은 0008 의 `usage_history_id` 가 맡는다 —
+// **단, 관리자의 자유 텍스트 경고(admin-actions.ts issueWarning)는 어느 사건에서
+// 나왔는지 전혀 남기지 않아 여전히 교차 판별이 불가능하다.** 사건을 고르는 경로
+// (issueUsageIncidentWarning)는 이미 구현돼 있으나 관리자 화면이 아직 부르지
+// 않는다 — 그 연결은 별도 Issue 다.
 // 05 P26 — 경고 발급은 푸시 허용 여부를 보지 않고, 알림은 항상 notify() 로
 // 남긴다(허용하지 않은 사람도 알림함 기록은 그대로 생긴다 · notify.ts 의 원래 설계).
 
@@ -39,19 +42,50 @@ import { sql } from '@/lib/db';
 import { isFirstOfMonthInKst } from '@/lib/kst-date';
 import { notify } from '@/lib/notify';
 import { notifyUsageEnded } from '@/lib/usage-end-notify';
+// 05 P6-1 — 자동 경고 사유 집합은 화면·서버가 함께 쓰는 warning-rules.ts 에 있다.
+// 관리자 경고 쪽(admin-actions.ts)이 "이 사유는 사건을 골라야 한다" 를 판정할 때도
+// 같은 집합을 보므로 여기 따로 적지 않는다.
+import type { SystemWarningReason } from '@/lib/warning-rules';
 
 /** 05 P7 — 제한이 걸리는 경고 횟수. admin-actions.ts 의 같은 상수와 값이 같아야 한다 */
 const WARNING_LIMIT = 3;
 /** 05 P7 — 제한 기간(일) */
 const RESTRICT_DAYS = 3;
 
-/** 05 P6-1 — 시스템이 자동으로 부여하는 경고 사유 두 가지(신고 확인은 관리자 전용) */
-type SystemWarningReason = '배정 후 미인증' | '수거 미완료';
+/** 05 P4 — usage_history 의 시작 시각을 ends_at 에서 거꾸로 되짚을 때 쓴다 (usage.ts 와 같은 기준) */
+const WASHER_MINUTES = RUN_MINUTES_BY_KIND['세탁기'];
+const DRYER_MINUTES = RUN_MINUTES_BY_KIND['건조기'];
 
 const SYSTEM_WARNING_DESCRIPTION: Record<SystemWarningReason, string> = {
   '배정 후 미인증': '배정 후 10분 안에 QR 인증을 하지 않았어요',
   '수거 미완료': '수거 대기 후 3분 안에 다했어요를 누르지 않았어요',
 };
+
+/** 05 P6 — 경고 한 건이 나온 "사건". 중복 방지 키가 여기서 나온다 */
+type WarningIncident = {
+  /**
+   * 이 경고를 낳은 줄서기 행(0012). 경고를 쓰는 시점엔 이미 지워진 행이지만,
+   * uuid 값 자체가 그 사건의 이름으로 남는다.
+   */
+  queueId: string;
+  /**
+   * 05 P6 · 0008 — 강제 종료로 방금 만든 이용 내역. '배정 후 미인증'은 사용을
+   * 시작한 적이 없어 usage_history 행 자체가 없으므로 넘기지 않는다.
+   */
+  usageHistoryId?: string;
+};
+
+/**
+ * 23505 가 지정한 제약에서 났는지 — admin-actions.ts 의 isUniqueViolation() ·
+ * queue/[kind]/route.ts 의 constraintOf() 와 같은 관용구다. admin-actions.ts 는
+ * 'use server' 라 async 함수만 export 할 수 있어 그 구현을 가져다 쓸 수 없다
+ * (WARNING_LIMIT 을 여기 따로 둔 것과 같은 이유).
+ */
+function isUniqueViolation(error: unknown, ...constraints: string[]): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { code?: string; constraint?: string };
+  return e.code === '23505' && constraints.includes(e.constraint ?? '');
+}
 
 /**
  * 05 P6-1 · P7 · P26 — 시스템 자동 경고 한 건을 매긴다.
@@ -65,53 +99,73 @@ const SYSTEM_WARNING_DESCRIPTION: Record<SystemWarningReason, string> = {
  * 구독이 끊긴 사람도 알림함 기록은 똑같이 생긴다(05 P26). 실패해도 경고 자체는
  * 이미 쌓인 뒤라 되돌리지 않는다(admin-actions.ts issueWarning 과 같은 판단).
  *
- * `usageHistoryId` — 05 P6 · 0008. '수거 미완료'는 expireOverduePickups() 가 방금
- * 만든 usage_history 행을 그대로 넘긴다(항상 새 행이라 부분 UNIQUE 인덱스에 걸릴
- * 일이 없다). '배정 후 미인증'은 usage_history 자체가 없어 넘기지 않는다 —
- * 그 칸은 NULL로 남고, admin-actions.ts 의 관리자 교차 중복 검사 대상에서도 자연히
- * 빠진다(P3는 신고로 관찰할 수 없는 사건이라 원래도 대상이 아니다).
+ * `incident` — 05 P6 · 0008 · 0012. 경고 INSERT 가 `incident_queue_id` 를 채우므로
+ * **같은 줄서기 사건에는 경고가 하나뿐이다** — 스케줄러가 몇 번을 돌든, 두 tick 이
+ * 겹치든 두 번째 INSERT 는 `warnings_incident_queue_id_idx` 에 23505 로 막힌다.
+ * '수거 미완료'는 방금 만든 usage_history 행도 함께 넘겨(0008) 관리자의 사건 연결
+ * 경고와도 겹치지 않게 한다. '배정 후 미인증'은 사용을 시작한 적이 없어
+ * usage_history 가 없으므로 그 칸만 NULL 로 남는다.
+ *
+ * **한 문장으로 쓴다** — 예전에는 경고 INSERT · 누적 upsert · days_left 조회가 세
+ * 문장이라, 중간에 끊기면 "경고는 쌓였는데 누적은 안 오른" 상태가 남을 수 있었다.
+ * 이 저장소는 neon-http 라 BEGIN/COMMIT 을 쓸 수 없고 **한 문장이 곧 한 트랜잭션**
+ * 이므로(db.ts · assignment.ts 머리말), 데이터 수정 CTE 로 묶어 둘을 전부 성공하거나
+ * 전부 실패하게 만든다. days_left 도 upsert 의 RETURNING 에서 바로 받는다.
+ *
+ * @returns 경고를 실제로 매겼으면 true, 이미 그 사건에 경고가 있어 건너뛰었으면 false
  */
 async function applySystemWarning(
   userId: string,
   reason: SystemWarningReason,
   now: Date,
-  usageHistoryId?: string,
-): Promise<void> {
+  incident: WarningIncident,
+): Promise<boolean> {
   const nowIso = now.toISOString();
 
-  await sql`
-    INSERT INTO warnings (user_id, reason, issued_by, usage_history_id)
-    VALUES (${userId}, ${reason}, '시스템 자동', ${usageHistoryId ?? null})
-  `;
+  // try 밖에서 선언한다 — 아래 notify() 가 이 값을 쓰므로 try 안으로 줄일 수 없다.
+  let applied: { days_left: number | null }[];
+  try {
+    applied = await sql<{ days_left: number | null }>`
+      WITH warned AS (
+        INSERT INTO warnings (user_id, reason, issued_by, usage_history_id, incident_queue_id)
+        VALUES (${userId}, ${reason}, '시스템 자동',
+                ${incident.usageHistoryId ?? null}, ${incident.queueId})
+        RETURNING user_id
+      ),
+      counted AS (
+        INSERT INTO usage_restrictions (user_id, warning_count, restricted_from, restricted_until)
+        SELECT w.user_id, 1,
+               CASE WHEN ${WARNING_LIMIT}::int <= 1 THEN ${nowIso}::timestamptz ELSE NULL END,
+               CASE WHEN ${WARNING_LIMIT}::int <= 1
+                    THEN ${nowIso}::timestamptz + make_interval(days => ${RESTRICT_DAYS}::int)
+                    ELSE NULL END
+          FROM warned w
+        ON CONFLICT (user_id) DO UPDATE SET
+          warning_count = usage_restrictions.warning_count + 1,
+          restricted_from = CASE
+            WHEN usage_restrictions.warning_count + 1 >= ${WARNING_LIMIT}::int THEN ${nowIso}::timestamptz
+            ELSE usage_restrictions.restricted_from END,
+          restricted_until = CASE
+            WHEN usage_restrictions.warning_count + 1 >= ${WARNING_LIMIT}::int
+            THEN ${nowIso}::timestamptz + make_interval(days => ${RESTRICT_DAYS}::int)
+            ELSE usage_restrictions.restricted_until END
+        RETURNING restricted_until
+      )
+      SELECT CASE WHEN restricted_until IS NULL OR restricted_until <= ${nowIso}::timestamptz THEN NULL
+                  ELSE CEIL(EXTRACT(EPOCH FROM (restricted_until - ${nowIso}::timestamptz)) / 86400)::int
+             END AS days_left
+        FROM counted
+    `;
+  } catch (error) {
+    // 05 P6 — 이 사건엔 이미 경고가 있다(자동이든 관리자든). 두 번 벌주지 않는 것이
+    // 정상 동작이므로 조용히 넘어간다 — 누적도 오르지 않는다(같은 문장이라 함께 취소됐다).
+    if (isUniqueViolation(error, 'warnings_incident_queue_id_idx', 'warnings_usage_history_id_idx')) {
+      return false;
+    }
+    throw error;
+  }
 
-  await sql`
-    INSERT INTO usage_restrictions (user_id, warning_count, restricted_from, restricted_until)
-    VALUES (
-      ${userId}, 1,
-      CASE WHEN ${WARNING_LIMIT}::int <= 1 THEN ${nowIso}::timestamptz ELSE NULL END,
-      CASE WHEN ${WARNING_LIMIT}::int <= 1
-           THEN ${nowIso}::timestamptz + make_interval(days => ${RESTRICT_DAYS}::int) ELSE NULL END
-    )
-    ON CONFLICT (user_id) DO UPDATE SET
-      warning_count = usage_restrictions.warning_count + 1,
-      restricted_from = CASE
-        WHEN usage_restrictions.warning_count + 1 >= ${WARNING_LIMIT}::int THEN ${nowIso}::timestamptz
-        ELSE usage_restrictions.restricted_from END,
-      restricted_until = CASE
-        WHEN usage_restrictions.warning_count + 1 >= ${WARNING_LIMIT}::int
-        THEN ${nowIso}::timestamptz + make_interval(days => ${RESTRICT_DAYS}::int)
-        ELSE usage_restrictions.restricted_until END
-  `;
-
-  const restriction = await sql<{ days_left: number | null }>`
-    SELECT CASE WHEN restricted_until IS NULL OR restricted_until <= ${nowIso}::timestamptz THEN NULL
-                ELSE CEIL(EXTRACT(EPOCH FROM (restricted_until - ${nowIso}::timestamptz)) / 86400)::int
-           END AS days_left
-      FROM usage_restrictions
-     WHERE user_id = ${userId}
-     LIMIT 1
-  `;
-  const daysLeft = restriction[0]?.days_left ?? null;
+  const daysLeft = applied[0]?.days_left ?? null;
 
   try {
     await notify(
@@ -125,38 +179,57 @@ async function applySystemWarning(
   } catch (error) {
     console.error('시스템 경고 알림 생성 실패', userId, reason, error);
   }
+
+  return true;
 }
 
 /**
  * 05 P3 — 배정 후 10분 안에 QR 인증이 없으면 배정을 해제하고 경고 1회를 매긴다.
  *
  * **DELETE...RETURNING 한 문장으로 대상을 정한다** — 지운 행은 이 스윕이 두 번
- * 돌아도(cron 과 줄서기 양쪽에서 겹쳐 불려도) 다시 걸리지 않는다(05 P6 · idempotent).
- * 06 「줄서기」의 「종료」는 저장되는 상태가 아니다 — 배정 해제는 그 행을 지우는
- * 것뿐이고, usage_history 에는 남기지 않는다(사용중을 시작한 적이 없어 기록할
- * 이용이 없다 · history/page.tsx 가 '배정 후 미인증'을 경고만으로 표시하는 이유와
- * 같다).
+ * 돌아도(스케줄러 · 줄서기 · 배치 어디서 겹쳐 불려도) 다시 걸리지 않는다
+ * (05 P6 · idempotent). 06 「줄서기」의 「종료」는 저장되는 상태가 아니다 — 배정
+ * 해제는 그 행을 지우는 것뿐이고, usage_history 에는 남기지 않는다(사용중을 시작한
+ * 적이 없어 기록할 이용이 없다 · history/page.tsx 가 '배정 후 미인증'을 경고만으로
+ * 표시하는 이유와 같다).
  *
  * 기기는 **배정을 준 뒤로 상태가 바뀌지 않았을 때만** 사용가능으로 되돌린다
  * (`status = '사용중'` 조건) — 관리자가 그새 고장으로 바꿔 놓았다면 덮어쓰지 않는다.
+ * 이 기기 반환을 **DELETE 와 같은 문장에** 둔다(Issue #8) — 예전에는 queue 행을 전부
+ * 지운 뒤 행마다 따로 UPDATE 했는데, 그 사이에 끊기면 queue 행은 없는데 기기는
+ * `사용중` 인 채로 남아 drainQueue() 가 영영 집어가지 못하는 고아 기기가 됐다.
+ * 하루 1회 배치일 때는 드문 일이었지만 분 단위 스케줄러에서는 상시 노출이다.
+ *
+ * 경고는 행마다 따로 매기되 **한 행의 실패가 나머지를 멈추지 않게** 감싼다 —
+ * queue 행은 이미 지워진 뒤라, 여기서 예외가 위로 튀면 남은 사람들은 경고도 못 받고
+ * 다시 걸리지도 않는다(assignment-notify.ts 가 알림에 같은 판단을 쓴다).
  */
 export async function expireOverdueAssignments(now: Date = new Date()): Promise<number> {
   const expired = await sql<{ queue_id: string; user_id: string; machine_id: string }>`
-    DELETE FROM queue
-     WHERE status = '배정'
-       AND assign_deadline_at IS NOT NULL
-       AND assign_deadline_at <= ${now.toISOString()}::timestamptz
-    RETURNING queue_id, user_id, machine_id
+    WITH expired AS (
+      DELETE FROM queue
+       WHERE status = '배정'
+         AND assign_deadline_at IS NOT NULL
+         AND assign_deadline_at <= ${now.toISOString()}::timestamptz
+      RETURNING queue_id, user_id, machine_id
+    ),
+    freed AS (
+      UPDATE machines m
+         SET status = '사용가능', ends_at = NULL
+        FROM expired e
+       WHERE m.machine_id = e.machine_id
+         AND m.status = '사용중'
+      RETURNING m.machine_id
+    )
+    SELECT queue_id, user_id, machine_id FROM expired
   `;
 
   for (const row of expired) {
-    await sql`
-      UPDATE machines
-         SET status = '사용가능', ends_at = NULL
-       WHERE machine_id = ${row.machine_id}
-         AND status = '사용중'
-    `;
-    await applySystemWarning(row.user_id, '배정 후 미인증', now);
+    try {
+      await applySystemWarning(row.user_id, '배정 후 미인증', now, { queueId: row.queue_id });
+    } catch (error) {
+      console.error('배정 만료 경고 실패', row.user_id, row.queue_id, error);
+    }
   }
 
   return expired.length;
@@ -242,6 +315,14 @@ export async function transitionFinishedUsageToPickup(now: Date = new Date()): P
  * `result='경고'` 로만 표시하고 따로 더 그리지 않는 이유가 이 기록이다(중복 방지).
  *
  * 기기는 **그새 관리자가 고장으로 바꾸지 않았을 때만** 사용가능으로 돌린다.
+ *
+ * **지우기 · 기기 반환 · 이용 내역을 한 문장에 묶는다**(Issue #8) —
+ * expireOverdueAssignments() 와 같은 이유다. 예전에는 queue 행을 먼저 전부 지운 뒤
+ * 행마다 UPDATE · INSERT 를 이어 했는데, 그 사이에 끊기면 queue 행도 이용 내역도
+ * 없는데 기기만 `사용중` 으로 남는 고아 상태가 됐다. 시작 시각 계산은 예전 JS 식을
+ * 그대로 SQL 로 옮긴 것이다(ends_at 이 없을 때의 방어적 대체값 포함). 기기 종류
+ * CASE 는 usage.ts 의 `started` CTE 와 같은 관용구다 — machines.kind 에 CHECK 가
+ * 있어 두 값 말고는 올 수 없다.
  */
 export async function expireOverduePickups(now: Date = new Date()): Promise<number> {
   const nowIso = now.toISOString();
@@ -249,46 +330,62 @@ export async function expireOverduePickups(now: Date = new Date()): Promise<numb
   const expired = await sql<{
     queue_id: string;
     user_id: string;
-    machine_id: string;
-    machine_kind: string;
-    ends_at: string | null;
-    pickup_deadline_at: string;
+    history_id: string | null;
   }>`
-    DELETE FROM queue q
-      USING machines m
-     WHERE q.machine_id = m.machine_id
-       AND q.status = '수거대기'
-       AND q.pickup_deadline_at IS NOT NULL
-       AND q.pickup_deadline_at <= ${nowIso}::timestamptz
-    RETURNING q.queue_id, q.user_id, q.machine_id, m.kind AS machine_kind,
-              m.ends_at, q.pickup_deadline_at
+    WITH expired AS (
+      DELETE FROM queue q
+        USING machines m
+       WHERE q.machine_id = m.machine_id
+         AND q.status = '수거대기'
+         AND q.pickup_deadline_at IS NOT NULL
+         AND q.pickup_deadline_at <= ${nowIso}::timestamptz
+      RETURNING q.queue_id, q.user_id, q.machine_id, m.kind AS machine_kind,
+                m.ends_at, q.pickup_deadline_at
+    ),
+    freed AS (
+      UPDATE machines m
+         SET status = '사용가능', ends_at = NULL
+        FROM expired e
+       WHERE m.machine_id = e.machine_id
+         AND m.status = '사용중'
+      RETURNING m.machine_id
+    ),
+    logged AS (
+      -- 05 P6 · 0013 — source_queue_id 로 원래 줄서기 사건을 남긴다(usage.ts 의
+      -- finishUsage 와 같은 이유). 이 값이 있어야 만료 뒤에도 관리자 경고가 같은
+      -- canonical 사건 키(warnings.incident_queue_id)를 향한다.
+      INSERT INTO usage_history (user_id, machine_id, started_at, ended_at, result, source_queue_id)
+      SELECT e.user_id, e.machine_id,
+             -- ends_at 은 transitionUsageToPickup() 이 이 값을 근거로 pickup_deadline_at
+             -- 을 찍었으므로 항상 있어야 한다 — 없을 때만 마감에서 3분을 되짚는다.
+             COALESCE(e.ends_at, e.pickup_deadline_at - interval '3 minutes')
+               - (CASE e.machine_kind WHEN '세탁기' THEN ${WASHER_MINUTES}::int
+                                      ELSE ${DRYER_MINUTES}::int END * interval '1 minute'),
+             e.pickup_deadline_at,
+             '경고',
+             e.queue_id
+        FROM expired e
+      RETURNING history_id, machine_id
+    )
+    SELECT e.queue_id, e.user_id, l.history_id
+      FROM expired e
+      -- 기기 하나에 줄서기 행은 최대 하나다(queue_machine_once_idx) — 이 배치 안에서
+      -- machine_id 가 곧 행의 키라 이용 내역을 안전하게 되짚을 수 있다.
+      LEFT JOIN logged l ON l.machine_id = e.machine_id
   `;
 
   for (const row of expired) {
-    await sql`
-      UPDATE machines
-         SET status = '사용가능', ends_at = NULL
-       WHERE machine_id = ${row.machine_id}
-         AND status = '사용중'
-    `;
-
-    // ends_at 은 transitionFinishedUsageToPickup() 이 이 값을 근거로 pickup_deadline_at
-    // 을 찍었으므로 이 시점엔 항상 있어야 한다 — 방어적으로만 없을 때를 가른다.
-    const runMinutes = RUN_MINUTES_BY_KIND[row.machine_kind] ?? 0;
-    const startedAt = row.ends_at
-      ? new Date(new Date(row.ends_at).getTime() - runMinutes * 60 * 1000)
-      : new Date(new Date(row.pickup_deadline_at).getTime() - (runMinutes + 3) * 60 * 1000);
-
-    const inserted = await sql<{ history_id: string }>`
-      INSERT INTO usage_history (user_id, machine_id, started_at, ended_at, result)
-      VALUES (${row.user_id}, ${row.machine_id}, ${startedAt.toISOString()}::timestamptz,
-              ${row.pickup_deadline_at}::timestamptz, '경고')
-      RETURNING history_id
-    `;
-
-    // 05 P6 — 이 usage_history 행을 사건 참조로 남긴다. 관리자가 F28에서 같은 행을
-    // 골라 경고를 또 주려 하면 warnings_usage_history_id_idx 가 막는다.
-    await applySystemWarning(row.user_id, '수거 미완료', now, inserted[0]?.history_id);
+    try {
+      // 05 P6 — 줄서기 행(0012)과 이용 내역(0008)을 둘 다 사건 참조로 남긴다.
+      // 관리자가 F28에서 같은 이용 내역을 골라 경고를 또 주려 하면
+      // warnings_usage_history_id_idx 가 막는다.
+      await applySystemWarning(row.user_id, '수거 미완료', now, {
+        queueId: row.queue_id,
+        usageHistoryId: row.history_id ?? undefined,
+      });
+    } catch (error) {
+      console.error('수거 만료 경고 실패', row.user_id, row.queue_id, error);
+    }
   }
 
   return expired.length;
