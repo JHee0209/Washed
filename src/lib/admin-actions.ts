@@ -501,7 +501,17 @@ const RESTRICT_DAYS = 3;
  * 호출부에서 예외가 그대로 던져져 이 함수 자체가 불리지 않는다 — 경고 자체가
  * 안 쌓였는데 제한 횟수만 오르거나 중복 알림이 가는 일이 없다.
  */
-async function applyWarningSideEffects(userId: string, reasonText: string): Promise<void> {
+async function applyWarningSideEffects(
+  userId: string,
+  reasonText: string,
+  /**
+   * Issue #65 — 방금 넣은 경고의 `warnings.issued_at`. 관리자 화면(F25) · 이용기록(F13)이
+   * 그 값을 그대로 보여주므로 알림함도 같은 값을 써야 한 사건이 세 화면에서 같은 시각으로
+   * 보인다. 이 함수의 INSERT · SELECT 가 경고 INSERT 와 별개의 문장이라(neon-http)
+   * 여기서 now() 를 다시 부르면 알림함만 늦은 시각을 보게 된다.
+   */
+  issuedAt: string,
+): Promise<void> {
   // 누적을 올리고, 3회가 되면 그 자리에서 3일 제한을 건다 (P7)
   await sql`
     INSERT INTO usage_restrictions (user_id, warning_count, restricted_from, restricted_until)
@@ -542,6 +552,7 @@ async function applyWarningSideEffects(userId: string, reasonText: string): Prom
       daysLeft
         ? `${reasonText} — 경고 ${WARNING_LIMIT}회가 되어 ${daysLeft}일 동안 줄서기를 할 수 없어요.`
         : `${reasonText} — 경고 ${WARNING_LIMIT}회가 되면 ${RESTRICT_DAYS}일 동안 줄서기를 할 수 없어요.`,
+      { receivedAt: issuedAt },
     );
   } catch (error) {
     console.error('경고 알림 생성 실패', userId, error);
@@ -645,12 +656,15 @@ export async function adminUserIncidents(userId: string): Promise<WarningInciden
  * INSERT 를 23505 로 거부한다 — 여기서 잡아 사람이 읽을 메시지로 바꾼다.
  * **이 INSERT 가 실패하면 호출부가 그 자리에서 끝난다** — usage_restrictions 증가도
  * notify() 도 뒤에 있어 실행되지 않는다.
+ *
+ * @returns DB 가 채운 `warnings.issued_at` — 05 P16 · Issue #65 의 "실제로 경고를 받은
+ *   시각"이다. 알림함이 이 값을 그대로 쓰도록 applyWarningSideEffects() 로 넘긴다.
  */
 async function insertAdminWarning(
   userId: string,
   reason: string,
   incident: WarningIncidentRef | null,
-): Promise<void> {
+): Promise<string> {
   let usageHistoryId: string | null = null;
   let incidentQueueId: string | null = null;
 
@@ -687,10 +701,13 @@ async function insertAdminWarning(
   }
 
   try {
-    await sql`
+    const [inserted] = await sql<{ issued_at: string }>`
       INSERT INTO warnings (user_id, reason, issued_by, usage_history_id, incident_queue_id)
       VALUES (${userId}, ${reason}, '관리자', ${usageHistoryId}, ${incidentQueueId})
+      -- ::text 로 받는다 — 드라이버의 JS Date 변환은 마이크로초를 버린다(Issue #65).
+      RETURNING issued_at::text AS issued_at
     `;
+    return inserted.issued_at;
   } catch (error) {
     if (isUniqueViolation(error, 'warnings_usage_history_id_idx', 'warnings_incident_queue_id_idx')) {
       throw new Error('이미 이 사건에 경고가 있어요.');
@@ -726,8 +743,8 @@ export async function issueWarning(
     throw new Error('이 경고는 관련 사건을 선택해야 해요.');
   }
 
-  await insertAdminWarning(userId, reason.trim(), incident);
-  await applyWarningSideEffects(userId, reason.trim());
+  const issuedAt = await insertAdminWarning(userId, reason.trim(), incident);
+  await applyWarningSideEffects(userId, reason.trim(), issuedAt);
 }
 
 /**
@@ -745,8 +762,8 @@ export async function issueUsageIncidentWarning(userId: string, usageHistoryId: 
   await requireAdmin();
   if (!usageHistoryId) throw new Error('연결할 이용 내역을 선택해주세요.');
 
-  await insertAdminWarning(userId, '신고 확인', { kind: 'usage', id: usageHistoryId });
-  await applyWarningSideEffects(userId, '신고 확인');
+  const issuedAt = await insertAdminWarning(userId, '신고 확인', { kind: 'usage', id: usageHistoryId });
+  await applyWarningSideEffects(userId, '신고 확인', issuedAt);
 }
 
 /**

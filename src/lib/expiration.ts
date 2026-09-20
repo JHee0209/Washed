@@ -123,14 +123,14 @@ async function applySystemWarning(
   const nowIso = now.toISOString();
 
   // try 밖에서 선언한다 — 아래 notify() 가 이 값을 쓰므로 try 안으로 줄일 수 없다.
-  let applied: { days_left: number | null }[];
+  let applied: { days_left: number | null; issued_at: string }[];
   try {
-    applied = await sql<{ days_left: number | null }>`
+    applied = await sql<{ days_left: number | null; issued_at: string }>`
       WITH warned AS (
         INSERT INTO warnings (user_id, reason, issued_by, usage_history_id, incident_queue_id)
         VALUES (${userId}, ${reason}, '시스템 자동',
                 ${incident.usageHistoryId ?? null}, ${incident.queueId})
-        RETURNING user_id
+        RETURNING user_id, issued_at
       ),
       counted AS (
         INSERT INTO usage_restrictions (user_id, warning_count, restricted_from, restricted_until)
@@ -153,8 +153,19 @@ async function applySystemWarning(
       )
       SELECT CASE WHEN restricted_until IS NULL OR restricted_until <= ${nowIso}::timestamptz THEN NULL
                   ELSE CEIL(EXTRACT(EPOCH FROM (restricted_until - ${nowIso}::timestamptz)) / 86400)::int
-             END AS days_left
+             END AS days_left,
+             -- Issue #65 — 알림함이 보여줄 「받은 시각」. 데이터 수정 CTE 는 몇 번을
+             -- 참조해도 **한 번만** 실행되므로(counted 가 이미 warned 를 읽는다) 여기
+             -- 한 줄이 경고 INSERT 를 더 만들지 않는다. 경고 한 건에 warned · counted
+             -- 모두 한 행이라 CROSS JOIN 도 한 행이다.
+             --
+             -- 끝의 ::text 가 핵심이다. 이 저장소의 드라이버는 timestamptz(OID 1184)를
+             -- pg-types 의 parseDate 로 **JS Date 에 담아** 주는데, Date 는 밀리초까지만
+             -- 표현해 마이크로초가 잘린다 — 그대로 알림에 넣으면 알림함 시각이 경고
+             -- 시각보다 미세하게 **앞선다**(실측 -621µs). 문자열로 받아 그대로 돌려보낸다.
+             w.issued_at::text AS issued_at
         FROM counted
+        CROSS JOIN warned w
     `;
   } catch (error) {
     // 05 P6 — 이 사건엔 이미 경고가 있다(자동이든 관리자든). 두 번 벌주지 않는 것이
@@ -166,6 +177,8 @@ async function applySystemWarning(
   }
 
   const daysLeft = applied[0]?.days_left ?? null;
+  // Issue #65 — 관리자 화면 · 이용기록이 보여주는 값과 **같은** issued_at 을 알림함에 넘긴다.
+  const issuedAt = applied[0]?.issued_at;
 
   try {
     await notify(
@@ -175,6 +188,7 @@ async function applySystemWarning(
       daysLeft
         ? `${SYSTEM_WARNING_DESCRIPTION[reason]} — 경고 ${WARNING_LIMIT}회가 되어 ${daysLeft}일 동안 줄서기를 할 수 없어요.`
         : `${SYSTEM_WARNING_DESCRIPTION[reason]} — 경고 ${WARNING_LIMIT}회가 되면 ${RESTRICT_DAYS}일 동안 줄서기를 할 수 없어요.`,
+      { receivedAt: issuedAt },
     );
   } catch (error) {
     console.error('시스템 경고 알림 생성 실패', userId, reason, error);
