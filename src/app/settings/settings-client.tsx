@@ -4,7 +4,14 @@ import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { signOut } from 'next-auth/react';
 import { useUnreadCount } from '@/lib/use-unread-count';
-import { enablePush, permissionServerSnapshot, permissionSnapshot, subscribePushState } from '@/lib/push-client';
+import {
+  disablePush,
+  enablePush,
+  getCurrentSubscription,
+  permissionServerSnapshot,
+  permissionSnapshot,
+  subscribePushState,
+} from '@/lib/push-client';
 import { useRouter } from 'next/navigation';
 import {
   ALLOWED_EVIDENCE_MIME,
@@ -34,7 +41,7 @@ const FAQ_KO = [
     { id: 'q8', question: '경고는 사라지나요?', answer: '· 매달 1일에 0회로 초기화됩니다.\n  다만, 이미 시작된 3일 이용 제한은 초기화와 관계없이 기간을 모두 채워야 해제됩니다.\n· 경고 내역은 기록 화면에서 언제든 확인할 수 있습니다.' },
   ]},
   { title: '계정 · 알림', items: [
-    { id: 'q9', question: '알림이 오지 않아요', answer: '· 먼저 휴대폰 설정에서 Washed의 알림 권한이 켜져 있는지 확인해 주세요.\n· 권한이 켜져 있다면 앱의 설정 > 알림 > "차례 10분 전 알림" 및 "이용 가능 알림"이 모두 켜져 있는지 확인해 주세요.\n· 방해 금지 모드나 절전 모드가 켜져 있으면 알림이 늦게 도착할 수 있습니다.' },
+    { id: 'q9', question: '알림이 오지 않아요', answer: '· 먼저 휴대폰 설정에서 Washed의 알림 권한이 켜져 있는지 확인해 주세요.\n· 권한이 켜져 있다면 앱의 설정 > 알림이 켜져 있는지 확인해 주세요.\n· 방해 금지 모드나 절전 모드가 켜져 있으면 알림이 늦게 도착할 수 있습니다.' },
   ]},
 ];
 
@@ -51,8 +58,6 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
   // washed_unread 를 읽었는데, 알림함을 열어 보기 전에는 값이 없었다.
   const unreadCount = useUnreadCount();
   const hasUnread = unreadCount > 0;
-  const [tenMin, setTenMin] = useState(true);
-  const [ready, setReady] = useState(true);
 
   const [reportReason, setReportReason] = useState<string | null>(null);
   const [etcText, setEtcText] = useState('');
@@ -88,29 +93,68 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
     ja: { label: '日本語', icon: 'https://flagcdn.com/w40/jp.png' }
   };
 
-  // 05 P26 — 폰 알림 허용은 **운영체제 단위**다. 앱이 켤 수는 있어도(요청) 끌 수는
-  // 없다 — granted 를 default 로 되돌리는 방법이 브라우저에 없기 때문이다. 그래서
-  // 이 자리는 토글이 아니라 **상태 + 켜기**다. 거절한 사람이 다시 켜는 자리이기도
-  // 하다("거절하면 설정에 「알림이 꺼져 있어요」 줄").
+  // 05 P26 — 폰 알림 허용(Notification.permission)은 브라우저가 쥔 **운영체제
+  // 단위** 값이라 코드로 되돌릴 수 없다. denied 안내 문구에만 쓰고, ON/OFF
+  // 표시 자체는 permission 이 아니라 **실제 PushSubscription 존재 여부**로
+  // 판정한다(Issue #68) — 권한이 granted 여도 Washed 구독은 꺼져 있을 수 있다.
   const pushPermission = useSyncExternalStore(
     subscribePushState,
     permissionSnapshot,
     permissionServerSnapshot,
   );
+  const [pushOn, setPushOn] = useState(false);
+  const [pushChecked, setPushChecked] = useState(false);
   const [pushPending, setPushPending] = useState(false);
+
+  // 새로고침·첫 진입 시 실제 구독을 다시 확인한다 — permission 만 보고 켜진
+  // 것처럼 그리면 안 된다. 확인이 끝나기 전에는 "확인 중…" 으로만 보여준다.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const subscription = await getCurrentSubscription();
+      if (!cancelled) {
+        setPushOn(!!subscription);
+        setPushChecked(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const turnOnPush = async () => {
     if (pushPending) return;
     setPushPending(true);
     try {
-      // enablePush 는 서버에 구독을 저장하지 못하면 던진다 — 권한만 켜지고
-      // 알림은 오지 않는 상태를 성공이라고 말하지 않기 위해서다.
+      // enablePush 는 이미 permission 이 default 인 경우(요청)와 granted 인데
+      // 구독만 없는 경우(재구독) 를 모두 처리한다 — 여기서 따로 가르지 않는다.
+      // 서버에 구독을 저장하지 못하면 던진다 — 권한만 켜지고 알림은 오지 않는
+      // 상태를 성공이라고 말하지 않기 위해서다.
       const result = await enablePush();
-      if (result === 'granted') showToast('폰 알림을 켰어요.');
-      else showToast('브라우저에서 알림이 허용되지 않았어요.');
+      // 실제 구독 존재 여부로 다시 확인한 뒤에만 ON 으로 바꾼다(낙관적 갱신 금지).
+      const subscription = await getCurrentSubscription();
+      setPushOn(!!subscription);
+      if (subscription) showToast('알림을 켰어요.');
+      else if (result === 'denied') showToast('브라우저에서 알림이 허용되지 않았어요.');
+      else showToast('알림을 켜지 못했어요. 잠시 뒤 다시 시도해주세요.');
     } catch {
       showToast('알림을 켜지 못했어요. 잠시 뒤 다시 시도해주세요.');
     } finally {
+      setPushPending(false);
+    }
+  };
+
+  const turnOffPush = async () => {
+    if (pushPending) return;
+    setPushPending(true);
+    try {
+      await disablePush();
+    } finally {
+      // disablePush() 는 항상 실제 상태 기준으로 다시 확인하게 한다(낙관적
+      // 갱신 금지) — 브라우저 unsubscribe 가 실패했으면 그대로 ON 으로 남는다.
+      const subscription = await getCurrentSubscription();
+      setPushOn(!!subscription);
+      showToast(subscription ? '알림을 끄지 못했어요. 다시 시도해주세요.' : '알림을 껐어요.');
       setPushPending(false);
     }
   };
@@ -308,69 +352,75 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
               <div className="ghead">알림</div>
 
               {/*
-                폰 알림 허용 (05 P26 · F40 · F41).
-                아래 두 토글(P13)과 **다른 것**이다 — 이쪽은 운영체제 단위 허용이라
-                켜지 않으면 공지 · 경고 · 신고 결과까지 폰으로 오지 않는다.
-              */}
-              <div className="group" style={{ marginBottom: '10px' }}>
-                <div className="cell">
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {/*
-                      브라우저 권한(granted)과 서버에 구독이 저장돼 있는지는 **다른**
-                      상태다 — 권한은 켜져 있어도 구독이 지워졌을 수 있다(푸시가
-                      404 · 410 으로 돌아오면 서버가 지운다). 여기서는 구독 상태를
-                      따로 조회하지 않으므로 **권한만 말한다.**
-                      (구독은 홈 진입 때 syncPushSubscription 이 다시 맞춘다.)
-                    */}
-                    <div className="ctitle">
-                      {pushPermission === 'granted' ? '폰 알림 권한이 켜져 있어요' : '알림이 꺼져 있어요'}
-                    </div>
-                    <div className="cdesc">
-                      {pushPermission === 'granted'
-                        ? '배정 · 종료 · 공지 알림을 폰으로 받을 수 있어요.'
-                        : pushPermission === 'denied'
-                          ? '브라우저가 알림을 차단했어요. 브라우저나 폰의 사이트 설정에서 직접 허용해주세요.'
-                          : pushPermission === 'unsupported'
-                            ? '이 브라우저는 폰 알림을 지원하지 않아요.'
-                            : '켜면 앱을 닫아 두어도 차례와 종료를 알려드려요.'}
-                    </div>
-                  </div>
-                  {pushPermission === 'default' && (
-                    <button
-                      type="button"
-                      onClick={turnOnPush}
-                      disabled={pushPending}
-                      style={{ border: 'none', cursor: pushPending ? 'default' : 'pointer', color: '#fff', background: pushPending ? '#A8BCD9' : '#4C86D8', borderRadius: '999px', padding: '8px 14px', fontSize: '12.5px', fontWeight: 700, flexShrink: 0 }}
-                    >
-                      {pushPending ? '켜는 중…' : '켜기'}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/*
-                05 P13 · F19 — 종류별 알림 설정은 **v2** 다. 06 「저장하지 않는 것」이
-                "알림 수신 설정 … 지금은 항상 켜짐으로 본다" 로 저장 칸을 만들지 않았고,
-                08 · 112줄이 "사용자 설정 테이블로" 를 남은 일로 적어 두었다.
-                그래서 여기 토글은 아직 화면 상태일 뿐이며, **위의 폰 알림 허용과
-                연결하지 않는다** — 종류 하나를 끈다고 전체 푸시가 꺼지면 공지 · 경고 ·
-                신고 결과까지 함께 끊긴다.
+                Issue #68 — 세부 토글("차례 10분 전 알림" · "이용 가능 알림")을
+                걷어내고, 실제 PushSubscription 존재 여부를 기준으로 한 단일
+                ON/OFF 로 단순화했다(05 P26). 브라우저 권한(permission) 자체는
+                코드로 끌 수 없지만, Washed 구독은 여기서 실제로 켜고 끈다
+                (enablePush · disablePush) — ON 판정은 permission 이 아니라
+                getCurrentSubscription() 의 실제 결과를 따른다.
               */}
               <div className="group">
-                {[
-                  { label: '차례 10분 전 알림', desc: '내 차례가 다가오면 미리 알려드려요 (준비 중)', on: tenMin, toggle: () => setTenMin(!tenMin) },
-                  { label: '이용 가능 알림', desc: '기기를 바로 이용할 수 있을 때 알려드려요 (준비 중)', on: ready, toggle: () => setReady(!ready) }
-                ].map((n, idx) => (
-                  <div key={idx} className="cell">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="ctitle">{n.label}</div>
-                      <div className="cdesc">{n.desc}</div>
+                <div className="cell">
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div className="ctitle">
+                      {!pushChecked
+                        ? '알림 상태 확인 중…'
+                        : pushPermission === 'unsupported'
+                          ? '이 브라우저는 알림을 지원하지 않아요'
+                          : pushOn
+                            ? '알림이 켜져 있어요'
+                            : '알림이 꺼져 있어요'}
                     </div>
-                    <div onClick={n.toggle} style={{ width: '40px', height: '24px', borderRadius: '999px', background: n.on ? '#5B93E0' : '#DFE7F1', position: 'relative', cursor: 'pointer', flexShrink: 0, transition: 'background .22s ease' }}>
-                      <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#fff', position: 'absolute', top: '2px', left: n.on ? '18px' : '2px', boxShadow: '0 1px 3px rgba(20,42,84,.22)', transition: 'left .22s ease' }}></div>
+                    <div className="cdesc">
+                      {!pushChecked
+                        ? ''
+                        : pushPermission === 'unsupported'
+                          ? '이 브라우저는 폰 알림을 지원하지 않아요.'
+                          : pushPermission === 'denied'
+                            ? '브라우저에서 알림이 차단되어 있습니다. 사이트 설정에서 알림 권한을 허용해주세요.'
+                            : pushOn
+                              ? '배정 · 종료 · 공지 알림을 폰으로 받을 수 있어요.'
+                              : '켜면 앱을 닫아 두어도 차례와 종료를 알려드려요.'}
                     </div>
                   </div>
-                ))}
+                  {/*
+                    알림 영역은 상태와 무관하게 항상 토글 하나로 보여준다 — denied ·
+                    unsupported · 확인 중에는 **숨기지 않고 disabled 로만** 막는다.
+                    denied 는 코드로 권한을 되돌릴 수 없으므로 토글을 눌러도 아무
+                    요청도 반복하지 않는다(사이트 설정에서 직접 허용해야 한다).
+                    ON/OFF 판단은 이 상태들에서도 permission 이 아니라 실제
+                    PushSubscription(pushOn) 기준을 유지한다.
+                  */}
+                  {(() => {
+                    const disabled =
+                      !pushChecked ||
+                      pushPending ||
+                      pushPermission === 'denied' ||
+                      pushPermission === 'unsupported';
+                    // denied 상태는 실제 subscription 이 남아 있더라도 항상 OFF 로
+                    // 보여준다(요청하신 고정 규칙) — 브라우저가 이미 알림을 막았으므로
+                    // 어차피 전달되지 않는다.
+                    const toggleOn = pushPermission === 'denied' ? false : pushOn;
+                    return (
+                      <div
+                        onClick={disabled ? undefined : toggleOn ? turnOffPush : turnOnPush}
+                        style={{
+                          width: '40px',
+                          height: '24px',
+                          borderRadius: '999px',
+                          background: toggleOn ? '#5B93E0' : '#DFE7F1',
+                          position: 'relative',
+                          cursor: disabled ? 'default' : 'pointer',
+                          flexShrink: 0,
+                          opacity: disabled ? 0.6 : 1,
+                          transition: 'background .22s ease',
+                        }}
+                      >
+                        <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#fff', position: 'absolute', top: '2px', left: toggleOn ? '18px' : '2px', boxShadow: '0 1px 3px rgba(20,42,84,.22)', transition: 'left .22s ease' }}></div>
+                      </div>
+                    );
+                  })()}
+                </div>
               </div>
             </div>
 
