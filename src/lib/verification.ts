@@ -5,7 +5,7 @@
 // 지켜야 하는 것 넷
 //   1. 코드는 서버가 만들고 서버만 안다 — 어떤 응답에도 넣지 않는다.
 //   2. 저장은 해시로 한다 — DB 가 새어도 코드가 그대로 나가지 않는다.
-//   3. 유효 시간 안에만 맞는다 — 재설정 5분(P22) · 가입 3분(프로토타입 값 · [?]).
+//   3. 유효 시간 안에만 맞는다 — 가입 · 재설정 모두 5분(P11 · P22).
 //   4. 틀린 횟수를 세고 5회를 넘기면 그 코드를 죽인다.
 //
 // 인증을 마치면 **일회용 표**(ticket)를 발급해 화면에 준다. 가입 폼 제출(F15)과
@@ -21,10 +21,14 @@ import { hash, verify } from '@/lib/hash';
 
 export type Purpose = '회원가입' | '비밀번호 재설정';
 
-/** 유효 시간(분). 재설정 5분은 05 P22 에 있는 값이다. */
+/**
+ * 유효 시간(분). 두 용도가 같은 값을 쓴다 — 05 P11 · P22 (팀 확정 2026-09-20).
+ *
+ * 가입은 프로토타입(회원가입.dc.html)의 3분을 쓰고 있었으나, 정책에 있던 재설정 5분에
+ * 맞춰 통일했다. 화면 안내와 메일 본문의 "N분"도 이 상수에서 나오므로 여기만 고치면 된다.
+ */
 export const EXPIRY_MINUTES: Record<Purpose, number> = {
-  // [?] 가입 3분은 프로토타입(회원가입.dc.html)의 값이고 05 에는 아직 없다 — 팀 확인 필요
-  회원가입: 3,
+  회원가입: 5,
   '비밀번호 재설정': 5,
 };
 
@@ -63,7 +67,7 @@ export async function issueCode(email: string, purpose: Purpose): Promise<IssueR
   // 살아 있는 줄만 본다. 메일 발송이 실패해 invalidateCode() 로 죽인 줄이
   // 다음 재발송을 60초 막는 것을 피하려는 것이다.
   //
-  // 정상 만료된 줄이 함께 빠지는 것은 무해하다 — 만료(가입 3분 · 재설정 5분)가
+  // 정상 만료된 줄이 함께 빠지는 것은 무해하다 — 만료(둘 다 5분)가
   // 쿨다운 60초보다 길어, 만료된 줄은 이미 쿨다운을 지난 뒤다.
   const recent = await sql<{ seconds_ago: number }>`
     SELECT EXTRACT(EPOCH FROM (now() - created_at))::int AS seconds_ago
@@ -201,7 +205,7 @@ export async function consumeTicket(
   if (!row || !row.verified_at || !row.ticket_hash || row.consumed_at) return false;
 
   // 인증을 마친 뒤 표를 쓸 수 있는 시간. 코드 유효 시간과 별개로 10분을 준다 —
-  // 가입 폼(성별 · 소속 · 학번 · 호실 · 약관)을 채우는 데 3분은 너무 짧다.
+  // 가입 폼(성별 · 소속 · 학번 · 호실 · 약관)을 채우는 데 5분은 너무 짧다.
   const verifiedAt = new Date(row.verified_at).getTime();
   if (Date.now() - verifiedAt > 10 * 60 * 1000) return false;
 

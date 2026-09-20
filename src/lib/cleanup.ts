@@ -206,7 +206,7 @@ export async function deleteExpiredNotifications(now: Date = new Date()): Promis
  *
  * ── 왜 expires_at 만 보고 지우지 않는가
  * ① 인증을 마친 줄은 expires_at 이 지난 뒤에도 **10분 동안 일회용 표를 받는다**
- *    (verification.ts 의 consumeTicket). 코드 유효 시간은 3분인데 가입 폼을 채우는 데
+ *    (verification.ts 의 consumeTicket). 코드 유효 시간은 5분인데 가입 폼을 채우는 데
  *    그보다 오래 걸리기 때문이다. 그 창에 배치가 걸리면 가입이 통째로 깨진다.
  * ② invalidateCode() 는 「최신 줄을 지우면 직전 코드가 되살아난다」는 이유로 줄을
  *    지우지 않고 만료시각만 당겨 둔다.
