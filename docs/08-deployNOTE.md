@@ -150,12 +150,81 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://<배포주소>/api/cron/exp
 
 > **legacy 데이터** — 0013 이전에 생긴 `usage_history` 행은 `source_queue_id` 가 `NULL` 이다. 그 행들이 가리키던 queue 행은 이미 사라져 **소급해서 채울 근거가 없어 추정하지 않았다.** 이 행들은 예전처럼 `warnings.usage_history_id`(0008)의 부분 UNIQUE 로만 보호되고, 관리자 화면의 「이미 경고 있음」 표시도 그 칸을 fallback 으로 함께 본다. 신규 데이터는 전부 canonical 키를 갖는다.
 
-**스케줄 등록은 아직 하지 않았다.** `vercel.json` 은 이번 작업에서 건드리지 않았다(팀 확정) — 10분 · 3분 마감을 지키려면 분 단위 호출이 필요한데, **Vercel Hobby 요금제는 Cron 이 하루 1회로 제한된다.** 배포 시 둘 중 하나를 고른다.
+### 주기 실행 배선 — 외부 cron 서비스 1분 주기 (2026-09-20 · 팀 확정 · Issue #66)
 
-1. **Vercel Pro** — `vercel.json` 의 `crons` 에 `{ "path": "/api/cron/expiration", "schedule": "* * * * *" }` 를 더한다. Vercel 이 `CRON_SECRET` 헤더를 붙여 부른다.
-2. **외부 스케줄러** — GitHub Actions · cron-job.org 등에서 위 `curl` 을 1분마다 돌린다. 라우트 쪽은 그대로다.
+Issue #8 은 라우트까지만 만들고 **스케줄 등록을 열어 두었다.** 그 결과 배정 10분 만료와 수거 3분 초과가 어떤 상시 경로에도 없어, 줄서기 요청(`POST /api/queue/[kind]`)과 하루 1회 배치에만 기댔다 — 홈의 5초 스윕은 `transitionUsageToPickup()` 하나만 부른다(`/api/queue/sweep` · #35). 만료된 배정이 홈 「현재 상태」에 계속 남아 보이던 것이 그 결과다(#66).
 
-어느 쪽도 하지 않으면 만료는 지금까지처럼 줄서기 요청과 하루 1회 배치에만 기댄다.
+**팀 확정: 외부 cron 서비스에서 1분 주기로 부른다.**
+
+| 항목 | 값 |
+|---|---|
+| URL | `https://<배포주소>/api/cron/expiration` |
+| 메서드 | `GET` |
+| 헤더 | `Authorization: Bearer <CRON_SECRET>` |
+| 주기 | **1분** (`* * * * *`) |
+| 실패 알림 | **켠다** |
+
+**왜 1분인가.** 수거 마감이 3분이라 그보다 성기게 돌면 마감이 사실상 늘어난다 — 5분 주기면 3분 마감이 3~8분이 된다. 배정 10분은 1분 주기면 충분히 지켜진다.
+
+**왜 `vercel.json` 이 아닌가.** **Vercel Hobby 요금제는 Cron 이 하루 1회이고 실행 시각도 시간 단위로만 맞는다.** 그리고 하루 1회 경로는 이미 있다 — `runDailyCleanup()` 이 같은 `runExpirationSweep()` 을 부르므로(`cleanup.ts`), Hobby 에서 `/api/cron/expiration` 을 `crons` 에 더해도 얻는 것이 없다. 그래서 `vercel.json` 은 `cleanup` 전용으로 둔다. 나중에 Pro 로 올리면 `{ "path": "/api/cron/expiration", "schedule": "* * * * *" }` 를 더하고 외부 서비스를 끄면 된다 — 라우트는 그대로다.
+
+**`CRON_SECRET` 은 두 곳에 같은 값으로 있어야 한다** — Vercel 환경변수(서버가 검사하는 쪽)와 외부 cron 서비스의 요청 헤더(부르는 쪽). 한쪽만 있으면 매 호출이 401 이고 만료는 전혀 돌지 않는다. 값은 저장소에 넣지 않는다.
+
+**실패 알림을 반드시 켠다.** 외부 서비스가 멈추면 만료도 조용히 멈추고, 아무도 알아채지 못한 채 경고만 밀린다. 라우트는 한 단계라도 실패하면 500 을 돌려주므로(200 으로 덮지 않는다) 서비스 쪽 실패 알림이 실제로 동작한다.
+
+> **배포 전 확인 항목** — 아래 둘이 끝나기 전에는 코드가 merge 되어도 만료는 돌지 않는다. **코드 merge 와 실제 동작 시작은 별개다.**
+> - [ ] Vercel 환경변수에 `CRON_SECRET` 추가 (Production · Preview) — **담당자가 직접 수행하는 수동 설정**이다
+> - [ ] 외부 cron 서비스에 위 표대로 등록 + 첫 실행이 200 인지 확인
+>
+> **운영 중 지켜볼 것** — 1분 주기 호출은 Neon 의 idle autosuspend 를 사실상 무력화해 DB 가 하루 종일 깨어 있게 된다. 무료 요금제의 compute 시간과 Vercel 함수 호출량(약 43,200 회/월)을 배포 후 며칠 확인하고, 한도를 넘으면 주기를 3분으로 늘리거나 심야 시간대를 빼는 것을 검토한다.
+
+### 실행 검증 (2026-09-20 · Issue #66)
+
+**preview/dev 를 부모로 만든 Neon test branch 사본**에서 실제로 돌려 확인했다. 테스트 서버는 테스트용 env 파일을 process environment 로 직접 주입해 전용 포트(3066)로 띄웠다. **preview/dev 에는 기존 상태 확인을 위한 read-only 조회만 수행했으며 write 는 없었다. 실제 상태 변경 검증은 Neon test branch 에서만 수행했다. Production 에는 write 하지 않았다.** 모든 검증 스크립트는 트랜잭션 첫 쿼리에서 `current_setting('neon.branch_id', true)` 가 test branch 인지 확인하고, 아니면 그 자리에서 롤백하도록 만들었다.
+
+**cron 인증 게이트** — 헤더 없음 `401` · 잘못된 토큰 `401` · 올바른 `CRON_SECRET` `200`. 401 인 두 요청에서는 `runExpirationSweep()` 이 불리지 않아 DB 가 전혀 바뀌지 않았다(fail-closed).
+
+#### 라운드 1 — 배정 10분 만료
+
+`expiredAssignments = 2` (테스트 계정 1건 + 사본에 복제돼 있던 기존 만료 배정 1건).
+
+- 만료된 줄서기 행이 사라지고, `배정 후 미인증` 경고가 `issued_by = '시스템 자동'` 으로 1건 남았다. `incident_queue_id` 가 그 줄서기 행을 가리키고, 누적은 `warning_count = 1` · 이용 제한 없음이다.
+- 풀린 기기에 다음 대기자가 FIFO 로 들어갔다 — `대기 중 → 배정`, `assignedNext = 1`, `assign_deadline_at = assigned_at + 10분`(서버 시각 기준), 배정 알림 1건.
+- `사용중` 인데 가리키는 줄이 없는 **고아 기기 0건**.
+- **같은 호출을 한 번 더** 했을 때 `expiredAssignments = 0` · `assignedNext = 0` 이고 경고 · 배정이 늘지 않았다. `DELETE ... RETURNING` 과 `warnings_incident_queue_id_idx` 가 함께 지키는 성질이 실제로 확인됐다.
+
+#### 라운드 2 — 사용 종료 → 수거대기 (중간 상태)
+
+`ends_at` 을 10초만 과거로 내린 직후 스케줄러를 불러, **한 회차에서 수거 만료까지 넘어가지 않는 상태**로 관찰했다. 홈은 닫아 두었다 — 열려 있으면 홈의 5초 `POST /api/queue/sweep` 이 같은 `transitionUsageToPickup()` 을 먼저 불러 스케줄러가 전환했는지 가릴 수 없기 때문이다.
+
+- 스케줄러 응답 `startedPickupWaits = 1`.
+- `queue.status = '수거대기'`, `pickup_deadline_at = ends_at + 3분`.
+- **기기는 `사용중` 을 유지한다** — 기기에는 수거대기 상태가 없고 수거를 기다리는 동안도 점유돼 있다(위 표 2번 참고). 설계대로다.
+- 이 시점에 `수거 미완료` 경고 **0건**, `usage_history` **0행**. 두 기록은 라운드 3 의 강제 종료에서 처음 생긴다.
+- 홈에서는 **DB 의 `수거대기` 상태가 `0:00 남음` · 「시간이 끝났어요」 안내 · 「다했어요」 버튼으로 표현되고, 현재 상태에서 제거되지 않는 것**을 확인했다. 화면에 `수거대기` 라는 문자열 자체는 나오지 않는다.
+- **[?] 「새로고침 없이 사용중 → 수거대기 UI 전환」은 미검증으로 남는다** — 관찰자가 중간에 새로고침해 전환 순간을 보지 못했다. 같은 성질(폴링이 서버 변화를 반영하는가)은 라운드 3 에서 확인했다.
+
+#### 라운드 3 — 수거 만료 → 최종 종료
+
+홈을 **열어 둔 채** 스케줄러를 1회 불렀다. 홈의 스윕은 `transitionUsageToPickup()` 하나만 부르므로 수거 만료를 할 수 없다 — 따라서 아래 화면 변화는 전부 스케줄러가 만든 서버 상태를 폴링이 반영한 것이다.
+
+- `expiredPickups = 1`, 줄서기 행 삭제.
+- `수거 미완료` 경고 1건 — `issued_by = '시스템 자동'`, `incident_queue_id` · `usage_history_id` 둘 다 연결됨, `warning_count = 1`, 이용 제한 없음.
+- `usage_history` 1행 — `result = '경고'`, `source_queue_id` 가 그 줄서기 행, 기기 연결됨, **`ended_at` 이 스윕이 실제로 돈 시각이 아니라 `pickup_deadline_at`** 이고 `ended_at - started_at = 63분`(세탁기 60분 + 수거 3분)이다. 스윕이 19분 늦게 돌았는데도 기록은 정책 시점으로 남았다.
+- 기기가 `사용가능` · `ends_at = NULL` 로 돌아왔고 고아 기기 0건.
+- **새로고침 없이** 홈의 현재 상태 카드가 사라지고 기기 목록이 `사용가능` 으로 바뀌었으며 알림 종의 안 읽은 표시가 늘었다.
+
+#### 외부 발송 차단
+
+스윕은 경고 · 배정 · 종료 알림마다 `notify()` 를 부르고, 그 안의 `sendPushToUser()` 가 **실제 FCM · Apple 푸시 서버로 HTTPS 요청을 보낸다.** 사본에 복제된 구독의 `endpoint` 는 진짜 주소라(검증 당일에도 발송 성공 기록이 있었다) 사본이라는 사실이 발송을 막아 주지 않는다. 그래서 두 겹으로 막고 검증했다.
+
+- 테스트용 env 파일에서 `NEXT_PUBLIC_VAPID_PUBLIC_KEY` · `VAPID_PRIVATE_KEY` · `VAPID_SUBJECT` 를 **빈 값**으로 두었다 — `push.ts` 의 `configured()` 가 `false` 를 돌려주고 발송을 건너뛴다. `MAIL_MODE=console` 도 함께 두었다(스윕 경로에 메일은 없다).
+- test branch 사본의 `push_subscriptions` 4행을 id 를 지목해 지우고 0건을 확인했다. 보낼 주소 자체를 없앴다.
+- 그 결과 경고 · 배정 · 종료 알림이 만들어지는 동안 **외부로 나간 푸시는 없다.** preview/dev 원본의 구독은 그대로다.
+
+#### 정리
+
+테스트 계정 셋(라운드 1 의 둘, 라운드 2·3 의 하나)과 그 줄서기 · 경고 · 누적 · 알림 · 이용 내역을 전부 지웠고, 기기는 12대 모두 `사용가능` · `ends_at = NULL` 로 돌아왔다. 남은 줄서기 0건, `push_subscriptions` 0건, 테스트 표시 사용자 0명. 사본에 복제돼 있던 사용자의 경고 2건은 **손대지 않고 그대로 두었다.** 검증을 마친 뒤 test branch 는 통째로 삭제했다 — 검증용 사본이라 남은 데이터가 없다.
 
 ---
 
@@ -248,7 +317,13 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://<배포주소>/api/cron/exp
 
 `src/lib/cleanup.ts` 의 `runDailyCleanup()` 을 `GET /api/cron/cleanup` 이 부르고, `vercel.json` 의 `crons` 가 그 라우트를 **매일 18:00 UTC(한국 03:00)** 에 부른다. 라우트는 `CRON_SECRET` Bearer 토큰으로 막혀 있다 — **값이 없으면 열리는 것이 아니라 잠긴다**(사람을 지우는 배치다). 키는 `.env.local.example` 에 설명과 함께 있다.
 
-> [?] **2026-09-17 확인: 실제 Vercel 프로젝트의 Production 환경변수에 `CRON_SECRET` 이 없고, Cron Jobs 실행 기록도 확인되지 않았다.** (2026-09-19 · Issue #8 — 만료 스케줄러 라우트도 같은 키를 쓰므로 이 값이 없으면 만료 판정과 경고까지 함께 멈춘다. 이 확인의 중요도가 그만큼 올라갔다.) 코드(라우트 · `vercel.json`)는 맞게 짜여 있지만, 이 상태로는 배치가 정말 실행되고 있다고 볼 수 없다 — 값이 없으면 `authorized()` 가 항상 401 을 돌려주고 `runDailyCleanup()` 자체가 불리지 않는다. 그 결과 `warnings`(1개월) 를 포함한 위 표의 모든 보관 대상이 조회 화면에서만 걸러질 뿐 DB 에서는 계속 쌓일 수 있다. Issue #28 범위 밖이라 이번 작업에서는 `CRON_SECRET` 추가나 Cron 설정을 건드리지 않았다 — **별도 후속 이슈로 처리한다**: Vercel 대시보드에서 `CRON_SECRET` 을 Production 환경변수로 추가하고 Cron Jobs 탭에서 실행 기록(200/401)을 확인하는 작업이 필요하다.
+> [?] **2026-09-17 확인: 실제 Vercel 프로젝트의 Production 환경변수에 `CRON_SECRET` 이 없고, Cron Jobs 실행 기록도 확인되지 않았다.** (2026-09-19 · Issue #8 — 만료 스케줄러 라우트도 같은 키를 쓰므로 이 값이 없으면 만료 판정과 경고까지 함께 멈춘다. 이 확인의 중요도가 그만큼 올라갔다.) 코드(라우트 · `vercel.json`)는 맞게 짜여 있지만, 이 상태로는 배치가 정말 실행되고 있다고 볼 수 없다 — 값이 없으면 `authorized()` 가 항상 401 을 돌려주고 `runDailyCleanup()` 자체가 불리지 않는다. 그 결과 `warnings`(1개월) 를 포함한 위 표의 모든 보관 대상이 조회 화면에서만 걸러질 뿐 DB 에서는 계속 쌓일 수 있다.
+>
+> **2026-09-20 현재도 `CRON_SECRET` 은 추가되지 않았다** (Issue #66). 이 값을 넣는 것은 **만료 스케줄러의 실제 운영을 시작하기 위해 담당자가 직접 수행하는 배포 전 수동 설정**이다 — Vercel 대시보드에서 Production · Preview 환경변수로 추가한다. **Claude 는 이 값을 생성하거나 조회하거나 출력하지 않고, Vercel 에 대신 등록하지도 않는다.**
+>
+> 등록한 뒤 동작 확인은 **외부 cron 서비스의 실행 기록에서 HTTP 200 이 찍히는지**로 한다 (이번 구성은 Vercel Cron 이 아니라 외부 cron 서비스가 `/api/cron/expiration` 을 부른다 — 위 4번 「주기 실행 배선」). 200 이 아니면 Vercel 의 해당 함수 · 요청 로그에서 401(키 불일치 · 미설정) · 500(단계 실패) 을 확인한다. 하루 1회 `cleanup` 은 Vercel Cron 이므로 그쪽은 Cron Jobs 실행 기록을 본다.
+>
+> 실제로 추가된 것을 확인하기 전까지 이 노트를 완료로 바꾸지 않는다.
 
 `runDailyCleanup()` 은 **부르기만 하고**, 단계마다 함수가 따로 있다. 한 단계가 실패해도 나머지는 돈다 — 한 곳이 막혔다고 다른 보관 기간이 조용히 늘어나면 안 된다. 실패한 단계 이름은 응답의 `failed` 에 모여 라우트가 500 으로 알린다.
 
