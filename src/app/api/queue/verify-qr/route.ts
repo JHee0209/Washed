@@ -108,6 +108,16 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     }
+    if (result.reason === 'pickup_pending') {
+      return NextResponse.json(
+        {
+          ok: false,
+          message: '이미 사용이 끝나 수거 대기 중이에요. 세탁물을 수거한 뒤 홈에서 「다했어요」를 눌러주세요.',
+          reason: 'pickup_pending',
+        },
+        { status: 409 },
+      );
+    }
     // 'expired'
     return NextResponse.json(
       { ok: false, message: '인증 가능 시간(10분)이 지났어요.', reason: 'expired' },

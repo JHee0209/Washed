@@ -57,6 +57,12 @@ export async function POST(request: Request) {
       });
     }
 
+    if (result.reason === 'invalid_machine_id') {
+      return NextResponse.json(
+        { ok: false, message: '잘못된 기기 정보예요.', reason: 'invalid_machine_id' },
+        { status: 400 },
+      );
+    }
     if (result.reason === 'not_in_use') {
       return NextResponse.json(
         { ok: false, message: '이용 중인 기기가 아니에요.', reason: 'not_in_use' },
