@@ -66,6 +66,11 @@ export type StartUsageResult =
       ok: false;
       /** 배정은 맞지만 10분(assign_deadline_at)이 지남 — 05 P3 */
       reason: 'expired';
+    }
+  | {
+      ok: false;
+      /** 사용 타이머가 끝나 세탁물을 수거하고 종료해야 하는 상태 — 05 P5 */
+      reason: 'pickup_pending';
     };
 
 /**
@@ -174,8 +179,16 @@ export async function startUsageFromQr({
   }
 
   // 실패 원인을 가려서 알려준다 — 위 판정은 이미 끝났으므로 잠금 없는 조회로 충분하다.
-  const reasonRows = await sql<{ user_id: string; status: string; assign_deadline_at: string | null }>`
-    SELECT user_id, status, assign_deadline_at FROM queue WHERE machine_id = ${machineId}
+  const reasonRows = await sql<{
+    user_id: string;
+    status: string;
+    assign_deadline_at: string | null;
+    assignment_expired: boolean;
+  }>`
+    SELECT user_id, status, assign_deadline_at,
+           status = '배정' AND assign_deadline_at <= now() AS assignment_expired
+      FROM queue
+     WHERE machine_id = ${machineId}
   `;
   const existing = reasonRows[0];
   if (!existing) {
@@ -194,8 +207,18 @@ export async function startUsageFromQr({
     // 05 P3 · 10번 — 다른 사용자가 다른 사람 배정 QR을 인증할 수 없다.
     return { ok: false, reason: 'other_user' };
   }
-  // 내 배정이 맞는데 실패했다면 남은 경우는 하나뿐이다 — 10분 초과(05 P3).
-  return { ok: false, reason: 'expired' };
+  if (existing.status === '수거대기') {
+    // 이미 사용을 마쳤으므로 QR 재인증이 아니라 세탁물 수거와 정상 종료가 필요하다.
+    return { ok: false, reason: 'pickup_pending' };
+  }
+  if (existing.assignment_expired) {
+    // 실제로 「배정」 상태이고 DB 서버 시각 기준 10분을 넘긴 경우만 만료로 본다.
+    return { ok: false, reason: 'expired' };
+  }
+
+  // 이미 사용중인 내 줄은 위 already_running 에서 성공한다. 그 밖의 예상하지 못한
+  // 상태를 만료로 오인하지 않고 배정 불일치로 안전하게 거부한다.
+  return { ok: false, reason: 'not_assigned' };
 }
 
 // F9 — 사용 타이머 종료 처리 (05 P5 · P13 · P26 · 08 · 4번 · Issue #7 · #12).
@@ -253,6 +276,11 @@ export type FinishUsageResult =
       ok: false;
       /** 내 줄은 맞지만 아직 '배정'(QR 미인증) 상태 */
       reason: 'not_started';
+    }
+  | {
+      ok: false;
+      /** machines.machine_id(uuid)에 맞지 않아 DB 질의 전에 거부됨 */
+      reason: 'invalid_machine_id';
     };
 
 export async function finishUsage({
@@ -262,6 +290,12 @@ export async function finishUsage({
   userId: string;
   machineId: string;
 }): Promise<FinishUsageResult> {
+  // startUsageFromQr()와 같은 uuid 사전 검증이다. 이 함수의 SQL에 잘못된 문자열을
+  // 넘기면 PostgreSQL 22P02가 발생해 사용자 요청 오류가 500으로 보인다(Issue #56).
+  if (!UUID_SHAPE.test(machineId)) {
+    return { ok: false, reason: 'invalid_machine_id' };
+  }
+
   // `removed`(DELETE의 RETURNING)에서만 파생시킨다 — 앞서 조회한 스냅샷에서
   // 파생시키면 중복 클릭이나 관리자의 cancelQueue · setMachineStatus와 겹칠 때
   // 진 쪽이 이미 없어진 기기를 다시 '사용가능'으로 바꾸거나 usage_history를
