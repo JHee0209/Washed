@@ -28,3 +28,11 @@ export function loginAs(userId) {
 export async function auth() {
   return session;
 }
+
+/**
+ * NextAuth 의 `signOut()` 자리 (Issue #84 — user-actions.ts 가 `auth` 와 함께
+ * `signOut` 도 import 해서, 이 모듈이 그 이름을 내보내지 않으면 로드 자체가
+ * 실패한다). requestWithdrawal() 만 부르고, 이번에 추가한 비밀번호 테스트는
+ * 그 함수를 부르지 않으므로 no-op 이면 충분하다.
+ */
+export async function signOut() {}
