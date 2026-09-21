@@ -1,7 +1,7 @@
 // 모듈 해석 훅 — node --test 가 production 모듈을 그대로 부를 수 있게 한다 (Issue #58).
 //
 // ── 원칙: 가로채는 것을 최소로 둔다
-// 판정 로직 · SQL 은 **하나도 치환하지 않는다.** 여기서 바꾸는 것은 네 가지뿐이고,
+// 판정 로직 · SQL 은 **하나도 치환하지 않는다.** 여기서 바꾸는 것은 다섯 가지뿐이고,
 // 전부 "번들러/Next 런타임이 해 주던 배관" 이다.
 //
 //   1. `server-only`  → 빈 모듈.  plain node 에서 throw 하는 표식용 패키지다.
@@ -13,6 +13,10 @@
 //                       package.json 에 exports 맵이 없어 확장자 없는 bare subpath
 //                       (`next/server`)를 node ESM 이 못 찾을 뿐이라, 실제 파일을
 //                       그대로 가리킨다. NextResponse 는 진짜 구현이 돈다.
+//   5. `next/navigation` → node_modules/next/navigation.js.  4번과 **똑같은 사유**의
+//                       bare subpath 다. src/lib/queries.ts 가 redirect() 를 import 해서
+//                       이 항목이 없으면 조회 함수를 테스트에서 부를 수조차 없다
+//                       (Issue #85). 여기서도 stub 이 아니라 실제 파일을 가리킨다.
 //
 // 그 밖의 `@/...` 는 tsconfig 의 paths 와 **같은 규칙**으로 `src/...` 에 매핑한다.
 // 나머지 specifier 는 전부 기본 해석으로 넘긴다 — 그래서 기존 테스트 11개의
@@ -32,6 +36,7 @@ const REDIRECTS = new Map([
   ['@/lib/db', path.join(TEST_DIR, 'db-bridge.mjs')],
   ['@/auth', path.join(TEST_DIR, 'stubs', 'auth.mjs')],
   ['next/server', path.join(REPO_ROOT, 'node_modules', 'next', 'server.js')],
+  ['next/navigation', path.join(REPO_ROOT, 'node_modules', 'next', 'navigation.js')],
 ]);
 
 /** `@/lib/expiration` → `<repo>/src/lib/expiration.ts` (tsconfig paths 와 같은 규칙) */

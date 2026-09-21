@@ -13,6 +13,7 @@ import 'server-only';
 import { redirect } from 'next/navigation';
 
 import { auth } from '@/auth';
+import { PICKUP_GRACE_MINUTES } from '@/lib/assignment-rules';
 import { sql } from '@/lib/db';
 
 export type Me = {
@@ -191,30 +192,51 @@ export async function myQueue(userId: string) {
 }
 
 /**
- * 종류별 예상 대기 (05 P2 · 08 · 2번).
+ * 종류별 예상 대기 (05 P2 · 05 P5 · 08 · 2번).
  *
  * 05 P2 — 「대기자가 없을 때의 예상 대기는 **그 종류에서 가장 먼저 끝나는 기기의
  * 남은 시간**이다」. 프로토타입이 `washed_typequeue.waitLeftMs` 로 화면끼리
  * 넘기던 값이 이것이고, 서버로 옮기면 조회할 때마다 세면 된다(06 「대기 인원 ·
  * 혼잡도 · 예상 대기는 저장하지 않는다」).
  *
- * 돌아가는 기기가 하나도 없으면 `null` 이다 — 언제 빌지 알 수 없다는 뜻이고,
+ * **기준은 「끝나는 시각」이 아니라 「비는 시각」이다** (Issue #85). 타이머가 0 이
+ * 되어도 기기는 바로 넘어가지 않는다 — 05 P5 의 수거 유예 동안 앞사람이 세탁물을
+ * 꺼내고 "다했어요" 를 눌러야 하고, 그 마감을 expiration.ts 가
+ * `pickup_deadline_at = ends_at + PICKUP_GRACE_MINUTES` 로 찍는다. 그래서 여기서도
+ * 같은 상수를 더해 **예상 표시와 실제 상태 전환이 같은 시각을 가리키게** 한다.
+ * (수거대기 중인 기기는 machines.status 가 그대로 '사용중' 이라 아래 MIN 에 남는다 —
+ * 유예를 더하지 않으면 그 3분 내내 "0:00 후 배정" 으로 굳어 버린다.)
+ *
+ * 다만 그 종류에 **지금 바로 쓸 수 있는 기기가 있으면 유예를 붙이지 않는다** — 기다릴
+ * 이유가 이미 없으므로 서버의 지금 시각을 준다(05 P2 의 「빈 기기가 있으면 대기 인원은
+ * 0명」과 같은 뜻이다). 전체 점검 모드(P20)나 배정 스윕 직전처럼 빈 기기가 있는데도
+ * 대기 중일 때가 이에 해당한다.
+ *
+ * 돌아가는 기기도 빈 기기도 하나도 없으면 `null` 이다 — 언제 빌지 알 수 없다는 뜻이고,
  * 화면은 그때 카운트다운을 그리지 않는다. 05 에 없는 숫자를 지어내지 않는다.
  */
 export async function kindWaitEstimates(): Promise<{
   serverNow: string;
   byKind: Record<string, string | null>;
 }> {
-  const rows = await sql<{ kind: string; soonest_ends_at: string | null; server_now: string }>`
+  const rows = await sql<{ kind: string; soonest_free_at: string | null; server_now: string }>`
     SELECT k.kind,
-           (SELECT MIN(m.ends_at) FROM machines m
-             WHERE m.kind = k.kind AND m.status = '사용중' AND m.ends_at IS NOT NULL
-           ) AS soonest_ends_at,
+           CASE
+             -- 지금 바로 쓸 수 있는 기기가 있으면 유예를 더하지 않는다 (05 P2)
+             WHEN EXISTS (SELECT 1 FROM machines m
+                           WHERE m.kind = k.kind AND m.status = '사용가능')
+               THEN now()
+             -- 기기가 비는 시각 = 가장 먼저 끝나는 타이머 + 수거 유예 (05 P5)
+             -- MIN 이 NULL 이면 더해도 NULL 이라 「알 수 없음」이 그대로 남는다.
+             ELSE (SELECT MIN(m.ends_at) FROM machines m
+                    WHERE m.kind = k.kind AND m.status = '사용중' AND m.ends_at IS NOT NULL
+                  ) + (${PICKUP_GRACE_MINUTES}::int * interval '1 minute')
+           END AS soonest_free_at,
            now() AS server_now
       FROM (VALUES ('세탁기'), ('건조기')) AS k(kind)
   `;
   const byKind: Record<string, string | null> = {};
-  for (const r of rows) byKind[r.kind] = r.soonest_ends_at;
+  for (const r of rows) byKind[r.kind] = r.soonest_free_at;
   // 두 종류를 늘 돌려주는 질의라 rows 가 비는 일은 없다.
   return { serverNow: rows[0].server_now, byKind };
 }
