@@ -24,6 +24,21 @@
 export const ASSIGN_WINDOW_MINUTES = 10;
 
 /**
+ * 05 P5 — 「타이머 종료 후 **3분** 안에 세탁물을 수거하고 "다했어요"를 눌러야 한다」.
+ *
+ * 이 숫자를 쓰는 곳은 전부 이 상수를 본다:
+ *   · expiration.ts 가 pickup_deadline_at 을 `ends_at + 유예` 로 찍을 때 (08 · 4번 · 2)
+ *   · expiration.ts 가 강제 종료 시 started_at 을 역산할 때
+ *   · queries.ts 의 예상 배정 시각 — 기기가 다음 사람에게 넘어가는 시각은 타이머가
+ *     끝나는 ends_at 이 아니라 **수거 유예가 끝나는 때**다 (Issue #85)
+ *   · 화면의 수거 카운트다운 (home-client.tsx 의 GRACE_MS)
+ *
+ * ASSIGN_WINDOW_MINUTES 와 달리 이 유예는 **다음 사람의 배정 10분에 들어가지 않는다**
+ * — 10분은 기기가 실제로 사용가능이 된 순간부터 센다 (05 상태값 · assignDeadlineFrom).
+ */
+export const PICKUP_GRACE_MINUTES = 3;
+
+/**
  * 배정 마감 시각 (06 「줄서기」의 「배정 마감 시각(배정 시각 + 10분)」 · 05 P3).
  *
  * **기산점은 언제나 「기기가 사용가능이 된 서버 시각」이다** (05 상태값 마지막 줄 ·

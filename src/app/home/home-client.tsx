@@ -7,6 +7,7 @@ import { useUnreadCount } from '@/lib/use-unread-count';
 import NotificationPrompt from '@/components/notification-prompt';
 import QrScanner, { type QrVerifiedResult } from './qr-scanner';
 import { useRouter } from 'next/navigation';
+import { PICKUP_GRACE_MINUTES } from '@/lib/assignment-rules';
 
 // --- 전역 상수 (타이머 시간 등) ---
 //
@@ -19,7 +20,9 @@ import { useRouter } from 'next/navigation';
 // 실제 종료 처리 · 강제 종료 · 경고 판정은 전부 서버 몫이다.
 const RUN_MS_WASHER = 60 * 60 * 1000;
 const RUN_MS_DRYER = 45 * 60 * 1000;
-const GRACE_MS = 3 * 60 * 1000;
+// 05 P5 의 수거 유예. 값은 서버 정책 상수 하나만 본다 — 화면이 3분을 따로 적어 두면
+// 서버가 찍는 pickup_deadline_at 과 소리 없이 어긋난다 (Issue #85).
+const GRACE_MS = PICKUP_GRACE_MINUTES * 60 * 1000;
 const runMsFor = (type: string) => (type === 'dryer' ? RUN_MS_DRYER : RUN_MS_WASHER);
 
 /** 서버가 정한 배정 결과를 받아 오는 주기 (05 P2 — 앞사람이 끝나면 내 차례가 온다) */
@@ -417,8 +420,10 @@ export default function HomeClient() {
   const typeSummaries = [ summarize('washer', '세탁기', '#5B93E0'), summarize('dryer', '건조기', '#F0913F') ];
 
   // 내 대기 현황 — 서버가 준 「대기 중」만 그린다 (05 P2).
-  // 예상 대기는 05 P2 의 「그 종류에서 가장 먼저 끝나는 기기의 남은 시간」이고,
-  // 돌아가는 기기가 없으면 서버가 null 을 주므로 카운트다운을 그리지 않는다.
+  // 예상 대기 기준 시각(estimatedTurnAt)은 「가장 먼저 **비는** 기기의 시각」이다 —
+  // 타이머 종료(ends_at)가 아니라 거기에 수거 유예 3분을 더한 값이고, 판정·덧셈은
+  // 전부 서버가 한다(queries.ts::kindWaitEstimates · 05 P2 + P5 · Issue #85).
+  // 빈 기기도 돌아가는 기기도 없으면 서버가 null 을 주므로 카운트다운을 그리지 않는다.
   const myWaiting = (['washer', 'dryer'] as const)
     .filter((type) => mine[type]?.status === 'waiting')
     .map((type) => {
@@ -519,8 +524,9 @@ export default function HomeClient() {
                         <img src={mq.isWasher ? "/icons/washer-inuse.svg" : "/icons/dryer-inuse.svg"} alt="" style={{ width: '30px', height: '30px', flexShrink: 0 }} />
                         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                           <span style={{ fontSize: '12.5px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mq.name}</span>
-                          {/* 05 P2 — 예상 대기는 서버가 준 「가장 먼저 끝나는 기기의 남은 시간」이다.
-                              돌아가는 기기가 없으면 언제 빌지 알 수 없으므로 시간을 지어내지 않는다. */}
+                          {/* 05 P2 · P5 — 예상 대기는 서버가 준 「가장 먼저 비는 기기까지 남은 시간」
+                              (타이머 종료 + 수거 유예)이다. 빈 기기도 돌아가는 기기도 없으면 언제
+                              빌지 알 수 없으므로 시간을 지어내지 않는다. */}
                           <span style={{ fontSize: '11px', fontWeight: 700, color: '#5B93E0' }}>
                             {mq.waitLeft === null
                               ? (mq.ahead > 0 ? `앞에 ${mq.ahead}명` : '차례를 기다리는 중')
