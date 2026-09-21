@@ -6,7 +6,9 @@
 // 판정을 validateReportInput() 하나에 두고 양쪽이 그것을 부른다.
 //
 // 그래서 이 파일은 DB 도 `server-only` 도 import 하지 않는다 —
-// 클라이언트 컴포넌트(src/app/settings/page.tsx)에서도 그대로 쓴다.
+// 클라이언트 컴포넌트(src/app/(user)/settings/page.tsx)에서도 그대로 쓴다.
+
+import type { ApiErrorCode } from './i18n/api-codes.ts';
 
 /**
  * 화면 라벨 → DB 사유.
@@ -135,10 +137,22 @@ export type ValidReport = {
   evidence: { mime: EvidenceMime; byteSize: number } | null;
 };
 
+/**
+ * 실패 응답에 **code 를 더했다** (Issue #13 · 16단계).  는 그대로 남는다 —
+ * 관리자 화면과 기존 테스트가 계속 그 문장을 쓴다. 화면은 code 로 번역한다.
+ */
 export type ValidationResult =
   | { ok: true; value: ValidReport }
   /** `status` 는 라우트가 그대로 HTTP 상태로 쓴다 (415 · 413 을 400 과 가른다) */
-  | { ok: false; status: 400 | 413 | 415; message: string };
+  | {
+      ok: false;
+      status: 400 | 413 | 415;
+      /** 언어와 무관한 식별자 (src/lib/i18n/api-codes.ts) */
+      code: ApiErrorCode;
+      /** 문장에 끼울 값 — 번역문의 {name} 과 이름이 같다 */
+      params?: Record<string, string | number>;
+      message: string;
+    };
 
 /**
  * 신고 한 건이 접수될 수 있는지 판정한다 (05 P15 · 08 · 7번).
@@ -150,7 +164,7 @@ export type ValidationResult =
 export function validateReportInput(input: ReportInput): ValidationResult {
   // ── 사유 (05 P15 「사유를 고르지 않으면 접수할 수 없다」)
   if (!isReasonLabel(input.reasonLabel)) {
-    return { ok: false, status: 400, message: '신고 사유를 선택해주세요.' };
+    return { ok: false, status: 400, code: 'REPORT_REASON_REQUIRED', message: '신고 사유를 선택해주세요.' };
   }
   const reason: DbReason = REASON_LABEL_TO_DB[input.reasonLabel];
 
@@ -160,19 +174,19 @@ export function validateReportInput(input: ReportInput): ValidationResult {
 
   if (requiresMachine(reason)) {
     if (!isMachineKind(input.machineKind)) {
-      return { ok: false, status: 400, message: '기기 종류를 선택해주세요.' };
+      return { ok: false, status: 400, code: 'REPORT_MACHINE_KIND_REQUIRED', message: '기기 종류를 선택해주세요.' };
     }
     machineKind = input.machineKind;
 
     const parsed = Number(input.machineNo);
     if (!Number.isInteger(parsed) || parsed < 1 || parsed > MACHINE_COUNT[machineKind]) {
-      return { ok: false, status: 400, message: '호기를 선택해주세요.' };
+      return { ok: false, status: 400, code: 'REPORT_MACHINE_NO_REQUIRED', message: '호기를 선택해주세요.' };
     }
     machineNo = parsed;
   } else if (input.machineKind != null || (input.machineNo != null && input.machineNo !== '')) {
     // 「기타」에 기기가 딸려 오면 CHECK 제약에 걸린다. 여기서 먼저 막아
     // DB 오류가 아니라 읽히는 메시지가 나가게 한다.
-    return { ok: false, status: 400, message: '「기타」는 기기를 선택하지 않습니다.' };
+    return { ok: false, status: 400, code: 'REPORT_ETC_NO_MACHINE', message: '「기타」는 기기를 선택하지 않습니다.' };
   }
 
   // ── 기타 내용 (06 「기타 내용」)
@@ -180,12 +194,12 @@ export function validateReportInput(input: ReportInput): ValidationResult {
   if (typeof input.etcContent === 'string' && input.etcContent.trim()) {
     etcContent = input.etcContent.trim();
     if (etcContent.length > MAX_ETC_LENGTH) {
-      return { ok: false, status: 400, message: `내용은 ${MAX_ETC_LENGTH}자까지 입력할 수 있어요.` };
+      return { ok: false, status: 400, code: 'REPORT_ETC_TOO_LONG', params: { max: MAX_ETC_LENGTH }, message: `내용은 ${MAX_ETC_LENGTH}자까지 입력할 수 있어요.` };
     }
   }
   if (reason === '기타' && !etcContent) {
     // 05 P15 — 「"기타" 는 사진 · 기기 선택 없이 내용만 적는다」
-    return { ok: false, status: 400, message: '어떤 문제인지 내용을 적어주세요.' };
+    return { ok: false, status: 400, code: 'REPORT_ETC_CONTENT_REQUIRED', message: '어떤 문제인지 내용을 적어주세요.' };
   }
 
   // ── 증거 사진 (05 P15 · P23) — 이 작업의 핵심 조건
@@ -194,24 +208,24 @@ export function validateReportInput(input: ReportInput): ValidationResult {
   if (requiresEvidence(reason)) {
     // 「남의 세탁물을 꺼내는 근거가 되므로 사진 없이는 접수할 수 없다」(P15)
     if (!evidence) {
-      return { ok: false, status: 400, message: '「세탁물이 있어요」는 증거 사진을 첨부해야 접수할 수 있어요.' };
+      return { ok: false, status: 400, code: 'REPORT_EVIDENCE_REQUIRED', message: '「세탁물이 있어요」는 증거 사진을 첨부해야 접수할 수 있어요.' };
     }
   } else if (evidence) {
     // 나머지 세 사유에는 칸 자체가 없다(P15). reports 의 CHECK 도 같은 것을 막는다.
-    return { ok: false, status: 400, message: '이 사유에는 사진을 첨부할 수 없어요.' };
+    return { ok: false, status: 400, code: 'REPORT_EVIDENCE_NOT_ALLOWED', message: '이 사유에는 사진을 첨부할 수 없어요.' };
   }
 
   if (evidence) {
     // 형식 — accept 속성을 믿지 않는다. 확장자가 아니라 MIME 으로 본다.
     if (!isAllowedEvidenceMime(evidence.mime)) {
-      return { ok: false, status: 415, message: 'JPG · PNG · WebP 이미지만 첨부할 수 있어요.' };
+      return { ok: false, status: 415, code: 'IMAGE_TYPE_NOT_ALLOWED', message: 'JPG · PNG · WebP 이미지만 첨부할 수 있어요.' };
     }
     if (evidence.byteSize <= 0) {
-      return { ok: false, status: 400, message: '사진 파일이 비어 있어요.' };
+      return { ok: false, status: 400, code: 'IMAGE_EMPTY', message: '사진 파일이 비어 있어요.' };
     }
     // 용량 — 라우트는 여기에 **실제로 읽은 바이트 수**를 넣는다(헤더가 아니라).
     if (evidence.byteSize > MAX_EVIDENCE_BYTES) {
-      return { ok: false, status: 413, message: `사진은 ${MAX_EVIDENCE_LABEL} 까지 첨부할 수 있어요.` };
+      return { ok: false, status: 413, code: 'IMAGE_TOO_LARGE', params: { limit: MAX_EVIDENCE_LABEL }, message: `사진은 ${MAX_EVIDENCE_LABEL} 까지 첨부할 수 있어요.` };
     }
   }
 

@@ -27,7 +27,7 @@ export async function POST(request: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
-    return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    return Response.json({ ok: false, code: 'LOGIN_REQUIRED', message: '로그인이 필요해요.' }, { status: 401 });
   }
 
   // 05 P24 — 탈퇴를 신청하면 즉시 이용이 정지된다. 사생이 **쓰는** 라우트의 공통 검사다.
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return Response.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return Response.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
 
   // 꺼내는 칸은 content 하나뿐이다 — user_id 를 실어 보내도 여기서 읽지 않는다.
@@ -48,7 +48,11 @@ export async function POST(request: Request) {
   // ── 3. 검증 — 화면이 쓰는 것과 **같은 함수**다
   const result = validateInquiryInput({ content: content.content });
   if (!result.ok) {
-    return Response.json({ ok: false, message: result.message }, { status: result.status });
+    // 검증 결과의 code · params 를 그대로 흘려보낸다 — message 도 그대로 남는다 (Issue #13)
+    return Response.json(
+      { ok: false, code: result.code, params: result.params, message: result.message },
+      { status: result.status },
+    );
   }
 
   // ── 4. 저장
@@ -65,7 +69,7 @@ export async function POST(request: Request) {
     // 뜻이라 조용히 넘기지 않는다. 문의 **내용**은 로그에 남기지 않는다.
     console.error('문의 저장 실패', userId, error);
     return Response.json(
-      { ok: false, message: '문의를 접수하지 못했어요. 잠시 뒤 다시 시도해주세요.' },
+      { ok: false, code: 'INQUIRY_FAILED', message: '문의를 접수하지 못했어요. 잠시 뒤 다시 시도해주세요.' },
       { status: 500 },
     );
   }

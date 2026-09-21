@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return Response.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return Response.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
 
   const b = (body ?? {}) as Record<string, unknown>;
@@ -26,21 +26,21 @@ export async function POST(request: Request) {
   const ticket = typeof b.ticket === 'string' ? b.ticket : '';
   if (!email || !ticket) {
     return Response.json(
-      { ok: false, message: '인증을 다시 해주세요.' },
+      { ok: false, code: 'VERIFY_AGAIN', message: '인증을 다시 해주세요.' },
       { status: 400 },
     );
   }
 
   if (!isValidPassword(b.password)) {
     return Response.json(
-      { ok: false, field: 'password', message: '비밀번호는 8자 이상이어야 해요.' },
+      { ok: false, field: 'password', code: 'PASSWORD_TOO_SHORT', message: '비밀번호는 8자 이상이어야 해요.' },
       { status: 400 },
     );
   }
 
   if (!(await consumeTicket(email, '비밀번호 재설정', ticket))) {
     return Response.json(
-      { ok: false, message: '인증을 다시 해주세요.' },
+      { ok: false, code: 'VERIFY_AGAIN', message: '인증을 다시 해주세요.' },
       { status: 400 },
     );
   }

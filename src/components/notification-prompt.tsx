@@ -45,6 +45,9 @@ import {
   syncPushSubscription,
 } from '@/lib/push-client';
 
+import { Rich } from '@/lib/i18n/rich';
+import { useT } from '@/lib/i18n/use-t';
+
 // 서버 렌더에는 브라우저가 없어 허용 상태를 읽을 수 없다. 읽기 전까지는 아무것도
 // 그리지 않는다 — 이미 허용한 사람 앞에서 모달이 한 번 깜빡이는 것을 막는다.
 // (화면 상태 1 「허용 상태 확인 중」)
@@ -52,6 +55,7 @@ const hydratedSnapshot = () => true;
 const hydratedServerSnapshot = () => false;
 
 export default function NotificationPrompt() {
+  const t = useT();
   const [pending, setPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -173,13 +177,13 @@ export default function NotificationPrompt() {
       // 'default' — 창이 뜨지 않았거나(조용한 권한 UI) 사용자가 그냥 닫았다.
       // "등록 중…" 으로 남기지 않고 다시 시도하거나 넘어갈 수 있게 한다.
       setNotice(
-        '알림 창이 뜨지 않았어요. 주소창의 알림 아이콘에서 고르거나, 「다시 시도」를 눌러주세요.',
+        t('push.noticeNoPrompt'),
       );
     } catch (error) {
       console.error('알림 등록 실패', error);
       // 허용은 됐는데 저장에만 실패했을 수 있다 — 그때는 마무리로 넘긴다.
       if (permissionSnapshot() === 'granted') return void finalizePermissionChange(false);
-      setNotice('알림을 켜지 못했어요. 「다시 시도」를 누르거나 나중에 설정에서 켤 수 있어요.');
+      setNotice(t('push.noticeFailed'));
     } finally {
       // 어떤 경로로 끝나든 여기서 반드시 풀린다.
       setPending(false);
@@ -268,14 +272,18 @@ export default function NotificationPrompt() {
     if (installGuideSeen) return null;
     return (
       <div style={bottomCard}>
-        <span style={titleStyle}>홈 화면에 추가하면 알림을 받을 수 있어요</span>
+        <span style={titleStyle}>{t('push.iosTitle')}</span>
         <span style={bodyStyle}>
-          사파리 아래쪽 <b>공유</b>를 누르고 <b>&lsquo;홈 화면에 추가&rsquo;</b>를 고르면
-          차례와 종료 알림을 폰으로 받을 수 있어요.
+          {/* 굵은 조각은 문장 안의 {share} · {addToHome} 자리에 끼운다 —
+              조각 key 로 쪼개면 어순이 다른 언어에서 번역할 수 없다 */}
+          <Rich
+            messageKey="push.iosBody"
+            slots={{ share: <b>{t('push.iosShare')}</b>, addToHome: <b>{t('push.iosAddToHome')}</b> }}
+          />
         </span>
         <div style={{ display: 'flex', gap: 8 }}>
           <button type="button" onClick={markInstallGuideSeen} style={primaryButton}>
-            확인했어요
+            {t('push.iosConfirm')}
           </button>
         </div>
       </div>
@@ -301,21 +309,20 @@ export default function NotificationPrompt() {
     <div style={overlay} role="dialog" aria-modal="true" aria-labelledby="push-modal-title">
       <div style={card}>
         <span id="push-modal-title" style={titleStyle}>
-          차례가 되면 알려드릴게요
+          {t('push.askTitle')}
         </span>
         <span style={bodyStyle}>
-          알림을 허용하면 배정 및 사용 종료 알림을 받을 수 있어요. 허용하지 않아도
-          앱은 그대로 쓸 수 있고, 설정에서 다시 켤 수 있어요.
+          {t('push.askBody')}
         </span>
         {notice ? <span style={noticeStyle}>{notice}</span> : null}
         <div style={{ display: 'flex', gap: 8 }}>
           {/* 등록 중에도 닫을 수 있다 — 허용 창이 끝내 뜨지 않는 환경에서도
               사용자가 갇히지 않아야 한다 (P26). */}
           <button type="button" onClick={markAsked} style={ghostButton}>
-            나중에
+            {t('push.later')}
           </button>
           <button type="button" onClick={allow} disabled={pending} style={primaryButton}>
-            {pending ? '등록 중…' : notice ? '다시 시도' : '알림 허용하기'}
+            {pending ? t('push.registering') : notice ? t('common.retry') : t('push.allow')}
           </button>
         </div>
       </div>

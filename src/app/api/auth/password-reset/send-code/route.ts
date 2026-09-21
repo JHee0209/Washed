@@ -23,13 +23,13 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return Response.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return Response.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
 
   const email = toSchoolEmail((body as { email?: unknown })?.email);
   if (!email) {
     return Response.json(
-      { ok: false, message: '학교 이메일 형식(ac.kr)으로 입력해주세요.' },
+      { ok: false, code: 'EMAIL_INVALID', message: '학교 이메일 형식(ac.kr)으로 입력해주세요.' },
       { status: 400 },
     );
   }
