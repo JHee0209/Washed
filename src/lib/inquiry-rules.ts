@@ -5,7 +5,7 @@
 // validateInquiryInput() 하나에 두고 화면과 라우트가 그것을 부른다.
 //
 // 그래서 이 파일은 DB 도 `server-only` 도 import 하지 않는다 —
-// 클라이언트 컴포넌트(src/app/support/support-client.tsx)에서도 그대로 쓴다.
+// 클라이언트 컴포넌트(src/app/(user)/support/support-client.tsx)에서도 그대로 쓴다.
 
 /**
  * 문의 내용 길이 한도.

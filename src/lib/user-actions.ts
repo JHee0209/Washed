@@ -26,7 +26,7 @@ import { isValidPassword } from '@/lib/school-email';
  * ── P24 의 나머지 두 문장이 놓인 자리 (F36)
  * 「복구 기간에는 로그인 시 홈 대신 복구 안내를 띄우고, 같은 학교 이메일의 신규
  * 가입을 막는다」 — 신규 가입 차단은 api/auth/signup/send-code 에 있고
- * (withdraw_requested_at 확인), 복구 안내는 src/app/withdraw/page.tsx 다.
+ * (withdraw_requested_at 확인), 복구 안내는 src/app/(user)/withdraw/page.tsx 다.
  * src/auth.ts 는 탈퇴 대기 계정의 **로그인은 일부러 통과시키고**, 화면을 가르는 일은
  * auth.config.ts 의 authorized 가 한다 — 신청한 사람이 잠겨서 복구조차 못 하는 일이
  * 없어야 하기 때문이다.

@@ -60,7 +60,9 @@ describe('POST /api/queue/verify-qr — 수거대기와 배정 만료 구분', (
   it('라우트와 스캐너가 수거대기 전용 안내를 사용하고 재시도를 숨긴다', () => {
     const route = source('app/api/queue/verify-qr/route.ts');
     const pickupBranch = between(route, "result.reason === 'pickup_pending'", "// 'expired'");
-    const scanner = source('app/home/qr-scanner.tsx');
+    // 사용자 화면은 (user) 라우트 그룹 아래에 있다 — 괄호 이름은 URL 에 들어가지
+    // 않으므로 /home 은 그대로다 (Issue #13 · 관리자 영역 격리).
+    const scanner = source('app/(user)/home/qr-scanner.tsx');
 
     assert.ok(pickupBranch.includes("reason: 'pickup_pending'"));
     assert.ok(pickupBranch.includes('status: 409'));

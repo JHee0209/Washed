@@ -2,7 +2,7 @@
 //
 // GET /api/notifications  →  { ok: true, items: NotificationRow[] }
 //
-// 화면(src/app/notifications/page.tsx)이 'use client' 라 lib/notifications.ts 를
+// 화면(src/app/(user)/notifications/page.tsx)이 'use client' 라 lib/notifications.ts 를
 // 직접 부를 수 없다 — 그쪽은 db.ts 를 거쳐 'server-only' 라 클라이언트 번들에
 // 들어가면 빌드가 깨진다. 그래서 읽는 길을 라우트로 낸다.
 //
