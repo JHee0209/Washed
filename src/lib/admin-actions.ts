@@ -162,7 +162,7 @@ export async function adminHistory() {
   }>`
     SELECT h.history_id, h.user_id, u.name AS user_name, u.room, m.name AS machine_name,
            h.started_at, h.ended_at, h.result,
-           CASE WHEN h.result = '정상 이용'
+           CASE WHEN h.result = '완료'
                 THEN ROUND(EXTRACT(EPOCH FROM (h.ended_at - h.started_at)) / 60)::int
                 ELSE NULL
            END AS used_minutes
