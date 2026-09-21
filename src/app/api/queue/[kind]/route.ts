@@ -40,7 +40,7 @@ import {
   expireOverduePickups,
   transitionFinishedUsageToPickup,
 } from '@/lib/expiration';
-import { isMachineKind, MachineKind } from '@/lib/report-rules';
+import { isMachineKind, type MachineKind } from '@/lib/report-rules';
 import { NextResponse } from 'next/server';
 
 type ClientKind = 'washer' | 'dryer';
