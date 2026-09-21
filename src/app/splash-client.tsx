@@ -31,7 +31,7 @@ export default function SplashClient({ target }: SplashClientProps) {
     router.prefetch(target);
     const timer = window.setTimeout(() => {
       router.replace(target);
-    }, 3500);
+    }, 2800);
 
     return () => window.clearTimeout(timer);
   }, [router, target]);
