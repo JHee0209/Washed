@@ -22,6 +22,7 @@ import {
   setMachineStatus,
   setReportStatus,
 } from '@/lib/admin-actions';
+import { seoulDayKey } from '@/lib/kst-date';
 import {
   ADMIN_WARNING_REASONS,
   decodeWarningIncident,
@@ -97,6 +98,16 @@ type Data = {
     recent_month_count: number;
   }[];
   notices: { notice_id: string; title: string; body: string; created_at: string }[];
+  // F21 · Issue #86 — 사용자가 설정 > 문의하기에서 보낸 내용. 보낸 사람은 users 조인으로 온다.
+  inquiries: {
+    inquiry_id: string;
+    user_id: string;
+    user_name: string;
+    student_id: string;
+    room: string;
+    content: string;
+    created_at: string;
+  }[];
   users: {
     user_id: string;
     name: string;
@@ -124,6 +135,7 @@ export default function AdminTabs({ tab, data }: { tab: string; data: Data }) {
   if (tab === 'history') return <History rows={data.history} />;
   if (tab === 'warnings') return <Warnings rows={data.warnings} />;
   if (tab === 'notice') return <Notices rows={data.notices} />;
+  if (tab === 'support') return <Inquiries rows={data.inquiries} />;
   return <Users rows={data.users} />;
 }
 
@@ -238,9 +250,13 @@ function Btn({
   );
 }
 
+// Issue #86 — 시간대를 못 박는다. 이 컴포넌트는 서버에서도 한 번 렌더되는데(SSR),
+// 그때의 기준 시간대는 배포 서버(UTC)라 브라우저와 아홉 시간 어긋난 값이 먼저 그려졌다.
+// 이용 내역 날짜 필터가 KST 기준(seoulDayKey)이므로 표시도 같은 기준이어야 한다.
 function fmt(iso: string, withTime = true) {
   const d = new Date(iso);
   return d.toLocaleString('ko-KR', {
+    timeZone: 'Asia/Seoul',
     year: '2-digit',
     month: 'numeric',
     day: 'numeric',
@@ -567,29 +583,77 @@ function Reports({ rows }: { rows: Data['reports'] }) {
 // ─── 탭 4 · 이용 내역 (F28) ──────────────────────────────────────────────────
 
 function History({ rows }: { rows: Data['history'] }) {
+  // Issue #86 — 날짜 필터. '' 이면 전체(기존 동작 그대로)다.
+  //
+  // 서버를 다시 부르지 않는다: adminHistory() 가 이미 최근 3개월 · 최대 300건을
+  // 한 번에 내려주므로, 그 안에서 고르는 것으로 충분하다. 쿼리를 건드리지 않으니
+  // 기존 조회의 의미(3개월 · 최신순 · 300건)도 그대로 남는다.
+  const [day, setDay] = useState('');
+  const shown = day ? rows.filter((h) => seoulDayKey(h.started_at) === day) : rows;
+
   return (
-    <Table cols={['시작', '사용자', '호실', '기기', '결과', '사용 시간']}>
-      {rows.length === 0 ? (
-        <EmptyRow span={6} text="최근 3개월 이용 내역이 없어요." />
-      ) : (
-        rows.map((h) => (
-          <tr key={h.history_id}>
-            <td style={{ ...cell, color: '#8FAAD0' }}>{fmt(h.started_at)}</td>
-            <td style={{ ...cell, fontWeight: 700 }}>{h.user_name}</td>
-            <td style={cell}>{h.room}</td>
-            <td style={cell}>{h.machine_name ?? '—'}</td>
-            <td style={cell}>
-              <Dot color={h.result === '경고' ? '#FF9200' : '#00BF40'} />
-              {h.result}
-            </td>
-            {/* 「배정 후 미이용」에는 사용 시간이 없다 (2026-09-15 갱신) */}
-            <td style={{ ...cell, color: '#8FAAD0' }}>
-              {h.used_minutes !== null ? `${h.used_minutes}분` : '—'}
-            </td>
-          </tr>
-        ))
-      )}
-    </Table>
+    <>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 12,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <label htmlFor="history-day" style={{ fontSize: 13, fontWeight: 600, color: '#5A7CA8' }}>
+          날짜
+        </label>
+        <input
+          id="history-day"
+          type="date"
+          value={day}
+          onChange={(e) => setDay(e.target.value)}
+          style={{
+            padding: '8px 11px',
+            borderRadius: 10,
+            border: '1px solid #E3EBF7',
+            background: '#fff',
+            fontSize: 13,
+            color: '#1E3557',
+            fontFamily: 'inherit',
+          }}
+        />
+        <Btn onClick={() => setDay('')} disabled={day === ''}>
+          전체 보기
+        </Btn>
+        <span style={{ fontSize: 12.5, color: '#A8BCD9' }}>
+          {day ? `${shown.length}건 (한국 시간 기준 시작일)` : `전체 ${rows.length}건`}
+        </span>
+      </div>
+
+      <Table cols={['시작', '사용자', '호실', '기기', '결과', '사용 시간']}>
+        {shown.length === 0 ? (
+          <EmptyRow
+            span={6}
+            text={day ? '선택한 날짜의 이용 내역이 없어요.' : '최근 3개월 이용 내역이 없어요.'}
+          />
+        ) : (
+          shown.map((h) => (
+            <tr key={h.history_id}>
+              <td style={{ ...cell, color: '#8FAAD0' }}>{fmt(h.started_at)}</td>
+              <td style={{ ...cell, fontWeight: 700 }}>{h.user_name}</td>
+              <td style={cell}>{h.room}</td>
+              <td style={cell}>{h.machine_name ?? '—'}</td>
+              <td style={cell}>
+                <Dot color={h.result === '경고' ? '#FF9200' : '#00BF40'} />
+                {h.result}
+              </td>
+              {/* 「배정 후 미이용」에는 사용 시간이 없다 (2026-09-15 갱신) */}
+              <td style={{ ...cell, color: '#8FAAD0' }}>
+                {h.used_minutes !== null ? `${h.used_minutes}분` : '—'}
+              </td>
+            </tr>
+          ))
+        )}
+      </Table>
+    </>
   );
 }
 
@@ -827,7 +891,43 @@ function Notices({ rows }: { rows: Data['notices'] }) {
   );
 }
 
-// ─── 탭 7 · 사용자 목록 (F29) ────────────────────────────────────────────────
+// ─── 탭 7 · 문의하기 (F21 · 05 SP8 · Issue #86) ──────────────────────────────
+
+// 읽기만 하는 표다 — 답변은 SP8 대로 관리자가 그 사람의 이메일로 보낸다.
+// 처리 상태를 바꾸는 단추를 두지 않은 것은 05 에 그런 정책이 없기 때문이다.
+function Inquiries({ rows }: { rows: Data['inquiries'] }) {
+  return (
+    <Table cols={['작성 시각', '사용자', '학번', '호실', '내용']}>
+      {rows.length === 0 ? (
+        <EmptyRow span={5} text="문의 내역이 없습니다." />
+      ) : (
+        rows.map((q) => (
+          <tr key={q.inquiry_id}>
+            <td style={{ ...cell, color: '#8FAAD0' }}>{fmt(q.created_at)}</td>
+            <td style={{ ...cell, fontWeight: 700 }}>{q.user_name}</td>
+            <td style={cell}>{q.student_id}</td>
+            <td style={cell}>{q.room}</td>
+            {/* 문의 내용만 줄바꿈을 살린다 — 다른 칸의 nowrap 은 그대로 둔다 */}
+            <td
+              style={{
+                ...cell,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                minWidth: 260,
+                maxWidth: 420,
+                lineHeight: 1.6,
+              }}
+            >
+              {q.content}
+            </td>
+          </tr>
+        ))
+      )}
+    </Table>
+  );
+}
+
+// ─── 탭 8 · 사용자 목록 (F29) ────────────────────────────────────────────────
 
 function Users({ rows }: { rows: Data['users'] }) {
   const [target, setTarget] = useState<string | null>(null);

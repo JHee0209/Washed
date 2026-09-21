@@ -6,17 +6,18 @@
 --   docs/05-policy.md     P 번호 — 칸의 한도 · 상태값
 --   docs/08-deployNOTE.md 1번(식별자) · 2번(localStorage 키 → 테이블)
 --
--- 테이블 13개. 06 의 저장 항목은 14개지만 「언어 설정」은 사람이 아니라
+-- 테이블 13개. 06 의 저장 항목은 15개지만 「언어 설정」은 사람이 아니라
 -- 기기(브라우저) 단위라 테이블을 만들지 않는다 (06 마지막 문단 · 05 P25 · 08 · 2번).
 -- (「이메일 인증코드」는 F14 · F35 를 서버로 옮기며 새로 만든 12번 표다 · 0003)
 -- 세션 표는 없다 — JWT 쿠키를 쓴다(팀 확정).
 -- (「푸시 구독」도 기기 단위지만 누구의 기기인지를 서버가 알아야 해서 표로 둔다 · 05 P26)
 --
 -- 여기 없는 테이블 · 칸은 06 에도 없다. 06 「검토했으나 제외」의
--- 알림 수신 설정 · 문의 내용은 v2 라서 만들지 않았다.
+-- 알림 수신 설정은 v2 라서 만들지 않았다.
 -- (「공지」는 F26 이 v2 에서 MVP 로 올라오면서 06 의 저장 항목이 되어 11번 표로 있다.
 --  「세탁실」도 F33 이 Issue #47 로 MVP 로 올라오면서 06 의 저장 항목이 되어
---  15번 표로 있다 · 0010)
+--  15번 표로 있다 · 0010.
+--  「문의」도 F21 이 Issue #86 으로 06 의 저장 항목이 되어 17번 표로 있다 · 0015)
 --
 -- 규칙
 --   · 기본키는 전부 UUID (gen_random_uuid() 기본값 · PostgreSQL 13+ 내장)
@@ -714,5 +715,31 @@ CREATE TABLE IF NOT EXISTS profile_photos (
 
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
+
+
+-- -----------------------------------------------------------------------------
+-- 17. 문의  (0015 · 06 「문의」 · F21 · 05 SP8 · Issue #86)
+-- -----------------------------------------------------------------------------
+-- 06 에서 「앱에 남기지 않는다」로 제외돼 있던 항목이다. 설정 > 문의하기 화면은
+-- 있었지만 보낸 내용이 어디에도 남지 않아 관리자가 읽을 수 없었다(Issue #86).
+--
+-- SP8 은 그대로다 — 답변은 관리자가 내용을 읽고 그 사람의 이메일로 보낸다. 그래서
+-- 이 표에는 처리 상태값도 답변 본문도 없다(05 에 그 정책이 없다).
+CREATE TABLE IF NOT EXISTS inquiries (
+  inquiry_id uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- **누가** 는 세션에서만 온다 (6번 reports.reporter_user_id 와 같은 이유 · 08 · 1번).
+  -- 계정이 지워지면 문의도 함께 사라진다 (05 P24).
+  user_id    uuid        NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+
+  -- 공백만 있는 문의를 여기서 막는다(04 F21 「미입력 시 전송 불가」). 길이 한도는
+  -- src/lib/inquiry-rules.ts 의 MAX_INQUIRY_LENGTH 와 **같은 값**이어야 한다.
+  content    text        NOT NULL CHECK (btrim(content) <> '' AND length(content) <= 1000),
+
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 관리자 문의 탭은 최신순으로만 읽는다 (F21 · Issue #86).
+CREATE INDEX IF NOT EXISTS inquiries_created_at_idx ON inquiries (created_at DESC);
 
 COMMIT;

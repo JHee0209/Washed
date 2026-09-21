@@ -13,6 +13,13 @@
 //                       package.json 에 exports 맵이 없어 확장자 없는 bare subpath
 //                       (`next/server`)를 node ESM 이 못 찾을 뿐이라, 실제 파일을
 //                       그대로 가리킨다. NextResponse 는 진짜 구현이 돈다.
+//   5. `next/cache`       → node_modules/next/cache.js.  4 번과 **같은 이유의 실제 파일**이다.
+//   6. `next/headers`     → test/stubs/headers.mjs.  쿠키 통만 준다 (Issue #86).
+//   7. `next/navigation`  → test/stubs/navigation.mjs.  redirect() 만 준다 (Issue #86).
+//
+// 5~7 은 관리자 조회(admin-actions.ts → requireAdmin)를 테스트에서 부르려고 더한 것이다.
+// 전부 Next 의 요청 컨텍스트 안에서만 도는 배관이고, **권한 판정(admin-session.ts 의
+// 서명 검사와 admin_accounts 조회)과 SQL 은 진짜 코드가 그대로 돈다.**
 //
 // 그 밖의 `@/...` 는 tsconfig 의 paths 와 **같은 규칙**으로 `src/...` 에 매핑한다.
 // 나머지 specifier 는 전부 기본 해석으로 넘긴다 — 그래서 기존 테스트 11개의
@@ -32,6 +39,9 @@ const REDIRECTS = new Map([
   ['@/lib/db', path.join(TEST_DIR, 'db-bridge.mjs')],
   ['@/auth', path.join(TEST_DIR, 'stubs', 'auth.mjs')],
   ['next/server', path.join(REPO_ROOT, 'node_modules', 'next', 'server.js')],
+  ['next/cache', path.join(REPO_ROOT, 'node_modules', 'next', 'cache.js')],
+  ['next/headers', path.join(TEST_DIR, 'stubs', 'headers.mjs')],
+  ['next/navigation', path.join(TEST_DIR, 'stubs', 'navigation.mjs')],
 ]);
 
 /** `@/lib/expiration` → `<repo>/src/lib/expiration.ts` (tsconfig paths 와 같은 규칙) */

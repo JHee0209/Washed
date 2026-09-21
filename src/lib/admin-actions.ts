@@ -254,7 +254,39 @@ export async function adminNotices() {
 }
 
 /**
- * 탭 7 — 사용자 목록 (F29 · 07-screens.md F29 행 — 이름·학번·호실·경고 횟수·제한 여부)
+ * 탭 7 — 문의하기 (F21 · 05 SP8 · Issue #86)
+ *
+ * 사용자가 설정 > 문의하기에서 보낸 내용을 관리자가 읽는 자리다. 답변은 여전히
+ * 이메일로 나가므로(SP8) 여기서는 **읽기만** 한다 — 상태 변경 동작을 두지 않는다.
+ *
+ * 누가 보냈는지는 users 를 조인해서 보여 준다 — inquiries 에는 user_id 만 있고
+ * 이름·학번·호실을 복사해 두지 않는다(08 · 1번 · 05 P16: 사람은 user_id 로 가리킨다).
+ *
+ * 기간을 자르지 않는 이유: 문의 보관 기간이 05 · 06 어디에도 없다. 임의로 정하지 않고
+ * 다른 조회와 같은 LIMIT 만 둔다.
+ */
+export async function adminInquiries() {
+  await requireAdmin();
+  return sql<{
+    inquiry_id: string;
+    user_id: string;
+    user_name: string;
+    student_id: string;
+    room: string;
+    content: string;
+    created_at: string;
+  }>`
+    SELECT i.inquiry_id, i.user_id, u.name AS user_name, u.student_id, u.room,
+           i.content, i.created_at
+      FROM inquiries i
+      JOIN users u ON u.user_id = i.user_id
+     ORDER BY i.created_at DESC
+     LIMIT 300
+  `;
+}
+
+/**
+ * 탭 8 — 사용자 목록 (F29 · 07-screens.md F29 행 — 이름·학번·호실·경고 횟수·제한 여부)
  *
  * 경고 횟수·제한 여부는 adminWarnings() 와 같은 usage_restrictions 조인을 그대로
  * 재사용한다 — Issue #28: 사용자 목록과 경고 누적 화면이 같은 user_id 기준으로
