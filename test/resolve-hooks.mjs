@@ -1,7 +1,7 @@
 // 모듈 해석 훅 — node --test 가 production 모듈을 그대로 부를 수 있게 한다 (Issue #58).
 //
 // ── 원칙: 가로채는 것을 최소로 둔다
-// 판정 로직 · SQL 은 **하나도 치환하지 않는다.** 여기서 바꾸는 것은 여섯 가지뿐이고,
+// 판정 로직 · SQL 은 **하나도 치환하지 않는다.** 여기서 바꾸는 것은 일곱 가지뿐이고,
 // 전부 "번들러/Next 런타임이 해 주던 배관" 이다.
 //
 //   1. `server-only`  → 빈 모듈.  plain node 에서 throw 하는 표식용 패키지다.
@@ -21,10 +21,23 @@
 //                       bare subpath 다. src/lib/queries.ts 가 redirect() 를 import 해서
 //                       이 항목이 없으면 조회 함수를 테스트에서 부를 수조차 없다
 //                       (Issue #85). 5번과 달리 stub 이 아니라 실제 파일을 가리킨다.
+//                       **Issue #86 도 같은 항목을 쓴다** — admin-session.ts 의
+//                       requireAdmin() 이 관리자 쿠키 없이 불리면 redirect('/admin/login')
+//                       으로 돌려보내는데, 실제 구현이 던지는 NEXT_REDIRECT 오류를
+//                       그대로 받아 「돌려보냈다」를 단정한다(src/lib/inquiry.test.ts).
+//                       Map 의 같은 key 라 한 줄로 합쳤고, 실제 파일 쪽이 두 요구를
+//                       모두 만족해서 #85 의 선택을 그대로 뒀다.
+//   7. `next/headers` → test/stubs/headers.mjs.  쿠키 통만 준다 (Issue #86) —
+//                       admin-session.ts 가 cookies() 로 washed-admin 을 읽고 쓴다.
+//                       진짜 구현은 Next 의 요청 컨텍스트 안에서만 돈다.
+//
+// 6 · 7 은 관리자 조회(admin-actions.ts → requireAdmin)를 테스트에서 부르려고 더한 것이다.
+// 전부 Next 의 요청 컨텍스트 안에서만 도는 배관이고, **권한 판정(admin-session.ts 의
+// 서명 검사와 admin_accounts 조회)과 SQL 은 진짜 코드가 그대로 돈다.**
 //
 // 그 밖의 `@/...` 는 tsconfig 의 paths 와 **같은 규칙**으로 `src/...` 에 매핑한다.
 // 나머지 specifier 는 전부 기본 해석으로 넘긴다 — 그래서 기존 테스트들의 동작이
-// 바뀌지 않는다 (그 파일들은 위 여섯 가지를 import 하지 않는다).
+// 바뀌지 않는다 (그 파일들은 위 일곱 가지를 import 하지 않는다).
 
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -42,6 +55,7 @@ const REDIRECTS = new Map([
   ['next/server', path.join(REPO_ROOT, 'node_modules', 'next', 'server.js')],
   ['next/cache', path.join(TEST_DIR, 'stubs', 'next-cache.mjs')],
   ['next/navigation', path.join(REPO_ROOT, 'node_modules', 'next', 'navigation.js')],
+  ['next/headers', path.join(TEST_DIR, 'stubs', 'headers.mjs')],
 ]);
 
 /** `@/lib/expiration` → `<repo>/src/lib/expiration.ts` (tsconfig paths 와 같은 규칙) */

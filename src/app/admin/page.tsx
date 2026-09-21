@@ -1,8 +1,8 @@
 // F23~F29 관리자 콘솔 — docs/design/관리자.dc.html
 //
-// 탭 일곱 개를 전부 옮겼다.
+// 탭 일곱 개를 전부 옮겼고, 문의하기(F21 · Issue #86)가 뒤에 하나 붙어 여덟 개다.
 //   1 실시간 기기 현황   2 실시간 대기열 현황   3 신고 내역   4 이용 내역
-//   5 경고 누적 사용자   6 공지사항            7 사용자 목록
+//   5 경고 누적 사용자   6 공지사항            7 문의하기    8 사용자 목록
 //
 // 프로토타입이 localStorage 에서 읽던 값을 전부 DB 에서 읽는다 (08 · 2번).
 // 2026-09-15 디자인 갱신분(white-space: nowrap · 가로 스크롤)도 그대로 반영했다 —
@@ -15,6 +15,7 @@ import AdminTabs from '@/components/admin/tabs';
 import { requireAdmin } from '@/lib/admin-session';
 import {
   adminHistory,
+  adminInquiries,
   adminMachines,
   adminNotices,
   adminQueue,
@@ -33,6 +34,7 @@ const TABS = [
   { key: 'history', label: '이용 내역' },
   { key: 'warnings', label: '경고 누적 사용자' },
   { key: 'notice', label: '공지사항' },
+  { key: 'support', label: '문의하기' },
   { key: 'users', label: '사용자 목록' },
 ] as const;
 
@@ -57,6 +59,7 @@ export default async function AdminPage({
     history: tab === 'history' || tab === 'users' ? await adminHistory() : [],
     warnings: tab === 'warnings' ? await adminWarnings() : [],
     notices: tab === 'notice' ? await adminNotices() : [],
+    inquiries: tab === 'support' ? await adminInquiries() : [],
     users: tab === 'users' ? await adminUsers() : [],
   };
 
