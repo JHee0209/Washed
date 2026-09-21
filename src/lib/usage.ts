@@ -25,7 +25,7 @@
 import 'server-only';
 import { sql } from '@/lib/db';
 import { RUN_MINUTES_BY_KIND } from '@/lib/assignment-rules';
-import { notifyUsageEnded } from '@/lib/usage-end-notify';
+import { transitionUsageToPickup } from '@/lib/expiration';
 
 const WASHER_MINUTES = RUN_MINUTES_BY_KIND['세탁기'];
 const DRYER_MINUTES = RUN_MINUTES_BY_KIND['건조기'];
@@ -66,12 +66,23 @@ export type StartUsageResult =
       ok: false;
       /** 배정은 맞지만 10분(assign_deadline_at)이 지남 — 05 P3 */
       reason: 'expired';
+    }
+  | {
+      ok: false;
+      /** 사용 타이머가 끝나 세탁물을 수거하고 종료해야 하는 상태 — 05 P5 */
+      reason: 'pickup_pending';
     };
 
 /**
  * QR 검증(서명·위조 여부는 src/lib/qr.ts 가 이미 확인했다)을 통과한 뒤 실제로
  * "배정 → 사용중"을 전환하고 기기 종료 예정 시각을 서버가 정한다(05 P4 — 세탁 60분 ·
  * 건조 45분. 클라이언트가 계산해 보내는 값을 쓰지 않는다).
+ *
+ * 05 P20 · Issue #47 — 세탁실 전체 점검 상태를 여기서는 보지 않는다. 이 함수에
+ * 도달하는 사람은 이미 `queue.status = '배정'`인 사람뿐이고(아래 WHERE), 점검
+ * 중에는 src/lib/assignment.ts::drainQueue() 가 신규 배정 자체를 만들지 않으므로
+ * 점검이 켜진 뒤로 새로 이 경로에 오는 사람이 없다. P20 「이미 배정되었거나 사용
+ * 중인 건은 그대로 진행된다」를 그대로 지키려면 여기를 막지 않는 것이 맞다.
  */
 export async function startUsageFromQr({
   userId,
@@ -168,8 +179,16 @@ export async function startUsageFromQr({
   }
 
   // 실패 원인을 가려서 알려준다 — 위 판정은 이미 끝났으므로 잠금 없는 조회로 충분하다.
-  const reasonRows = await sql<{ user_id: string; status: string; assign_deadline_at: string | null }>`
-    SELECT user_id, status, assign_deadline_at FROM queue WHERE machine_id = ${machineId}
+  const reasonRows = await sql<{
+    user_id: string;
+    status: string;
+    assign_deadline_at: string | null;
+    assignment_expired: boolean;
+  }>`
+    SELECT user_id, status, assign_deadline_at,
+           status = '배정' AND assign_deadline_at <= now() AS assignment_expired
+      FROM queue
+     WHERE machine_id = ${machineId}
   `;
   const existing = reasonRows[0];
   if (!existing) {
@@ -188,17 +207,26 @@ export async function startUsageFromQr({
     // 05 P3 · 10번 — 다른 사용자가 다른 사람 배정 QR을 인증할 수 없다.
     return { ok: false, reason: 'other_user' };
   }
-  // 내 배정이 맞는데 실패했다면 남은 경우는 하나뿐이다 — 10분 초과(05 P3).
-  return { ok: false, reason: 'expired' };
+  if (existing.status === '수거대기') {
+    // 이미 사용을 마쳤으므로 QR 재인증이 아니라 세탁물 수거와 정상 종료가 필요하다.
+    return { ok: false, reason: 'pickup_pending' };
+  }
+  if (existing.assignment_expired) {
+    // 실제로 「배정」 상태이고 DB 서버 시각 기준 10분을 넘긴 경우만 만료로 본다.
+    return { ok: false, reason: 'expired' };
+  }
+
+  // 이미 사용중인 내 줄은 위 already_running 에서 성공한다. 그 밖의 예상하지 못한
+  // 상태를 만료로 오인하지 않고 배정 불일치로 안전하게 거부한다.
+  return { ok: false, reason: 'not_assigned' };
 }
 
 // F9 — 사용 타이머 종료 처리 (05 P5 · P13 · P26 · 08 · 4번 · Issue #7 · #12).
 //
-// **알림 발송은 usage-end-notify.ts 에 맡긴다.** "이용 시간이 끝났어요" 푸시(Issue
-// #12 · R38)는 이 파일도 expiration.ts(Issue #8)도 아닌 중립 모듈을 부른다 — #7과
-// #8이 같은 전환을 각자 훑으면서(아래 주석) 서로를 import하면 순환 참조가 되므로,
-// 둘 다 usage-end-notify.ts 하나만 바라본다. 전환 조건(WHERE) 자체는 그대로다 —
-// 알림은 "이미 확정된 전환"에 얹을 뿐 언제·누가 전환되는지를 바꾸지 않는다.
+// **Issue #34 — 실제 전환 SQL·알림 호출은 expiration.ts::transitionUsageToPickup()
+// 하나뿐이다.** 이 함수는 그것을 부르는 얇은 wrapper다. 예전에는 이 파일에도 거의
+// 같은 UPDATE 문이 따로 있었지만(#7과 #8이 같은 전환을 각자 훑던 구조), 정책이 두
+// 곳에 있으면 한쪽만 고쳐지는 드리프트 위험이 있어 expiration.ts 쪽으로 모았다.
 //
 // 특정 사용자에 묶이지 않은 전역 함수다 — `myQueue(userId)` 안에 CTE로 넣으면 그
 // 사용자가 홈 화면을 열어 폴링할 때만 전환이 일어나 관리자 대기열(adminQueue())이
@@ -206,32 +234,18 @@ export async function startUsageFromQr({
 // 각자 자기 SELECT 앞에서 부른다 — 같은 이유로 `queries.ts::myQueue()`의 SQL 자체는
 // 바꾸지 않는다.
 //
-// 여러 행을 매만지지만 행끼리 서로 경합하지 않는다(각 행의 자격은 `상태 = 사용중
-// AND 그 기기의 ends_at이 지났는가` 뿐이라 `assignment.ts`의 기기×대기자 짝짓기 같은
-// 교차 조건이 없다) — 그래서 `FOR UPDATE`·`MATERIALIZED` 없이도 UPDATE 한 문장이면
-// 충분하다. 이미 전환된 행은 `상태 = 사용중` 조건에 걸려 다시 잡히지 않으므로
-// idempotent 하다(여러 조회가 동시에 불러도 안전하다).
+// **같은 공통 함수를 expiration.ts::transitionFinishedUsageToPickup() 도 그대로
+// 부른다**(줄서기 POST · 하루 1회 배치). 이 함수는 홈 화면 폴링(GET /api/queue)·
+// 관리자 조회(adminQueue())마다 돌아 실제로는 이쪽이 거의 항상 먼저 그 행을 잡는다.
+// 공통 함수의 `WHERE q.status = '사용중'` 가드 하나로 묶여 있으므로 어느 쪽이 먼저
+// 잡아도 한 행은 한 번만 전환되고, RETURNING된 쪽만 알린다(usage-end-notify.ts 머리말).
 //
-// **같은 전환이 expiration.ts::transitionFinishedUsageToPickup() 에도 있다**(08 ·
-// 4번 · Issue #8) — 그쪽은 줄서기 POST 때와 하루 1회 배치에서만 돈다. 이 함수는
-// 홈 화면 폴링(GET /api/queue)마다 돌아 실제로는 이쪽이 거의 항상 먼저 그 행을
-// 잡는다. 같은 `상태 = 사용중` 가드를 쓰므로 어느 쪽이 먼저 잡아도 한 행은 한 번만
-// 전환되고, RETURNING된 쪽만 알린다 — usage-end-notify.ts 머리말 참고.
+// `now` 를 넘기지 않는다 — 이 함수는 원래 SQL의 `now()`(DB 서버 시각, UPDATE 실행
+// 시점)를 기준으로 판정했고, 그 의미를 리팩터링으로 바꾸지 않는다. `Date` 를 넘기면
+// (transitionFinishedUsageToPickup() 처럼) 그 값을 쓰지만, 안 넘기면 공통 함수가
+// SQL의 `now()`를 그대로 쓴다 — expiration.ts::transitionUsageToPickup() 머리말 참고.
 export async function expireRunTimers(): Promise<void> {
-  const started = await sql<{ queue_id: string; user_id: string; machine_name: string }>`
-    UPDATE queue q
-       SET status = '수거대기',
-           pickup_deadline_at = m.ends_at + interval '3 minutes'
-      FROM machines m
-     WHERE q.machine_id = m.machine_id
-       AND q.status = '사용중'
-       AND m.ends_at <= now()
-    RETURNING q.queue_id, q.user_id, m.name AS machine_name
-  `;
-
-  for (const row of started) {
-    await notifyUsageEnded(row.user_id, row.queue_id, row.machine_name);
-  }
+  await transitionUsageToPickup();
 }
 
 // F10 — "다했어요" (05 P5 · P6 · 08 · 4번 · Issue #7).
@@ -262,6 +276,11 @@ export type FinishUsageResult =
       ok: false;
       /** 내 줄은 맞지만 아직 '배정'(QR 미인증) 상태 */
       reason: 'not_started';
+    }
+  | {
+      ok: false;
+      /** machines.machine_id(uuid)에 맞지 않아 DB 질의 전에 거부됨 */
+      reason: 'invalid_machine_id';
     };
 
 export async function finishUsage({
@@ -271,6 +290,12 @@ export async function finishUsage({
   userId: string;
   machineId: string;
 }): Promise<FinishUsageResult> {
+  // startUsageFromQr()와 같은 uuid 사전 검증이다. 이 함수의 SQL에 잘못된 문자열을
+  // 넘기면 PostgreSQL 22P02가 발생해 사용자 요청 오류가 500으로 보인다(Issue #56).
+  if (!UUID_SHAPE.test(machineId)) {
+    return { ok: false, reason: 'invalid_machine_id' };
+  }
+
   // `removed`(DELETE의 RETURNING)에서만 파생시킨다 — 앞서 조회한 스냅샷에서
   // 파생시키면 중복 클릭이나 관리자의 cancelQueue · setMachineStatus와 겹칠 때
   // 진 쪽이 이미 없어진 기기를 다시 '사용가능'으로 바꾸거나 usage_history를
@@ -299,7 +324,10 @@ export async function finishUsage({
       RETURNING m.machine_id
     ),
     logged AS (
-      INSERT INTO usage_history (user_id, machine_id, started_at, ended_at, result)
+      -- 05 P6 · 0013 — source_queue_id 로 원래 줄서기 사건을 남긴다. 이 행을 만드는
+      -- 바로 그 문장이 위 removed 에서 그 queue 행을 지우므로, 여기서 적어 두지 않으면
+      -- 사건 이름이 영영 사라진다(관리자 경고의 canonical 사건 키가 이 값을 되짚는다).
+      INSERT INTO usage_history (user_id, machine_id, started_at, ended_at, result, source_queue_id)
       SELECT ${userId}, r.machine_id,
              r.ends_at - (
                CASE r.machine_kind
@@ -307,7 +335,7 @@ export async function finishUsage({
                  ELSE ${DRYER_MINUTES}::int
                END * interval '1 minute'
              ),
-             now(), '완료'
+             now(), '완료', r.queue_id
         FROM removed r
       RETURNING history_id
     )

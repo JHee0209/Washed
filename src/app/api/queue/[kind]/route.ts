@@ -40,7 +40,7 @@ import {
   expireOverduePickups,
   transitionFinishedUsageToPickup,
 } from '@/lib/expiration';
-import { isMachineKind, MachineKind } from '@/lib/report-rules';
+import { isMachineKind, type MachineKind } from '@/lib/report-rules';
 import { NextResponse } from 'next/server';
 
 type ClientKind = 'washer' | 'dryer';
@@ -117,6 +117,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
       queued_at: string | null;
       restricted_days_left: number | null;
       kind_serviceable: boolean;
+      facility_under_inspection: boolean;
     }>`
       WITH me AS (
         SELECT ${userId}::uuid AS user_id, ${dbKind}::text AS machine_kind
@@ -135,18 +136,25 @@ export async function POST(_request: Request, { params }: RouteParams) {
            WHERE m.status IN ('사용가능', '사용중')
         ) AS ok
       ),
+      facility AS (
+        -- 05 P20 · 06 「세탁실」 · Issue #47 — 세탁실 전체 점검 중이면 어떤
+        -- 종류든 새로 줄을 세울 수 없다(machines.status 의 점검중과는 별개).
+        SELECT is_under_inspection FROM facility_status WHERE id = true
+      ),
       inserted AS (
         INSERT INTO queue (user_id, machine_kind, status)
         SELECT me.user_id, me.machine_kind, '대기 중'
           FROM me
          WHERE NOT EXISTS (SELECT 1 FROM restriction WHERE days_left IS NOT NULL)
+           AND NOT COALESCE((SELECT is_under_inspection FROM facility), false)
            AND (SELECT ok FROM serviceable)
         RETURNING queue_id, queued_at
       )
       SELECT (SELECT queue_id  FROM inserted) AS queue_id,
              (SELECT queued_at FROM inserted) AS queued_at,
              (SELECT days_left FROM restriction) AS restricted_days_left,
-             (SELECT ok FROM serviceable) AS kind_serviceable
+             (SELECT ok FROM serviceable) AS kind_serviceable,
+             COALESCE((SELECT is_under_inspection FROM facility), false) AS facility_under_inspection
     `;
 
     const row = gate[0];
@@ -155,6 +163,12 @@ export async function POST(_request: Request, { params }: RouteParams) {
       return NextResponse.json(
         { ok: false, message: `이용 제한 중이에요 · ${daysLeft}일 남음`, reason: 'restricted', daysLeft },
         { status: 403 },
+      );
+    }
+    if (row?.facility_under_inspection) {
+      return NextResponse.json(
+        { ok: false, message: '세탁실 점검 중이라 잠시 이용할 수 없어요.', reason: 'facility_inspection' },
+        { status: 409 },
       );
     }
     if (!row?.kind_serviceable) {

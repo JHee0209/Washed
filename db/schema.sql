@@ -6,15 +6,18 @@
 --   docs/05-policy.md     P 번호 — 칸의 한도 · 상태값
 --   docs/08-deployNOTE.md 1번(식별자) · 2번(localStorage 키 → 테이블)
 --
--- 테이블 12개. 06 의 저장 항목은 13개지만 「언어 설정」은 사람이 아니라
+-- 테이블 13개. 06 의 저장 항목은 15개지만 「언어 설정」은 사람이 아니라
 -- 기기(브라우저) 단위라 테이블을 만들지 않는다 (06 마지막 문단 · 05 P25 · 08 · 2번).
 -- (「이메일 인증코드」는 F14 · F35 를 서버로 옮기며 새로 만든 12번 표다 · 0003)
 -- 세션 표는 없다 — JWT 쿠키를 쓴다(팀 확정).
 -- (「푸시 구독」도 기기 단위지만 누구의 기기인지를 서버가 알아야 해서 표로 둔다 · 05 P26)
 --
 -- 여기 없는 테이블 · 칸은 06 에도 없다. 06 「검토했으나 제외」의
--- 알림 수신 설정 · 세탁실 점검 상태 · 문의 내용은 v2 라서 만들지 않았다.
--- (「공지」는 F26 이 v2 에서 MVP 로 올라오면서 06 의 저장 항목이 되어 11번 표로 있다)
+-- 알림 수신 설정은 v2 라서 만들지 않았다.
+-- (「공지」는 F26 이 v2 에서 MVP 로 올라오면서 06 의 저장 항목이 되어 11번 표로 있다.
+--  「세탁실」도 F33 이 Issue #47 로 MVP 로 올라오면서 06 의 저장 항목이 되어
+--  15번 표로 있다 · 0010.
+--  「문의」도 F21 이 Issue #86 으로 06 의 저장 항목이 되어 17번 표로 있다 · 0015)
 --
 -- 규칙
 --   · 기본키는 전부 UUID (gen_random_uuid() 기본값 · PostgreSQL 13+ 내장)
@@ -117,7 +120,7 @@ CREATE TABLE IF NOT EXISTS machines (
   -- 06 「상태값(사용가능 / 사용중 / 고장 / 점검중)」 · 05 상태값 · P10 · P20
   -- 고장 · 점검중은 관리자가 수동 전환한다. 사용중일 때는 강제 사용가능
   -- 처리 뒤에만 고장 · 점검중으로 바꾼다. 점검중은 기기 단위 상태이며
-  -- P20 의 세탁실 전체 점검 모드(v2 · 06-data.md 에 저장 항목 없음)와는 다르다.
+  -- P20 의 세탁실 전체 점검 모드(아래 15번 facility_status)와는 다르다.
   status      text        NOT NULL DEFAULT '사용가능'
                           CHECK (status IN ('사용가능', '사용중', '고장', '점검중')),
 
@@ -196,22 +199,51 @@ CREATE TABLE IF NOT EXISTS warnings (
   -- 06 「누가」 — 경고는 호실이 아니라 사용자 단위로 기록한다 (05 P16 · 08 · 1번)
   user_id    uuid        NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
 
-  -- 06 「사유」 · 05 P6-1 (세 가지뿐이다)
+  -- 06 「사유」 · 05 P6-1
   --   배정 후 미인증 : 배정 10분 안에 QR 인증이 없었다 (P3)
   --   수거 미완료   : 다했어요 미클릭 · 세탁물 미수거 — 겹쳐도 통합 1회다 (P5 · P6)
   --   신고 확인     : 관리자가 신고를 사실로 확인한 건 (P16 — 신고만으로 자동 부여되지 않는다)
+  --                  「경고 누적 사용자」 탭(F25)이 여전히 이 값으로 직접 부여한다
+  --   순서 미준수 / 세탁물 방치 : 「사용자 목록」(F29)에서 관리자가 신고를 확인한
+  --   뒤 수동으로 경고를 줄 때 직접 고르는 구체적 유형이다 — 신고 사유
+  --   (reports.reason)를 자동으로 옮기는 것이 아니다. 화면에는
+  --   src/lib/warning-rules.ts 가 더 읽기 쉬운 문장으로 보여준다("순서를
+  --   지키지 않았어요" · "세탁물이 있어요" — report-rules.ts 와 같은 라벨 ≠ DB
+  --   값 패턴). 저장값은 팀 확정(2026-09-17)의 이름 그대로다 (Issue #47 부속 · 0011 ·
+  --   팀원 브랜치 origin/fix/admin-warning-reason 의 0009 와 최종 CHECK 가 같다)
   reason     text        NOT NULL
-                         CHECK (reason IN ('배정 후 미인증', '수거 미완료', '신고 확인')),
+                         CHECK (reason IN ('배정 후 미인증', '수거 미완료', '신고 확인',
+                                            '순서 미준수', '세탁물 방치')),
 
   -- 06 「부여 방식(시스템 자동 / 관리자)」 · 05 P6-1 · P16
   issued_by  text        NOT NULL CHECK (issued_by IN ('시스템 자동', '관리자')),
 
   -- 06 「부여 시각」
-  issued_at  timestamptz NOT NULL DEFAULT now()
+  issued_at  timestamptz NOT NULL DEFAULT now(),
+
+  -- 06 「사건 참조(줄서기, 선택 · 05 P6)」 · 0012 — 이 경고가 나온 줄서기 사건.
+  -- 한 queue 행이 곧 한 사건(대기 중 → 배정 → 사용중 → 수거대기)이고, 그 행은
+  -- 배정 단계에서 만료되거나(배정 후 미인증) 수거 단계에서 만료되거나 둘 중
+  -- 하나만 일어나므로(QR 인증을 하면 status 가 바뀌어 배정 만료 조건에 다시는
+  -- 걸리지 않는다) 이 칸 하나가 P6 의 「통합 1회」를 그대로 표현한다.
+  --
+  -- **FK 가 아니다.** 경고를 쓰는 시점에 그 queue 행은 이미 지워진 뒤라
+  -- (05 상태값 — 「종료」는 행이 사라지는 것이다) ON DELETE SET NULL 을 걸면
+  -- 키가 즉시 NULL 이 되어 아래 UNIQUE 가 무의미해진다. 지워진 행을 가리키는
+  -- 역사적 참조값이라 순수 uuid 로 둔다.
+  incident_queue_id uuid NULL
 
   -- 06 「사건 참조(이용 내역, 선택 · 05 P6)」는 usage_history 뒤에서 ALTER 로 붙인다
   -- (0008) — usage_history 가 이 표보다 뒤(8번)에 있어 여기서는 아직 참조할 수 없다.
 );
+
+-- 05 P6 · 0012 — 같은 줄서기 사건에는 경고가 하나뿐이다. 자동이든 관리자든 두 번째
+-- INSERT 를 DB 가 23505 로 거부한다. NULL 끼리는 충돌하지 않아, 사건과 무관한
+-- 관리자 자유 텍스트 경고는 이 검사에 걸리지 않는다
+-- (queue_machine_once_idx 와 같은 관용구).
+CREATE UNIQUE INDEX IF NOT EXISTS warnings_incident_queue_id_idx
+  ON warnings (incident_queue_id)
+  WHERE incident_queue_id IS NOT NULL;
 
 -- 기록 화면(최근 30일 · 05 P21) · 관리자 조회 (05 SP4)
 CREATE INDEX IF NOT EXISTS warnings_user_issued_at_idx
@@ -379,11 +411,32 @@ CREATE TABLE IF NOT EXISTS usage_history (
   ended_at   timestamptz NOT NULL,
 
   -- 06 「결과(완료 / 경고)」 · 05 상태값
-  result     text        NOT NULL CHECK (result IN ('완료', '경고'))
+  result     text        NOT NULL CHECK (result IN ('완료', '경고')),
+
+  -- 06 「사건 참조(줄서기, 선택)」 · 05 P6 · 0013 — 이 이용이 나온 줄서기 행.
+  -- 05 P6 의 「겹쳐도 통합 1회」를 지키려면 한 실제 사건이 만료 전후로 **같은 이름**을
+  -- 가져야 한다. 만료되면 queue 행은 사라지므로, 이용 내역이 원래 줄서기 id 를 들고
+  -- 있어야 나중에도 warnings.incident_queue_id(canonical 사건 키 · 0012)로 되짚을 수
+  -- 있다. 관리자가 진행 중인 줄에서 경고를 주든 끝난 이용에서 주든 같은 값을 향해
+  -- INSERT 되어, 부분 UNIQUE 하나가 순서와 무관하게 중복을 막는다.
+  --
+  -- **FK 가 아니다.** 이 행을 만드는 바로 그 문장이 같은 queue 행을 지운다
+  -- (usage.ts finishUsage · expiration.ts expireOverduePickups).
+  --
+  -- 0013 이전 행은 NULL 이고 소급할 근거가 없다 — 그 행들은 예전처럼
+  -- warnings.usage_history_id(0008)로만 보호되는 legacy 데이터다.
+  source_queue_id uuid NULL
 
   -- 06 「보관」은 칸이 아니라 규칙이다 — 3개월 또는 탈퇴 후 14일 중 먼저 오는 때에 삭제하고,
   -- 사생 기록 화면은 최근 30일만 보여준다 (05 P21 · SP4 · 08 · 9번).
 );
+
+-- 05 P6 · 0013 — 한 줄서기 사건은 이용 내역을 최대 하나만 남긴다(정상 종료와 강제
+-- 종료가 같은 queue 행을 두고 경쟁해 한쪽만 이긴다). H → Q 해석이 항상 한 값이 되도록
+-- 그 불변식을 적는다. legacy 행(NULL)은 서로 충돌하지 않아 걸리지 않는다.
+CREATE UNIQUE INDEX IF NOT EXISTS usage_history_source_queue_id_idx
+  ON usage_history (source_queue_id)
+  WHERE source_queue_id IS NOT NULL;
 
 -- 기록 화면 30일 · 관리자 3개월 조회 (05 P17 · P21)
 CREATE INDEX IF NOT EXISTS usage_history_user_started_at_idx
@@ -619,5 +672,74 @@ CREATE INDEX IF NOT EXISTS report_evidence_delete_after_idx
 -- 그러면 P15 의 「사진 없이는 접수되지 않는다」를 DB 가 더는 지키지 못한다.
 -- 접수 시점의 무결성이 보관 기간보다 앞선다 — 파일이 없어지면 서빙 라우트가 410 을
 -- 돌려주고 화면에서 사진이 사라진다(P23 의 확인 방법 그대로다).
+
+
+-- -----------------------------------------------------------------------------
+-- 15. 세탁실  (06 「세탁실」 · F22 · F33 · 05 P20 · Issue #47 · 0010)
+-- -----------------------------------------------------------------------------
+-- machines.status 의 '점검중'(2번 표)은 기기 하나 단위다. 이건 완전히 다른 개념 —
+-- 세탁실 전체를 한 번에 잠그는 토글이다. 세탁실이 한 곳이라는 전제라 이 표는 항상
+-- 정확히 한 행이다 — boolean PK + CHECK(id) 로 두 번째 행을 DB 가 물리적으로
+-- 거부한다(23505).
+CREATE TABLE IF NOT EXISTS facility_status (
+  id                  boolean PRIMARY KEY DEFAULT true CHECK (id),
+  is_under_inspection boolean NOT NULL DEFAULT false
+);
+
+INSERT INTO facility_status (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
+
+-- -----------------------------------------------------------------------------
+-- 16. 프로필 사진  (0014 · 06 「사용자」 → 프로필 사진 · F20 · Issue #76)
+-- -----------------------------------------------------------------------------
+-- report_evidence(14번)와 같은 이유로 bytea 로 DB 안에 둔다 — 외부 오브젝트
+-- 스토리지가 붙어 있지 않다. users 에 컬럼을 더하지 않고 별도 표로 둔 것도
+-- report_evidence 와 같은 패턴이다.
+--
+-- 사용자당 사진은 정확히 한 장이다 — PK 를 user_id 로 잡아 교체할 때
+-- INSERT ... ON CONFLICT (user_id) DO UPDATE 로만 처리되므로, 옛 사진이 별도
+-- 행으로 쌓이지 않는다.
+CREATE TABLE IF NOT EXISTS profile_photos (
+  -- 계정이 지워지면 사진도 함께 사라진다 (05 P24 탈퇴 14일 뒤 삭제).
+  user_id     uuid        PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+
+  -- 서버가 실제 파일 바이트(매직 넘버)로 정한 값만 들어온다 — Content-Type 헤더나
+  -- 확장자를 믿지 않는다. src/lib/profile-photo-rules.ts 의
+  -- ALLOWED_PROFILE_PHOTO_MIME 과 같은 집합이어야 한다.
+  mime_type   text        NOT NULL CHECK (mime_type IN ('image/jpeg', 'image/png', 'image/webp')),
+
+  -- 실제로 읽은 바이트 수 — Content-Length 헤더가 아니다(위조될 수 있다).
+  byte_size   integer     NOT NULL CHECK (byte_size > 0),
+
+  -- 파일 자체. base64 로 실려 와 decode(..., 'base64') 로 들어간다.
+  bytes       bytea       NOT NULL,
+
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
+
+-- -----------------------------------------------------------------------------
+-- 17. 문의  (0015 · 06 「문의」 · F21 · 05 SP8 · Issue #86)
+-- -----------------------------------------------------------------------------
+-- 06 에서 「앱에 남기지 않는다」로 제외돼 있던 항목이다. 설정 > 문의하기 화면은
+-- 있었지만 보낸 내용이 어디에도 남지 않아 관리자가 읽을 수 없었다(Issue #86).
+--
+-- SP8 은 그대로다 — 답변은 관리자가 내용을 읽고 그 사람의 이메일로 보낸다. 그래서
+-- 이 표에는 처리 상태값도 답변 본문도 없다(05 에 그 정책이 없다).
+CREATE TABLE IF NOT EXISTS inquiries (
+  inquiry_id uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- **누가** 는 세션에서만 온다 (6번 reports.reporter_user_id 와 같은 이유 · 08 · 1번).
+  -- 계정이 지워지면 문의도 함께 사라진다 (05 P24).
+  user_id    uuid        NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+
+  -- 공백만 있는 문의를 여기서 막는다(04 F21 「미입력 시 전송 불가」). 길이 한도는
+  -- src/lib/inquiry-rules.ts 의 MAX_INQUIRY_LENGTH 와 **같은 값**이어야 한다.
+  content    text        NOT NULL CHECK (btrim(content) <> '' AND length(content) <= 1000),
+
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- 관리자 문의 탭은 최신순으로만 읽는다 (F21 · Issue #86).
+CREATE INDEX IF NOT EXISTS inquiries_created_at_idx ON inquiries (created_at DESC);
 
 COMMIT;

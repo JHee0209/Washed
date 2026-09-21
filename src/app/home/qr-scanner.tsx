@@ -46,6 +46,7 @@ export default function QrScanner({ onClose, onVerified }: Props) {
 
   const [phase, setPhase] = useState<Phase>('starting');
   const [errorMessage, setErrorMessage] = useState('');
+  const [errorReason, setErrorReason] = useState<string | null>(null);
 
   // page.tsx는 1초마다 다시 렌더링되므로(카운트다운) onVerified가 매번 새 함수로
   // 내려올 수 있다 — ref로 최신 값만 참조해 아래 콜백들의 안정적인 클로저가 오래된
@@ -76,6 +77,7 @@ export default function QrScanner({ onClose, onVerified }: Props) {
         verifyingRef.current = false;
         decodedRef.current = false; // 다시 스캔할 수 있게 한다
         setErrorMessage(data.message || 'QR 인증에 실패했어요.');
+        setErrorReason(typeof data.reason === 'string' ? data.reason : null);
         setPhase('error');
         return;
       }
@@ -92,6 +94,7 @@ export default function QrScanner({ onClose, onVerified }: Props) {
       verifyingRef.current = false;
       decodedRef.current = false;
       setErrorMessage('네트워크 오류로 인증에 실패했어요.');
+      setErrorReason(null);
       setPhase('error');
     }
   }, [stopCamera]);
@@ -181,10 +184,12 @@ export default function QrScanner({ onClose, onVerified }: Props) {
     decodedRef.current = false;
     verifyingRef.current = false;
     setErrorMessage('');
+    setErrorReason(null);
     setPhase('scanning');
   };
 
   const showVideo = phase === 'scanning' || phase === 'verifying';
+  const isPickupPending = phase === 'error' && errorReason === 'pickup_pending';
 
   return (
     <div style={{ width: '100%', maxWidth: '300px', background: '#17233C', borderRadius: '20px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0px 20px 44px -12px rgba(8,20,46,.75)' }}>
@@ -239,7 +244,9 @@ export default function QrScanner({ onClose, onVerified }: Props) {
       </div>
 
       <span style={{ fontSize: '11px', color: 'rgba(224,235,250,.62)', lineHeight: 1.5, textAlign: 'center' }}>
-        {phase === 'error'
+        {isPickupPending
+          ? 'QR을 다시 찍지 말고 세탁물을 수거한 뒤 홈에서 「다했어요」를 눌러주세요.'
+          : phase === 'error'
           ? 'QR이 찢어졌거나 오염됐다면 설정 > 신고하기에서 "기기가 고장났어요"로 접수해주세요.'
           : 'QR 코드를 사각형 안에 맞춰주세요.'}
       </span>
@@ -249,9 +256,9 @@ export default function QrScanner({ onClose, onVerified }: Props) {
           onClick={onClose}
           style={{ flex: 1, border: 'none', cursor: 'pointer', color: '#EEF4FD', background: 'transparent', boxShadow: 'inset 0 0 0 1px rgba(224,235,250,.26)', borderRadius: '12px', padding: '10px', fontSize: '13px', fontWeight: 700 }}
         >
-          취소
+          {isPickupPending ? '닫기' : '취소'}
         </button>
-        {(phase === 'error' || phase === 'denied' || phase === 'no-camera') && (
+        {!isPickupPending && (phase === 'error' || phase === 'denied' || phase === 'no-camera') && (
           <button
             onClick={retry}
             style={{ flex: 1, border: 'none', cursor: 'pointer', color: '#fff', background: '#4C86D8', borderRadius: '12px', padding: '11px', fontSize: '13px', fontWeight: 700 }}

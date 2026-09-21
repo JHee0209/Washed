@@ -7,23 +7,41 @@ import { useUnreadCount } from '@/lib/use-unread-count';
 import NotificationPrompt from '@/components/notification-prompt';
 import QrScanner, { type QrVerifiedResult } from './qr-scanner';
 import { useRouter } from 'next/navigation';
+import { PICKUP_GRACE_MINUTES } from '@/lib/assignment-rules';
 
 // --- 전역 상수 (타이머 시간 등) ---
 //
 // **배정 10분(05 P3)은 여기 없다.** 배정 마감 시각은 서버가 정해 assign_deadline_at
 // 으로 내려주고, 화면은 「서버가 준 마감 − 지금」만 그린다 (08 · 4번 · Issue #5).
 // 아래 60분 · 45분 · 3분도 서버가 판정한다(machines.ends_at · queue.pickup_deadline_at ·
-// Issue #6 · #7). 다만 서버의 「사용중 → 수거대기」 전환(usage.ts::expireRunTimers)은
-// 최대 5초(폴링 주기) 늦게 도착하므로, 화면은 서버가 준 endsAt 을 기준으로 러닝 ·
-// 수거대기 전환을 **직접 계산**해 그 지연 없이 그린다 — 실제 종료 처리 · 강제 종료 ·
-// 경고 판정은 전부 서버 몫이다.
+// Issue #6 · #7). 다만 서버의 「사용중 → 수거대기」 전환(expiration.ts::
+// transitionUsageToPickup)은 폴링·스윕 주기만큼 늦게 도착하므로, 화면은 서버가 준
+// endsAt 을 기준으로 러닝 · 수거대기 전환을 **직접 계산**해 그 지연 없이 그린다 —
+// 실제 종료 처리 · 강제 종료 · 경고 판정은 전부 서버 몫이다.
 const RUN_MS_WASHER = 60 * 60 * 1000;
 const RUN_MS_DRYER = 45 * 60 * 1000;
-const GRACE_MS = 3 * 60 * 1000;
+// 05 P5 의 수거 유예. 값은 서버 정책 상수 하나만 본다 — 화면이 3분을 따로 적어 두면
+// 서버가 찍는 pickup_deadline_at 과 소리 없이 어긋난다 (Issue #85).
+const GRACE_MS = PICKUP_GRACE_MINUTES * 60 * 1000;
 const runMsFor = (type: string) => (type === 'dryer' ? RUN_MS_DRYER : RUN_MS_WASHER);
 
 /** 서버가 정한 배정 결과를 받아 오는 주기 (05 P2 — 앞사람이 끝나면 내 차례가 온다) */
 const POLL_MS = 5000;
+
+/**
+ * 서버의 「사용중 → 수거대기」 전환을 부르는 주기 (F9 · 05 P5 · Issue #35).
+ *
+ * **POLL_MS 와 같은 값을 쓴다.** Issue #35 는 refactor다 — 조회(GET)와 상태 변경
+ * (POST)의 책임을 가르는 것이 목적이고, 사용자가 느끼는 타이밍을 바꾸는 것이 아니다.
+ * 예전에는 GET /api/queue 가 조회와 전환을 함께 했으므로 전환과 종료 알림(#12)이
+ * 5초 안에 닿았다. 스윕 주기를 늘리면 그만큼 알림이 늦어지므로 같은 5초로 둔다.
+ *
+ * POLL_MS 를 참조하지 않고 값을 따로 적는 이유는 **뜻이 다르기 때문이다** — 위는
+ * 조회 주기, 이쪽은 쓰기 주기다. 지금 값이 같은 것은 기존 동작을 유지하기 때문이고,
+ * Issue #8 에서 서버 스케줄러가 완성되면 이 클라이언트 스윕 자체를 없애거나 주기를
+ * 다시 설계한다 — 그때 조회 주기(POLL_MS)까지 함께 끌려가면 안 된다.
+ */
+const SWEEP_MS = 5000;
 
 type ApiMachine = { id: string; type: string; name: string; status: string; remaining: number };
 type ApiQueueCounts = { washer: number; dryer: number };
@@ -73,6 +91,9 @@ export default function HomeClient() {
   const [rawMachines, setRawMachines] = useState<ApiMachine[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  // 05 P20 · 06 「세탁실」 · F33 · Issue #47 — 기기 단위 점검(개별 배지)과 별개인
+  // 세탁실 전체 점검 상태. 서버가 판정하고 화면은 그리기만 한다.
+  const [facilityUnderInspection, setFacilityUnderInspection] = useState(false);
 
   // 종의 점은 DB 가 센다 (F18 · 05 P14 — 보관 기간까지 서버가 건다).
   const unreadCount = useUnreadCount();
@@ -87,6 +108,7 @@ export default function HomeClient() {
       const data = await res.json();
       setRawMachines(data.machines);
       setQueueCounts(data.queueCounts);
+      setFacilityUnderInspection(Boolean(data.facilityUnderInspection));
     } catch {
       setLoadError(true);
     } finally {
@@ -112,10 +134,33 @@ export default function HomeClient() {
     }
   }, []);
 
+  // --- 사용 타이머 종료 스윕 (F9 · 05 P5 · Issue #35) ---
+  //
+  // 조회가 아니라 **명시적인 상태 변경 요청**이라 위의 두 조회와 분리해 둔다. 전역
+  // 스윕이므로 내 줄만이 아니라 만료된 줄 전체가 전환된다 — 예전에 GET /api/queue 가
+  // 갖고 있던 성질 그대로다. 실패해도 삼키는 이유는 ① 다음 스윕이 다시 시도하고
+  // ② 조회는 이 요청과 독립이라 화면이 깨지지 않기 때문이다(Issue #35 의 목적).
+  const runSweep = useCallback(async () => {
+    try {
+      const res = await fetch('/api/queue/sweep', { method: 'POST' });
+      if (!res.ok) return;
+      const data = await res.json();
+      // 전환된 줄이 있을 때만 다시 읽는다 — 없으면 화면에 바뀔 것이 없다.
+      if (data?.transitioned > 0) {
+        loadMine();
+        loadMachines();
+      }
+    } catch {
+      // 다음 스윕에서 다시 시도한다.
+    }
+  }, [loadMine, loadMachines]);
+
   useEffect(() => {
     loadMachines();
     loadMine();
-  }, [loadMachines, loadMine]);
+    // 화면을 열 때 한 번 훑는다 — 예전에 첫 조회가 겸했던 자리다.
+    runSweep();
+  }, [loadMachines, loadMine, runSweep]);
 
   // 주기적으로 서버 상태를 다시 읽는다. **이 폴링이 없으면 서버가 배정을 올려도
   // 열려 있는 화면에는 영원히 닿지 않는다** — 예전처럼 한 번만 읽고 나머지를 화면이
@@ -127,6 +172,13 @@ export default function HomeClient() {
     }, POLL_MS);
     return () => clearInterval(id);
   }, [loadMine, loadMachines]);
+
+  // 쓰기는 조회와 **같은 주기지만 별도 요청**으로 나간다 (SWEEP_MS 주석 참고) —
+  // 한쪽이 실패해도 다른 쪽은 그대로 돈다. 이것이 Issue #35 가 가른 지점이다.
+  useEffect(() => {
+    const id = setInterval(runSweep, SWEEP_MS);
+    return () => clearInterval(id);
+  }, [runSweep]);
 
   // --- 알림(Toast) 함수 ---
   const showToast = (message: string) => {
@@ -284,7 +336,11 @@ export default function HomeClient() {
   /** 서버 배정(내 것) 또는 서버가 사용중 · 수거대기로 판정한 것이면 그 기기는 내가 쓰는 중이다 */
   const isMineNow = (id: string) => assignedByMachineId.has(id) || inUseByMachineId.has(id);
 
-  const effectiveStatus = (r: any) => (isMineNow(r.id) ? 'inuse' : r.status);
+  // 05 P20 · 06 「세탁실」 · Issue #47 — 세탁실 전체 점검 중에는 내가 이미 쓰고
+  // 있는 기기를 뺀 나머지를 화면에서 전부 "점검 중"으로 보여준다. machines.status
+  // (실제 값)는 바꾸지 않으므로 점검 해제 즉시 각 기기의 실제 상태로 돌아온다.
+  const effectiveStatus = (r: any) =>
+    isMineNow(r.id) ? 'inuse' : facilityUnderInspection ? 'inspection' : r.status;
 
 
   const primaryBtn = { border: 'none', cursor: 'pointer', color: '#fff', background: '#4C86D8', borderRadius: '10px', padding: '9px', fontSize: '12px', fontWeight: 700, boxShadow: '0px 6px 14px -6px rgba(47,99,184,.9)' };
@@ -349,6 +405,11 @@ export default function HomeClient() {
       actionLabel = null; actionOnClick = () => {}; actionStyle = disabledBtn; actionInfo = `현재 ${waitingCount}명 대기 중이에요`;
     } else if (!hasFreeSlot) {
       actionLabel = '잠시만요'; actionOnClick = () => {}; actionDisabled = true; actionStyle = disabledBtn; actionInfo = '곧 다시 신청할 수 있어요';
+    } else if (facilityUnderInspection) {
+      // 05 P20 · 06 「세탁실」 · F33 — 이미 배정 · 대기 중인 위 분기는 그대로 두고,
+      // 새로 줄서기를 시작하려는 경우에만 막는다. 서버(POST /api/queue/[type])가
+      // 최종 방어선이고, 이 버튼은 안내일 뿐이다.
+      actionLabel = '점검 중'; actionOnClick = () => {}; actionDisabled = true; actionStyle = disabledBtn; actionInfo = '세탁실 점검 중이라 잠시 이용할 수 없어요';
     } else {
       actionLabel = '줄서기'; actionOnClick = () => autoJoin(type, label); actionStyle = primaryBtn; actionInfo = available > 0 ? '바로 배정돼요' : `현재 ${waitingCount}명 대기 중이에요`;
     }
@@ -359,8 +420,10 @@ export default function HomeClient() {
   const typeSummaries = [ summarize('washer', '세탁기', '#5B93E0'), summarize('dryer', '건조기', '#F0913F') ];
 
   // 내 대기 현황 — 서버가 준 「대기 중」만 그린다 (05 P2).
-  // 예상 대기는 05 P2 의 「그 종류에서 가장 먼저 끝나는 기기의 남은 시간」이고,
-  // 돌아가는 기기가 없으면 서버가 null 을 주므로 카운트다운을 그리지 않는다.
+  // 예상 대기 기준 시각(estimatedTurnAt)은 「가장 먼저 **비는** 기기의 시각」이다 —
+  // 타이머 종료(ends_at)가 아니라 거기에 수거 유예 3분을 더한 값이고, 판정·덧셈은
+  // 전부 서버가 한다(queries.ts::kindWaitEstimates · 05 P2 + P5 · Issue #85).
+  // 빈 기기도 돌아가는 기기도 없으면 서버가 null 을 주므로 카운트다운을 그리지 않는다.
   const myWaiting = (['washer', 'dryer'] as const)
     .filter((type) => mine[type]?.status === 'waiting')
     .map((type) => {
@@ -461,8 +524,9 @@ export default function HomeClient() {
                         <img src={mq.isWasher ? "/icons/washer-inuse.svg" : "/icons/dryer-inuse.svg"} alt="" style={{ width: '30px', height: '30px', flexShrink: 0 }} />
                         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                           <span style={{ fontSize: '12.5px', fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{mq.name}</span>
-                          {/* 05 P2 — 예상 대기는 서버가 준 「가장 먼저 끝나는 기기의 남은 시간」이다.
-                              돌아가는 기기가 없으면 언제 빌지 알 수 없으므로 시간을 지어내지 않는다. */}
+                          {/* 05 P2 · P5 — 예상 대기는 서버가 준 「가장 먼저 비는 기기까지 남은 시간」
+                              (타이머 종료 + 수거 유예)이다. 빈 기기도 돌아가는 기기도 없으면 언제
+                              빌지 알 수 없으므로 시간을 지어내지 않는다. */}
                           <span style={{ fontSize: '11px', fontWeight: 700, color: '#5B93E0' }}>
                             {mq.waitLeft === null
                               ? (mq.ahead > 0 ? `앞에 ${mq.ahead}명` : '차례를 기다리는 중')
@@ -514,6 +578,12 @@ export default function HomeClient() {
               </div>
             ) : (
               <>
+            {facilityUnderInspection && (
+              <div style={{ background: '#FFF6E9', borderRadius: '16px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#8A5300' }}>세탁실 점검 중</span>
+                <span style={{ fontSize: '12px', color: '#8A5300' }}>현재 모든 기기의 신규 이용이 제한됩니다.</span>
+              </div>
+            )}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', alignItems: 'start' }}>
               {typeSummaries.map((ts, idx) => (
                 <div key={idx} style={{ background: '#fff', borderRadius: '18px', padding: '14px', boxShadow: '0px 10px 26px -8px rgba(47,99,184,.28)', display: 'flex', flexDirection: 'column', gap: '8px', minWidth: 0 }}>

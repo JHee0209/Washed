@@ -7,10 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --test \"src/**/*.test.ts\"",
+    "test": "node --import ./test/register.mjs --test \"src/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
     "db:push": "node --env-file=.env.local scripts/db-push.mjs",
     "db:migrate": "node --env-file=.env.local scripts/db-migrate.mjs",
     "db:check": "node --env-file=.env.local scripts/db-check.mjs",
+    "db:migrate:status": "node --env-file=.env.local scripts/db-migrate-status.mjs",
     "admin:create": "node --env-file=.env.local scripts/admin-create.mjs",
     "qr:print": "node --env-file=.env.local scripts/print-machine-qr.mjs"
   },
@@ -25,6 +26,7 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/pg": "^8.15.6",

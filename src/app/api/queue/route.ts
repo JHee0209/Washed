@@ -11,11 +11,18 @@
 //
 // 대기 인원 세는 규칙(05 P2)은 queries.ts::queueCounts() 한 곳에 있고 이 라우트는
 // 다시 계산하지 않는다 (08 · 2번 · 3번).
+//
+// ── 이 라우트는 아무것도 바꾸지 않는다 (Issue #35)
+// 예전에는 여기서 expireRunTimers()(사용중 → 수거대기 전환)를 함께 불러, 위 머리말이
+// 배정에 대해 적어 둔 문제를 전환이 그대로 갖고 있었다 — 홈이 5초마다 폴링하므로
+// 폴링마다 UPDATE 가 나가고, 전환이 실패하면 순수한 조회까지 500 으로 함께 넘어졌다.
+// 전환은 POST /api/queue/sweep 으로 옮겼다. **이 파일에 쓰기를 다시 들이지 않는다** —
+// 여기서 부르는 것은 queries.ts 의 조회 함수뿐이고, 그 불변식은
+// src/lib/queue-read-only.test.ts 가 호출 그래프를 훑어 확인한다.
 
 import 'server-only';
 import { auth } from '@/auth';
 import { kindWaitEstimates, myQueue } from '@/lib/queries';
-import { expireRunTimers } from '@/lib/usage';
 import { NextResponse } from 'next/server';
 
 type ClientKind = 'washer' | 'dryer';
@@ -35,10 +42,6 @@ export async function GET() {
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-
-    // F9 — 사용 타이머가 끝난 줄을 수거대기로 전환한다(전역 함수 · 05 P5 · Issue #7).
-    // 실패해도 다음 폴링에서 다시 시도되므로 재시도 로직을 따로 두지 않는다.
-    await expireRunTimers();
 
     const [rows, estimates] = await Promise.all([myQueue(userId), kindWaitEstimates()]);
 

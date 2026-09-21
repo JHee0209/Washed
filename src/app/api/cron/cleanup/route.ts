@@ -13,32 +13,17 @@
 // 손으로 돌릴 때도 같은 헤더를 쓴다:
 //   curl -H "Authorization: Bearer $CRON_SECRET" https://<배포주소>/api/cron/cleanup
 
-import { timingSafeEqual } from 'node:crypto';
-
 import { runDailyCleanup } from '@/lib/cleanup';
+import { isAuthorizedCronRequest } from '@/lib/cron-auth';
 
 export const runtime = 'nodejs';
 // 배치는 캐시되면 안 된다 — 두 번째 호출이 캐시를 돌려받으면 아무것도 지워지지 않는다.
 export const dynamic = 'force-dynamic';
 
-function authorized(request: Request): boolean {
-  const secret = process.env.CRON_SECRET;
-  // 설정되지 않았으면 **열지 않고 막는다.** 비어 있을 때 통과시키면
-  // 환경변수를 깜빡한 배포에서 누구나 계정을 지울 수 있게 된다.
-  if (!secret) return false;
-
-  const header = request.headers.get('authorization') ?? '';
-  const prefix = 'Bearer ';
-  if (!header.startsWith(prefix)) return false;
-
-  const given = Buffer.from(header.slice(prefix.length));
-  const expected = Buffer.from(secret);
-  if (given.length !== expected.length) return false;
-  return timingSafeEqual(given, expected);
-}
-
 export async function GET(request: Request) {
-  if (!authorized(request)) {
+  // 검사 내용은 예전 로컬 authorized() 그대로다 — /api/cron/expiration 과 같은
+  // 검사를 쓰도록 src/lib/cron-auth.ts 로 옮겼을 뿐이다.
+  if (!isAuthorizedCronRequest(request)) {
     if (!process.env.CRON_SECRET) {
       console.error('CRON_SECRET 이 없어 정리 배치를 돌리지 않았습니다. .env.local.example 을 보세요.');
     }

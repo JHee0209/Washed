@@ -14,13 +14,19 @@ db/migrations/0002_무엇을_한다.sql
 ## 어떻게 적용하나
 
 ```
-npm run db:migrate     # 아직 적용하지 않은 것만 순서대로 적용
-npm run db:check       # 표와 칸이 06-data.md 와 맞는지 확인
+npm run db:migrate:status   # 적용하지 않고 무엇이 밀렸는지만 본다 (읽기 전용)
+npm run db:migrate          # 아직 적용하지 않은 것만 순서대로 적용
+npm run db:check            # 표와 칸이 06-data.md 와 맞는지 확인
 ```
 
 적용 이력은 `schema_migrations` 표에 파일 이름으로 남는다. 그래서 몇 번을 돌려도
 이미 적용한 파일은 다시 돌지 않는다. `schema_migrations` 는 06 의 저장 항목이 아니라
 이 도구가 쓰는 장부다.
+
+`npm run db:migrate:status` 는 그 장부를 이 폴더의 파일 목록과 견주기만 한다 — 아무것도
+적용하지 않고 **미적용 목록**과, 거꾸로 **장부에는 있는데 파일이 없는 기록**까지 보여준다.
+개발 · Preview · Production 각각에서 배포 전에 확인하는 절차는 `docs/08-deployNOTE.md`
+13번에 있다.
 
 `npm run db:push` 는 `db/schema.sql` 전체를 적용한다 — **아무것도 없는 새 DB** 를
 한 번에 세울 때만 쓰고, 이미 쓰고 있는 DB 를 바꿀 때는 쓰지 않는다.
