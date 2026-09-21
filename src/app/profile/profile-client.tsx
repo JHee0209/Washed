@@ -1,7 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import ProfileAvatar from '@/components/profile-avatar';
+import {
+  MAX_PROFILE_PHOTO_BYTES,
+  MAX_PROFILE_PHOTO_LABEL,
+  isAllowedProfilePhotoMime,
+} from '@/lib/profile-photo-rules';
 
 type ProfileClientProps = {
   name: string;
@@ -35,11 +41,76 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
   // 테스트용 실제 비밀번호
   const actualPassword = 'washed1234';
 
+  // Issue #76 — 프로필 사진. photoPreviewUrl 이 있으면 "선택했지만 아직 저장
+  // 전"이고, 저장이 끝나면 비우고 photoVersion 을 올려 ProfileAvatar 가 서버의
+  // 실제 사진을 다시 받아오게 한다(낙관적으로 미리보기를 그대로 "저장됨"으로
+  // 두지 않는다 — 서버 저장이 실제로 성공했는지 GET 으로 다시 확인한다).
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoVersion, setPhotoVersion] = useState(0);
+  const [photoSaving, setPhotoSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // object URL 은 명시적으로 풀어 줘야 한다 — 다른 파일을 고르거나 화면을
+  // 떠날 때 남아 있으면 탭이 닫힐 때까지 메모리에 붙어 있는다.
+  useEffect(() => {
+    return () => {
+      if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    };
+  }, [photoPreviewUrl]);
+
   // --- 핸들러 함수 ---
   const showToast = (message: string) => {
     setToastMessage(message);
     setToastVisible(true);
     setTimeout(() => setToastVisible(false), 2200);
+  };
+
+  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // 같은 파일을 다시 골라도 onChange 가 다시 뜨게 한다
+    if (!file) return;
+
+    // 클라이언트 쪽 확인은 친절을 위한 것일 뿐이다 — 실제 판정(매직 넘버까지)은
+    // 서버(/api/profile/photo)가 한다.
+    if (!isAllowedProfilePhotoMime(file.type)) {
+      showToast('JPG · PNG · WebP 이미지만 첨부할 수 있어요.');
+      return;
+    }
+    if (file.size > MAX_PROFILE_PHOTO_BYTES) {
+      showToast(`사진은 ${MAX_PROFILE_PHOTO_LABEL} 까지 첨부할 수 있어요.`);
+      return;
+    }
+
+    setPhotoFile(file);
+    setPhotoPreviewUrl(URL.createObjectURL(file));
+  };
+
+  const cancelPhotoSelection = () => {
+    setPhotoFile(null);
+    setPhotoPreviewUrl(null);
+  };
+
+  const savePhoto = async () => {
+    if (!photoFile || photoSaving) return;
+    setPhotoSaving(true);
+    try {
+      const formData = new FormData();
+      formData.append('photo', photoFile);
+      const res = await fetch('/api/profile/photo', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? '사진을 저장하지 못했어요.');
+      }
+      setPhotoFile(null);
+      setPhotoPreviewUrl(null);
+      setPhotoVersion((v) => v + 1);
+      showToast('프로필 사진을 변경했어요.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '사진을 저장하지 못했어요.');
+    } finally {
+      setPhotoSaving(false);
+    }
   };
 
   const handleRoomChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,12 +190,53 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
         <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
           <div style={{ padding: '24px 16px 28px', display: 'flex', flexDirection: 'column', gap: '22px' }}>
 
-            {/* 프로필 이미지 */}
+            {/* 프로필 이미지 (Issue #76) */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '76px', height: '76px', borderRadius: '50%', background: '#B7C6E0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                <svg width="76" height="76" viewBox="-7 -5.25 38 38" fill="#fff"><circle cx="12" cy="8.6" r="4.2"></circle><path d="M3.5 22c0-5 3.8-8 8.5-8s8.5 3 8.5 8"></path></svg>
-              </div>
-              <span style={{ fontSize: '12.5px', fontWeight: 600, color: '#5B93E0', cursor: 'default', whiteSpace: 'nowrap' }}>프로필 사진 변경</span>
+              {photoPreviewUrl ? (
+                <div style={{ width: '76px', height: '76px', borderRadius: '50%', overflow: 'hidden', background: '#B7C6E0' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={photoPreviewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+              ) : (
+                <ProfileAvatar size={76} version={photoVersion} />
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                onChange={handlePhotoSelect}
+                style={{ display: 'none' }}
+              />
+
+              {photoPreviewUrl ? (
+                <div style={{ display: 'flex', gap: '14px' }}>
+                  <button
+                    type="button"
+                    onClick={savePhoto}
+                    disabled={photoSaving}
+                    style={{ border: 'none', background: 'transparent', cursor: photoSaving ? 'default' : 'pointer', color: photoSaving ? '#A8BCD9' : '#4C86D8', fontSize: '12.5px', fontWeight: 700, padding: 0 }}
+                  >
+                    {photoSaving ? '저장 중…' : '사진 저장'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={cancelPhotoSelection}
+                    disabled={photoSaving}
+                    style={{ border: 'none', background: 'transparent', cursor: photoSaving ? 'default' : 'pointer', color: '#8FAAD0', fontSize: '12.5px', fontWeight: 600, padding: 0 }}
+                  >
+                    취소
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#5B93E0', fontSize: '12.5px', fontWeight: 600, whiteSpace: 'nowrap', padding: 0 }}
+                >
+                  프로필 사진 변경
+                </button>
+              )}
             </div>
 
             {/* ⭐️ 기본 정보 폼 (이름 고정 처리) */}

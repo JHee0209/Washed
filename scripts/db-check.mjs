@@ -32,6 +32,9 @@ const EXPECTED = [
   ['email_verifications', '이메일 인증코드'],
   // 06 「세탁실」 — F33 이 Issue #47 로 MVP 로 올라오며 신설 (0010)
   ['facility_status', '세탁실'],
+  // 06 「사용자」의 프로필 사진 칸이 실제로 놓이는 자리다 (0014 · Issue #76).
+  // 새 저장 항목이 아니라 report_evidence 와 같은 이유로 users 밖에 둔 파일 본체다.
+  ['profile_photos', '프로필 사진'],
 ];
 
 // 06 의 저장 항목은 아니지만 있어야 하는 표 — 마이그레이션 도구의 장부

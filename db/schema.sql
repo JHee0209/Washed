@@ -687,4 +687,32 @@ CREATE TABLE IF NOT EXISTS facility_status (
 
 INSERT INTO facility_status (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
 
+-- -----------------------------------------------------------------------------
+-- 16. 프로필 사진  (0014 · 06 「사용자」 → 프로필 사진 · F20 · Issue #76)
+-- -----------------------------------------------------------------------------
+-- report_evidence(14번)와 같은 이유로 bytea 로 DB 안에 둔다 — 외부 오브젝트
+-- 스토리지가 붙어 있지 않다. users 에 컬럼을 더하지 않고 별도 표로 둔 것도
+-- report_evidence 와 같은 패턴이다.
+--
+-- 사용자당 사진은 정확히 한 장이다 — PK 를 user_id 로 잡아 교체할 때
+-- INSERT ... ON CONFLICT (user_id) DO UPDATE 로만 처리되므로, 옛 사진이 별도
+-- 행으로 쌓이지 않는다.
+CREATE TABLE IF NOT EXISTS profile_photos (
+  -- 계정이 지워지면 사진도 함께 사라진다 (05 P24 탈퇴 14일 뒤 삭제).
+  user_id     uuid        PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+
+  -- 서버가 실제 파일 바이트(매직 넘버)로 정한 값만 들어온다 — Content-Type 헤더나
+  -- 확장자를 믿지 않는다. src/lib/profile-photo-rules.ts 의
+  -- ALLOWED_PROFILE_PHOTO_MIME 과 같은 집합이어야 한다.
+  mime_type   text        NOT NULL CHECK (mime_type IN ('image/jpeg', 'image/png', 'image/webp')),
+
+  -- 실제로 읽은 바이트 수 — Content-Length 헤더가 아니다(위조될 수 있다).
+  byte_size   integer     NOT NULL CHECK (byte_size > 0),
+
+  -- 파일 자체. base64 로 실려 와 decode(..., 'base64') 로 들어간다.
+  bytes       bytea       NOT NULL,
+
+  updated_at  timestamptz NOT NULL DEFAULT now()
+);
+
 COMMIT;
