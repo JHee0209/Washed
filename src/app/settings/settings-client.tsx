@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { signOut } from 'next-auth/react';
 import { useUnreadCount } from '@/lib/use-unread-count';
@@ -10,7 +10,9 @@ import {
   getCurrentSubscription,
   permissionServerSnapshot,
   permissionSnapshot,
+  refreshPushPermission,
   subscribePushState,
+  subscribePushSubscriptionChange,
 } from '@/lib/push-client';
 import { useRouter } from 'next/navigation';
 import {
@@ -106,56 +108,146 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
   const [pushChecked, setPushChecked] = useState(false);
   const [pushPending, setPushPending] = useState(false);
 
-  // 새로고침·첫 진입 시 실제 구독을 다시 확인한다 — permission 만 보고 켜진
-  // 것처럼 그리면 안 된다. 확인이 끝나기 전에는 "확인 중…" 으로만 보여준다.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const subscription = await getCurrentSubscription();
-      if (!cancelled) {
-        setPushOn(!!subscription);
-        setPushChecked(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+  // 켜고 끄는 중인지 — pushPending 과 같은 뜻이지만 **렌더를 기다리지 않는다**.
+  // state 는 다음 렌더에야 반영돼서 같은 tick 안에 두 번 들어온 클릭을 놓칠 수
+  // 있다. 실제 중복 요청(POST · DELETE)을 막는 자리는 이 ref 하나다.
+  const pushBusyRef = useRef(false);
+
+  // 조회 응답은 **보낸 순서대로 오지 않는다.** mount · focus 의 재조회가 늦게
+  // 도착해 방금 켠 결과를 도로 덮는 일을 막는다 — 가장 마지막에 보낸 조회의
+  // 답만 화면에 반영한다.
+  //
+  // 여기에 "아직 살아 있는지" 가드를 두지 않는 것은 의도적이다. React 18+ 에서
+  // unmount 뒤 setState 는 경고 없는 no-op 이라 막을 것이 없고, 그 가드는 정작
+  // 성공한 갱신을 조용히 삼킨다(Issue #75 에서 실제로 그렇게 깨졌다).
+  const pushSyncSeqRef = useRef(0);
+
+  // 실제 브라우저 구독을 다시 읽어 화면을 맞춘다 — 낙관적 갱신을 하지 않는 자리.
+  // ON/OFF 의 기준은 언제나 permission 이 아니라 이 결과다(Issue #68 · #75).
+  const syncPushToggle = useCallback(async () => {
+    const seq = ++pushSyncSeqRef.current;
+    const subscription = await getCurrentSubscription();
+    // 내가 보낸 뒤에 더 새 조회가 나갔으면 이 답은 이미 낡았다 — 버린다.
+    if (seq === pushSyncSeqRef.current) {
+      setPushOn(!!subscription);
+      setPushChecked(true);
+    }
+    return subscription;
   }, []);
 
+  // Issue #75 — 구독이 실제로 생기거나 사라지면 그 순간 **살아 있는** 화면이
+  // 다시 읽는다. 켠 쪽(turnOnPush)의 반환값에만 기대면, 비동기 작업 중에 화면이
+  // 다시 마운트됐을 때 옛 인스턴스로 간 setState 는 버려지고 새 인스턴스는
+  // 자기 mount 조회가 구독 생성보다 **먼저** 끝났을 경우 옛 값에 그대로 남는다.
+  // 이 신호는 그때 살아 있는 인스턴스에게 가므로 그 구멍이 막힌다.
+  useEffect(
+    () => subscribePushSubscriptionChange(() => {
+      void syncPushToggle();
+    }),
+    [syncPushToggle],
+  );
+
+  // 새로고침·첫 진입 시 실제 구독을 다시 확인한다 — permission 만 보고 켜진
+  // 것처럼 그리면 안 된다. 확인이 끝나기 전에는 "확인 중…" 으로만 보여준다.
+  //
+  // Issue #75 — 사용자가 사이트 설정에서 알림 권한을 바꾸고 탭으로 돌아오는 길이
+  // 실제로 있는데, 브라우저는 그 변경을 알려주지 않는다. 화면이 다시 보일 때마다
+  // permission 스냅샷과 구독을 **함께** 다시 읽어 stale 표시를 없앤다.
+  // 강제 새로고침은 하지 않는다 — 값이 그대로면 useSyncExternalStore 도
+  // setState 도 같은 값이라 렌더를 건너뛰므로 반복 refresh 가 생기지 않는다.
+  useEffect(() => {
+    // 이 실행에만 속한 플래그다 — ref 와 달리 다시 마운트되면 새로 만들어지므로,
+    // 옛 실행의 정리가 새 실행을 막는 일이 생기지 않는다.
+    let cancelled = false;
+
+    const resync = () => {
+      // 켜고 끄는 중에는 비켜선다 — 끝난 뒤 그쪽 finally 가 실제 상태로 맞춘다.
+      if (pushBusyRef.current) return;
+      refreshPushPermission();
+      void syncPushToggle();
+    };
+
+    resync();
+
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') resync();
+    };
+
+    window.addEventListener('focus', resync);
+    document.addEventListener('visibilitychange', onVisible);
+
+    // Permissions API 는 브라우저마다 지원이 갈린다 — 있으면 권한 변경을 바로
+    // 받고, 없어도 위 focus · visibilitychange 로 잡힌다
+    // (components/notification-prompt.tsx 와 같은 방식을 그대로 쓴다).
+    let status: PermissionStatus | undefined;
+    navigator.permissions
+      ?.query({ name: 'notifications' as PermissionName })
+      .then((result) => {
+        if (cancelled) return;
+        status = result;
+        result.addEventListener('change', resync);
+      })
+      .catch(() => {
+        // 이 브라우저는 알림 권한을 Permissions API 로 못 읽는다 — 무시한다
+      });
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener('focus', resync);
+      document.removeEventListener('visibilitychange', onVisible);
+      status?.removeEventListener('change', resync);
+    };
+  }, [syncPushToggle]);
+
   const turnOnPush = async () => {
-    if (pushPending) return;
+    if (pushBusyRef.current) return;
+
+    // Issue #75 — denied 는 코드로 되돌릴 수 없다(05 P26). 권한 창을 다시
+    // 부르지 않고(불러도 뜨지 않는다) 사이트 설정에서 직접 켜도록 안내만 한다.
+    // 서비스 워커 등록도 구독 요청도 하지 않으므로 UI 는 OFF 그대로 남는다.
+    if (permissionSnapshot() === 'denied') {
+      showToast('브라우저 설정에서 알림 권한을 허용해 주세요.');
+      return;
+    }
+
+    pushBusyRef.current = true;
     setPushPending(true);
     try {
-      // enablePush 는 이미 permission 이 default 인 경우(요청)와 granted 인데
-      // 구독만 없는 경우(재구독) 를 모두 처리한다 — 여기서 따로 가르지 않는다.
-      // 서버에 구독을 저장하지 못하면 던진다 — 권한만 켜지고 알림은 오지 않는
-      // 상태를 성공이라고 말하지 않기 위해서다.
+      // enablePush 는 permission 에 따라 갈린다 — default 면 브라우저의 **실제**
+      // 권한 창을 띄우고, granted 면 권한을 다시 묻지 않고 구독만 새로 만든다
+      // (OFF → ON 재활성화). 서버에 구독을 저장하지 못하면 던진다 — 권한만
+      // 켜지고 알림은 오지 않는 상태를 성공이라고 말하지 않기 위해서다.
       const result = await enablePush();
       // 실제 구독 존재 여부로 다시 확인한 뒤에만 ON 으로 바꾼다(낙관적 갱신 금지).
-      const subscription = await getCurrentSubscription();
-      setPushOn(!!subscription);
+      const subscription = await syncPushToggle();
       if (subscription) showToast('알림을 켰어요.');
-      else if (result === 'denied') showToast('브라우저에서 알림이 허용되지 않았어요.');
+      else if (result === 'denied') showToast('브라우저 설정에서 알림 권한을 허용해 주세요.');
       else showToast('알림을 켜지 못했어요. 잠시 뒤 다시 시도해주세요.');
     } catch {
+      // 브라우저 구독까지는 만들어졌는데 서버 저장만 실패했을 수 있다. 화면은
+      // 어떤 경우에도 실제 구독 기준으로 맞춘다 — 여기서만 OFF 로 남겨 두면
+      // 다음 focus 재조회 때 갑자기 ON 으로 바뀌어 더 어긋난다.
+      await syncPushToggle();
       showToast('알림을 켜지 못했어요. 잠시 뒤 다시 시도해주세요.');
     } finally {
       setPushPending(false);
+      pushBusyRef.current = false;
     }
   };
 
   const turnOffPush = async () => {
-    if (pushPending) return;
+    if (pushBusyRef.current) return;
+    pushBusyRef.current = true;
     setPushPending(true);
     try {
       await disablePush();
     } finally {
       // disablePush() 는 항상 실제 상태 기준으로 다시 확인하게 한다(낙관적
       // 갱신 금지) — 브라우저 unsubscribe 가 실패했으면 그대로 ON 으로 남는다.
-      const subscription = await getCurrentSubscription();
-      setPushOn(!!subscription);
+      const subscription = await syncPushToggle();
       showToast(subscription ? '알림을 끄지 못했어요. 다시 시도해주세요.' : '알림을 껐어요.');
       setPushPending(false);
+      pushBusyRef.current = false;
     }
   };
 
@@ -384,18 +476,21 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
                     </div>
                   </div>
                   {/*
-                    알림 영역은 상태와 무관하게 항상 토글 하나로 보여준다 — denied ·
+                    알림 영역은 상태와 무관하게 항상 토글 하나로 보여준다 —
                     unsupported · 확인 중에는 **숨기지 않고 disabled 로만** 막는다.
-                    denied 는 코드로 권한을 되돌릴 수 없으므로 토글을 눌러도 아무
-                    요청도 반복하지 않는다(사이트 설정에서 직접 허용해야 한다).
                     ON/OFF 판단은 이 상태들에서도 permission 이 아니라 실제
                     PushSubscription(pushOn) 기준을 유지한다.
+
+                    Issue #75 — denied 는 disabled 에서 뺀다. 코드로 권한을 되돌릴
+                    수 없는 것은 그대로지만(권한 요청을 반복하지 않는다), 눌렀을 때
+                    아무 반응도 없으면 어디서 고쳐야 하는지 알 수 없다. 눌리기는
+                    하되 turnOnPush 가 권한 창 대신 사이트 설정 안내만 띄우고
+                    돌아오므로, 요청도 반복되지 않고 UI 도 OFF 그대로 남는다.
                   */}
                   {(() => {
                     const disabled =
                       !pushChecked ||
                       pushPending ||
-                      pushPermission === 'denied' ||
                       pushPermission === 'unsupported';
                     // denied 상태는 실제 subscription 이 남아 있더라도 항상 OFF 로
                     // 보여준다(요청하신 고정 규칙) — 브라우저가 이미 알림을 막았으므로
