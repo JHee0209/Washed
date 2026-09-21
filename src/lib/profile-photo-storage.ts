@@ -58,3 +58,19 @@ export async function saveProfilePhoto(
           updated_at = now()
   `;
 }
+
+/**
+ * 기본 이미지로 되돌린다 — 이 사용자의 행만 지운다 (Issue #84).
+ *
+ * PK 가 user_id 하나뿐이라 다른 사람의 행을 지울 수 있는 조건 자체가 없다.
+ * 이미 사진이 없어도(0행) 에러가 아니다 — 호출부가 이 결과로 "지워진 게
+ * 있었는지"를 알 수 있게 boolean 으로 돌려준다.
+ */
+export async function deleteProfilePhoto(userId: string): Promise<boolean> {
+  const rows = await sql<{ user_id: string }>`
+    DELETE FROM profile_photos
+     WHERE user_id = ${userId}
+    RETURNING user_id
+  `;
+  return rows.length > 0;
+}
