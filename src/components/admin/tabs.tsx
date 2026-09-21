@@ -23,6 +23,7 @@ import {
   setReportStatus,
 } from '@/lib/admin-actions';
 import { seoulDayKey } from '@/lib/kst-date';
+import { filterUsersBySearch } from '@/lib/user-search';
 import {
   ADMIN_WARNING_REASONS,
   decodeWarningIncident,
@@ -103,6 +104,7 @@ type Data = {
     inquiry_id: string;
     user_id: string;
     user_name: string;
+    user_email: string;
     student_id: string;
     room: string;
     content: string;
@@ -895,11 +897,14 @@ function Notices({ rows }: { rows: Data['notices'] }) {
 
 // 읽기만 하는 표다 — 답변은 SP8 대로 관리자가 그 사람의 이메일로 보낸다.
 // 처리 상태를 바꾸는 단추를 두지 않은 것은 05 에 그런 정책이 없기 때문이다.
+//
+// Issue #86 — 답장할 주소를 여기서 바로 확인할 수 있어야 한다(SP8). users 조인에서 오는
+// 지금 값이라 inquiries 에 따로 저장하지 않는다.
 function Inquiries({ rows }: { rows: Data['inquiries'] }) {
   return (
-    <Table cols={['작성 시각', '사용자', '학번', '호실', '내용']}>
+    <Table cols={['작성 시각', '사용자', '학번', '호실', '이메일', '내용']}>
       {rows.length === 0 ? (
-        <EmptyRow span={5} text="문의 내역이 없습니다." />
+        <EmptyRow span={6} text="문의 내역이 없습니다." />
       ) : (
         rows.map((q) => (
           <tr key={q.inquiry_id}>
@@ -907,6 +912,8 @@ function Inquiries({ rows }: { rows: Data['inquiries'] }) {
             <td style={{ ...cell, fontWeight: 700 }}>{q.user_name}</td>
             <td style={cell}>{q.student_id}</td>
             <td style={cell}>{q.room}</td>
+            {/* 관리자가 주소를 복사해 답장한다 — 줄이거나 생략하지 않는다 */}
+            <td style={{ ...cell, color: '#8FAAD0' }}>{q.user_email}</td>
             {/* 문의 내용만 줄바꿈을 살린다 — 다른 칸의 nowrap 은 그대로 둔다 */}
             <td
               style={{
@@ -931,6 +938,18 @@ function Inquiries({ rows }: { rows: Data['inquiries'] }) {
 
 function Users({ rows }: { rows: Data['users'] }) {
   const [target, setTarget] = useState<string | null>(null);
+
+  // Issue #86 — 이름 · 이메일 · 학번 검색. '' 이면 전체(기존 동작 그대로)다.
+  //
+  // 서버를 다시 부르지 않는다: adminUsers() 가 이미 전체 사용자를 한 번에 내려주므로
+  // 그 안에서 고르는 것으로 충분하다(이용 내역 날짜 필터와 같은 방식). 검색 전용 쿼리나
+  // API 를 두지 않으니 기존 조회의 의미도 그대로 남는다.
+  //
+  // 판정 규칙은 user-search.ts 에 있다 — .tsx 는 `npm test` 대상이 아니라 여기 두면
+  // 검증할 수 없기 때문이다.
+  const [query, setQuery] = useState('');
+  const shown = filterUsersBySearch(rows, query);
+  const searching = query.trim() !== '';
 
   // 05 P6 · Issue #8 — 어느 사건에 대한 경고인지 관리자가 고른다. 서버는 이 값으로
   // canonical 사건 키(warnings.incident_queue_id · 0012 · 0013)를 정해 자동 경고와의
@@ -963,6 +982,50 @@ function Users({ rows }: { rows: Data['users'] }) {
 
   return (
     <>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          marginBottom: 12,
+          flexWrap: 'wrap',
+        }}
+      >
+        <label htmlFor="user-search" style={{ fontSize: 13, fontWeight: 600, color: '#5A7CA8' }}>
+          검색
+        </label>
+        {/*
+          값을 그대로 state 에 담는다 — onChange 에서 trim·소문자로 바꾸면 한글 IME 조합이
+          깨진다. 정규화는 filterUsersBySearch() 안에서만 한다.
+
+          시안(관리자.dc.html)의 placeholder 는 「이름으로 검색」이지만 Issue #86 의 검색
+          대상이 이름 · 이메일 · 학번 셋이라 세 가지를 다 적는다.
+        */}
+        <input
+          id="user-search"
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="이름 · 이메일 · 학번 검색"
+          style={{
+            width: 220,
+            padding: '8px 11px',
+            borderRadius: 10,
+            border: '1px solid #E3EBF7',
+            background: '#fff',
+            fontSize: 13,
+            color: '#1E3557',
+            fontFamily: 'inherit',
+          }}
+        />
+        <Btn onClick={() => setQuery('')} disabled={!searching}>
+          전체 보기
+        </Btn>
+        <span style={{ fontSize: 12.5, color: '#A8BCD9' }}>
+          {searching ? `${shown.length}명` : `전체 ${rows.length}명`}
+        </span>
+      </div>
+
       {target ? (
         <div
           style={{
@@ -1063,10 +1126,11 @@ function Users({ rows }: { rows: Data['users'] }) {
       ) : null}
 
       <Table cols={['가입', '이름', '학번', '호실', '이메일', '가입 방식', '경고', '제한', '상태', '']}>
-        {rows.length === 0 ? (
-          <EmptyRow span={10} text="가입한 사용자가 없어요." />
+        {shown.length === 0 ? (
+          // 아직 아무도 가입하지 않은 것과 검색에 걸린 사람이 없는 것은 다른 상태다
+          <EmptyRow span={10} text={searching ? '검색 결과가 없어요.' : '가입한 사용자가 없어요.'} />
         ) : (
-          rows.map((u) => (
+          shown.map((u) => (
             <tr key={u.user_id} id={`user-${u.user_id}`}>
               <td style={{ ...cell, color: '#8FAAD0' }}>{fmt(u.created_at, false)}</td>
               <td style={{ ...cell, fontWeight: 700 }}>{u.name}</td>

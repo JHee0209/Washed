@@ -260,7 +260,12 @@ export async function adminNotices() {
  * 이메일로 나가므로(SP8) 여기서는 **읽기만** 한다 — 상태 변경 동작을 두지 않는다.
  *
  * 누가 보냈는지는 users 를 조인해서 보여 준다 — inquiries 에는 user_id 만 있고
- * 이름·학번·호실을 복사해 두지 않는다(08 · 1번 · 05 P16: 사람은 user_id 로 가리킨다).
+ * 이름·학번·호실·이메일을 복사해 두지 않는다(08 · 1번 · 05 P16: 사람은 user_id 로 가리킨다).
+ * 답장할 주소(user_email)도 같은 조인에서 온다 — 지금 users 에 있는 값이라 사용자가
+ * 이메일을 바꿔도 따라간다.
+ *
+ * INNER JOIN 인 채로 둔다: inquiries.user_id 는 NOT NULL 이고 users 를 ON DELETE CASCADE 로
+ * 참조해(0015) 짝 없는 문의가 남을 수 없다. LEFT JOIN 으로 바꾸면 조회되는 행의 의미만 달라진다.
  *
  * 기간을 자르지 않는 이유: 문의 보관 기간이 05 · 06 어디에도 없다. 임의로 정하지 않고
  * 다른 조회와 같은 LIMIT 만 둔다.
@@ -271,13 +276,14 @@ export async function adminInquiries() {
     inquiry_id: string;
     user_id: string;
     user_name: string;
+    user_email: string;
     student_id: string;
     room: string;
     content: string;
     created_at: string;
   }>`
-    SELECT i.inquiry_id, i.user_id, u.name AS user_name, u.student_id, u.room,
-           i.content, i.created_at
+    SELECT i.inquiry_id, i.user_id, u.name AS user_name, u.email AS user_email,
+           u.student_id, u.room, i.content, i.created_at
       FROM inquiries i
       JOIN users u ON u.user_id = i.user_id
      ORDER BY i.created_at DESC
