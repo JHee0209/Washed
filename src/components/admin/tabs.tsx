@@ -579,7 +579,7 @@ function History({ rows }: { rows: Data['history'] }) {
             <td style={cell}>{h.room}</td>
             <td style={cell}>{h.machine_name ?? '—'}</td>
             <td style={cell}>
-              <Dot color={h.result === '정상 이용' ? '#00BF40' : '#FF9200'} />
+              <Dot color={h.result === '경고' ? '#FF9200' : '#00BF40'} />
               {h.result}
             </td>
             {/* 「배정 후 미이용」에는 사용 시간이 없다 (2026-09-15 갱신) */}
