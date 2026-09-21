@@ -207,6 +207,37 @@ function setPushDisabledByUser(disabled: boolean): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 구독이 실제로 생기거나 사라진 순간을 알린다 (Issue #75)
+//
+// 위의 permission 채널과 **일부러 나눠 둔다.** 저쪽은 브라우저가 쥔 허용 상태를
+// 다시 읽게 하는 신호고, 이쪽은 PushSubscription 이 실제로 바뀌었다는 신호다.
+// 한 채널로 합치면 markAsked() · refreshPushPermission() 같은 무관한 알림에도
+// 구독을 다시 읽게 되어 쓸데없는 조회가 붙는다.
+//
+// **왜 반환값만으로는 부족한가** — 켠 결과를 부른 쪽의 반환값에만 맡기면, 그
+// 사이에 화면이 다시 마운트됐을 때 옛 인스턴스의 setState 는 사라진 화면으로
+// 가고(React 에서 no-op) 새 인스턴스는 아무것도 듣지 못한 채 옛 값에 머문다.
+// 그래서 "바뀌었다" 는 사실을 **그 순간 살아 있는 구독자 전원에게** 알린다.
+//
+// 듣는 쪽은 이 신호를 받고 getCurrentSubscription() 으로 **실제 값을 다시 읽는다.**
+// 신호에 값을 실어 보내지 않는 것은 그래서다 — 낙관적 갱신이 끼어들 자리를
+// 아예 만들지 않는다(ON/OFF 의 기준은 언제나 실제 구독 존재 여부다).
+// ---------------------------------------------------------------------------
+
+let subscriptionListeners: (() => void)[] = [];
+
+export function subscribePushSubscriptionChange(callback: () => void): () => void {
+  subscriptionListeners = [...subscriptionListeners, callback];
+  return () => {
+    subscriptionListeners = subscriptionListeners.filter((l) => l !== callback);
+  };
+}
+
+function emitSubscriptionChange(): void {
+  for (const listener of subscriptionListeners) listener();
+}
+
 /**
  * 지금 이 브라우저에 실제로 있는 PushSubscription — 없으면 null.
  *
@@ -226,15 +257,31 @@ export async function getCurrentSubscription(): Promise<PushSubscription | null>
 }
 
 /**
- * 허용을 묻고, 허용했으면 구독을 만들어 서버에 저장한다.
- * 브라우저가 이미 거절을 기억하고 있으면 창이 뜨지 않고 바로 'denied' 가 돌아온다 —
- * 그때는 폰의 사이트 설정에서 직접 켜야 한다.
+ * 필요할 때만 허용을 묻고, 허용돼 있으면 구독을 만들어 서버에 저장한다.
+ *
+ * Issue #75 — 묻는 것은 permission 이 'default' 일 때뿐이다. 이미 'granted' 면
+ * 권한 창 없이 구독만 새로 만들고(OFF → ON 재활성화), 'denied' 면 아무것도 하지
+ * 않고 그대로 돌려준다 — 다시 물어도 창이 뜨지 않으며, 그때는 폰의 사이트
+ * 설정에서 직접 켜야 한다(호출부가 그 안내를 한다).
  */
 export async function enablePush(): Promise<NotificationPermission> {
   if (!pushSupported()) return 'denied';
 
-  const permission = await requestPermissionWithTimeout();
+  // Issue #75 — 권한은 브라우저가 쥐고 있다. **이미 정해진 상태에서는 다시 묻지 않는다.**
+  //  · default — 사용자의 클릭 흐름 안에서 브라우저의 실제 권한 창을 띄운다.
+  //  · granted — 권한 재요청이 아니라 **구독 재생성**으로 재활성화한다(아래로 그대로 내려간다).
+  //  · denied  — 다시 불러도 창이 뜨지 않는다. 호출부가 사이트 설정 안내를 하도록 바로 돌려준다.
+  let permission = Notification.permission;
+  if (permission === 'default') {
+    permission = await requestPermissionWithTimeout();
+  }
+
+  // 방금 **실제** 권한을 읽었다 — 세 경로 모두에서 store 를 그 값에 맞춘다.
+  // 사이트 설정에서 바꾸고 돌아온 직후처럼 store 가 낡아 있을 수 있는데, 그때
+  // 낡은 값이 화면에 남으면 구독은 생겼는데 토글만 OFF 로 보이는 어긋남이 생긴다.
+  // 값이 그대로면 useSyncExternalStore 가 렌더를 건너뛰므로 부담도 없다.
   emit();
+
   if (permission !== 'granted') return permission;
 
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
@@ -271,6 +318,11 @@ export async function enablePush(): Promise<NotificationPermission> {
   // 여기서 던지고 나가면(위) 아래 줄을 타지 않으므로, 실패했을 때는 의사가
   // 남아 있던 대로 유지된다(요청하신 대로 임의로 풀지 않는다).
   setPushDisabledByUser(false);
+
+  // Issue #75 — 구독이 실제로 생겼고 서버에도 저장됐다. 지금 살아 있는 화면이
+  // 다시 읽게 한다. 알리는 것은 "바뀌었다" 뿐이고 값은 싣지 않는다 —
+  // 듣는 쪽이 getCurrentSubscription() 으로 실제 값을 확인한다(POST 는 없다).
+  emitSubscriptionChange();
 
   return permission;
 }
@@ -364,9 +416,15 @@ export async function disablePush(): Promise<void> {
 
   if (!unsubscribed) {
     // 실제 구독이 살아 있다 — 의사 표시를 되돌려 자동 동기화도 정상으로 둔다.
+    // 바뀐 것이 없으므로 알리지 않는다.
     setPushDisabledByUser(false);
     return;
   }
+
+  // Issue #75 — 브라우저 구독이 실제로 끊긴 순간이다. 서버 DELETE 를 기다리지
+  // 않고 바로 알린다 — UI 의 기준은 서버 행이 아니라 **브라우저 구독**이고,
+  // 그 기준은 이미 여기서 바뀌었다.
+  emitSubscriptionChange();
 
   try {
     const res = await fetch('/api/push/subscribe', {
