@@ -1,7 +1,8 @@
-// F20 — 프로필 사진 저장/조회 (Issue #76).
+// F20 — 프로필 사진 저장/조회/삭제 (Issue #76 · DELETE 는 Issue #84).
 //
-// POST multipart/form-data { photo: File } → { ok: true }
-// GET                                       → 사진 바이트 (없으면 404)
+// POST   multipart/form-data { photo: File } → { ok: true }
+// GET                                        → 사진 바이트 (없으면 404)
+// DELETE                                     → 기본 이미지로 되돌림 (없어도 { ok: true })
 //
 // **대상은 항상 현재 로그인한 session.user.id 뿐이다.** 클라이언트가 다른
 // user_id 를 query/body 로 보내 남의 사진을 보거나 바꿀 수 있는 자리를
@@ -10,7 +11,7 @@
 import { auth } from '@/auth';
 import { withdrawPendingBlock } from '@/lib/account-guard';
 import { MAX_PROFILE_PHOTO_BYTES, validateProfilePhotoBytes } from '@/lib/profile-photo-rules';
-import { readProfilePhoto, saveProfilePhoto } from '@/lib/profile-photo-storage';
+import { deleteProfilePhoto, readProfilePhoto, saveProfilePhoto } from '@/lib/profile-photo-storage';
 
 export const runtime = 'nodejs';
 
@@ -80,6 +81,23 @@ export async function POST(request: Request) {
   }
 
   await saveProfilePhoto(userId, result.mime, bytes);
+
+  return Response.json({ ok: true });
+}
+
+export async function DELETE() {
+  const session = await auth();
+  const userId = session?.user?.id;
+  if (!userId) {
+    return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+  }
+
+  const blocked = withdrawPendingBlock(session);
+  if (blocked) return blocked;
+
+  // 이미 사진이 없어도(0행 삭제) 오류가 아니다 — "기본 이미지로 되돌리기"는
+  // 몇 번을 눌러도 같은 결과(기본 이미지)로 수렴해야 한다.
+  await deleteProfilePhoto(userId);
 
   return Response.json({ ok: true });
 }

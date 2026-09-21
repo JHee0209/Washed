@@ -8,6 +8,7 @@ import {
   MAX_PROFILE_PHOTO_LABEL,
   isAllowedProfilePhotoMime,
 } from '@/lib/profile-photo-rules';
+import { changePassword as changePasswordAction, verifyCurrentPassword } from '@/lib/user-actions';
 
 type ProfileClientProps = {
   name: string;
@@ -35,11 +36,14 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
   const [newPwConfirm, setNewPwConfirm] = useState('');
   const [newPwConfirmVisible, setNewPwConfirmVisible] = useState(false);
 
+  // Issue #84 — 1단계("확인")·2단계("비밀번호 변경") 각각 서버 액션이 진행
+  // 중일 때 중복 클릭을 막는다. pwVerified 는 화면 상태일 뿐이고, 실제 변경은
+  // changePassword() 안에서 다시 검증하므로 이 플래그가 그 검증을 대신하지 않는다.
+  const [pwVerifying, setPwVerifying] = useState(false);
+  const [pwChanging, setPwChanging] = useState(false);
+
   const [toastVisible, setToastVisible] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
-
-  // 테스트용 실제 비밀번호
-  const actualPassword = 'washed1234';
 
   // Issue #76 — 프로필 사진. photoPreviewUrl 이 있으면 "선택했지만 아직 저장
   // 전"이고, 저장이 끝나면 비우고 photoVersion 을 올려 ProfileAvatar 가 서버의
@@ -50,6 +54,28 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
   const [photoVersion, setPhotoVersion] = useState(0);
   const [photoSaving, setPhotoSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Issue #84 — "기본 이미지로 되돌리기" 버튼을 사진이 있을 때만 보여주려면
+  // 저장된 사진이 있는지 알아야 한다. ProfileAvatar 는 그 상태를 내부에만
+  // 갖고 있어(onError 로만 판정) 밖에서 알 수 없으므로, 여기서만 따로 한 번
+  // 확인한다(마운트 시 1회) — ProfileAvatar 자체는 고치지 않는다.
+  // null = 아직 확인 전(그동안 되돌리기 버튼을 보이지 않는다).
+  const [hasSavedPhoto, setHasSavedPhoto] = useState<boolean | null>(null);
+  const [photoResetting, setPhotoResetting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/profile/photo', { cache: 'no-store' })
+      .then((res) => {
+        if (!cancelled) setHasSavedPhoto(res.ok);
+      })
+      .catch(() => {
+        if (!cancelled) setHasSavedPhoto(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // object URL 은 명시적으로 풀어 줘야 한다 — 다른 파일을 고르거나 화면을
   // 떠날 때 남아 있으면 탭이 닫힐 때까지 메모리에 붙어 있는다.
@@ -105,11 +131,34 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
       setPhotoFile(null);
       setPhotoPreviewUrl(null);
       setPhotoVersion((v) => v + 1);
+      setHasSavedPhoto(true);
       showToast('프로필 사진을 변경했어요.');
     } catch (error) {
       showToast(error instanceof Error ? error.message : '사진을 저장하지 못했어요.');
     } finally {
       setPhotoSaving(false);
+    }
+  };
+
+  // Issue #84 — 등록한 사진을 지우고 기본 이미지로 되돌린다. DELETE 는
+  // idempotent(이미 없어도 성공)라 여기서 "정말 있는지"를 먼저 확인하지 않고
+  // 그냥 부른다 — 실패는 네트워크/서버 오류일 때뿐이다.
+  const resetPhoto = async () => {
+    if (photoResetting) return;
+    setPhotoResetting(true);
+    try {
+      const res = await fetch('/api/profile/photo', { method: 'DELETE' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? '기본 이미지로 되돌리지 못했어요.');
+      }
+      setHasSavedPhoto(false);
+      setPhotoVersion((v) => v + 1);
+      showToast('기본 이미지로 되돌렸어요.');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '기본 이미지로 되돌리지 못했어요.');
+    } finally {
+      setPhotoResetting(false);
     }
   };
 
@@ -124,23 +173,52 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
     setRoom(digits ? `${digits}호` : '');
   };
 
-  const verifyCurrentPw = () => {
-    if (!currentPw.trim()) return;
-    if (currentPw === actualPassword) {
-      setPwVerified(true);
-      setCurrentPwError(false);
-    } else {
+  // Issue #84 — 실제 서버(users.password_hash)를 기준으로 확인한다. 이 결과는
+  // "새 비밀번호 입력 칸을 보여줄지"만 정할 뿐, 실제 변경은 changePassword() 가
+  // 다시 독립적으로 검증한다 — 이 단계를 건너뛰거나 결과를 조작해도 저장은
+  // 되지 않는다.
+  const verifyCurrentPw = async () => {
+    if (!currentPw.trim() || pwVerifying) return;
+    setPwVerifying(true);
+    try {
+      const result = await verifyCurrentPassword(currentPw);
+      if (result.ok) {
+        setPwVerified(true);
+        setCurrentPwError(false);
+      } else {
+        setCurrentPwError(true);
+      }
+    } catch {
       setCurrentPwError(true);
+    } finally {
+      setPwVerifying(false);
     }
   };
 
-  const changePassword = () => {
-    if (!newPw || newPw !== newPwConfirm || newPw === currentPw) return;
-    showToast('비밀번호가 변경됐어요.');
-    setPwVerified(false);
-    setCurrentPw('');
-    setNewPw('');
-    setNewPwConfirm('');
+  const changePassword = async () => {
+    if (changePwDisabled || pwChanging) return;
+    setPwChanging(true);
+    try {
+      const result = await changePasswordAction(currentPw, newPw);
+      if (result.ok) {
+        showToast('비밀번호가 변경됐어요.');
+        setPwVerified(false);
+        setCurrentPw('');
+        setNewPw('');
+        setNewPwConfirm('');
+      } else {
+        if (result.field === 'current') {
+          // 검증 사이에 비밀번호가 바뀌었거나 애초에 틀렸다 — 1단계부터 다시.
+          setPwVerified(false);
+          setCurrentPwError(true);
+        }
+        showToast(result.message);
+      }
+    } catch {
+      showToast('비밀번호를 변경하지 못했어요. 잠시 뒤 다시 시도해주세요.');
+    } finally {
+      setPwChanging(false);
+    }
   };
 
   const handleSave = () => {
@@ -229,13 +307,27 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
                   </button>
                 </div>
               ) : (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#5B93E0', fontSize: '12.5px', fontWeight: 600, whiteSpace: 'nowrap', padding: 0 }}
-                >
-                  프로필 사진 변경
-                </button>
+                <div style={{ display: 'flex', gap: '14px' }}>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#5B93E0', fontSize: '12.5px', fontWeight: 600, whiteSpace: 'nowrap', padding: 0 }}
+                  >
+                    프로필 사진 변경
+                  </button>
+                  {/* Issue #84 — 저장된 사진이 있을 때만 보여준다(hasSavedPhoto 가
+                      아직 확인 전(null)이거나 사진이 없으면 숨긴다). */}
+                  {hasSavedPhoto === true && (
+                    <button
+                      type="button"
+                      onClick={resetPhoto}
+                      disabled={photoResetting}
+                      style={{ border: 'none', background: 'transparent', cursor: photoResetting ? 'default' : 'pointer', color: photoResetting ? '#C3D2E6' : '#8FAAD0', fontSize: '12.5px', fontWeight: 600, whiteSpace: 'nowrap', padding: 0 }}
+                    >
+                      {photoResetting ? '되돌리는 중…' : '기본 이미지로 되돌리기'}
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -301,13 +393,13 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
                         {pwSameAsOld && <span style={{ fontSize: '12px', color: '#E0554E' }}>현재 비밀번호와 동일합니다</span>}
                       </div>
 
-                      <button onClick={changePassword} disabled={changePwDisabled} style={{ border: 'none', cursor: changePwDisabled ? 'default' : 'pointer', color: changePwDisabled ? '#C3D2E6' : '#4C86D8', background: 'transparent', boxShadow: `inset 0 0 0 1.5px ${changePwDisabled ? '#E6EDF7' : '#4C86D8'}`, borderRadius: '12px', padding: '12px', fontSize: '13.5px', fontWeight: 700 }}>
-                        비밀번호 변경
+                      <button onClick={changePassword} disabled={changePwDisabled || pwChanging} style={{ border: 'none', cursor: (changePwDisabled || pwChanging) ? 'default' : 'pointer', color: (changePwDisabled || pwChanging) ? '#C3D2E6' : '#4C86D8', background: 'transparent', boxShadow: `inset 0 0 0 1.5px ${(changePwDisabled || pwChanging) ? '#E6EDF7' : '#4C86D8'}`, borderRadius: '12px', padding: '12px', fontSize: '13.5px', fontWeight: 700 }}>
+                        {pwChanging ? '변경 중…' : '비밀번호 변경'}
                       </button>
                     </>
                   ) : (
-                    <button onClick={verifyCurrentPw} disabled={!currentPw.trim()} style={{ border: 'none', cursor: currentPw.trim() ? 'pointer' : 'default', color: currentPw.trim() ? '#4C86D8' : '#C3D2E6', background: 'transparent', boxShadow: `inset 0 0 0 1.5px ${currentPw.trim() ? '#4C86D8' : '#E6EDF7'}`, borderRadius: '12px', padding: '12px', fontSize: '13.5px', fontWeight: 700 }}>
-                      확인
+                    <button onClick={verifyCurrentPw} disabled={!currentPw.trim() || pwVerifying} style={{ border: 'none', cursor: (currentPw.trim() && !pwVerifying) ? 'pointer' : 'default', color: (currentPw.trim() && !pwVerifying) ? '#4C86D8' : '#C3D2E6', background: 'transparent', boxShadow: `inset 0 0 0 1.5px ${(currentPw.trim() && !pwVerifying) ? '#4C86D8' : '#E6EDF7'}`, borderRadius: '12px', padding: '12px', fontSize: '13.5px', fontWeight: 700 }}>
+                      {pwVerifying ? '확인 중…' : '확인'}
                     </button>
                   )}
                 </>
