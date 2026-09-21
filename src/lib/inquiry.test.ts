@@ -173,17 +173,29 @@ describe('관리자 문의 조회 (adminInquiries)', () => {
     assert.equal(rows[0].content, '나중에 보낸 문의');
     assert.equal(rows[1].content, '먼저 보낸 문의');
 
-    // users 조인 — 이름 · 학번 · 호실이 실제 사용자 값과 맞는다
-    const [seededB] = (await db.query(
-      'SELECT name, student_id, room FROM users WHERE user_id = $1',
-      [userB],
-    )) as { name: string; student_id: string; room: string }[];
+    // users 조인 — 이름 · 학번 · 호실 · 이메일이 실제 사용자 값과 맞는다
+    type SeededUser = { name: string; email: string; student_id: string; room: string };
+    const seeded = async (userId: string) =>
+      (
+        (await db.query('SELECT name, email, student_id, room FROM users WHERE user_id = $1', [
+          userId,
+        ])) as SeededUser[]
+      )[0];
+
+    const seededA = await seeded(userA);
+    const seededB = await seeded(userB);
 
     assert.equal(rows[0].user_id, userB);
     assert.equal(rows[0].user_name, seededB.name);
     assert.equal(rows[0].student_id, seededB.student_id);
     assert.equal(rows[0].room, seededB.room);
     assert.ok(rows[0].created_at, '작성 시각이 내려와야 한다');
+
+    // Issue #86 — 답장할 주소(users.email). inquiries 에 복사해 두지 않고 조인으로 가져온다.
+    // 보낸 사람이 다르면 이메일도 각각 제 것이어야 한다 — 잘못 조인하면 여기서 걸린다.
+    assert.equal(rows[0].user_email, seededB.email);
+    assert.equal(rows[1].user_email, seededA.email);
+    assert.notEqual(rows[0].user_email, rows[1].user_email);
   });
 
   it('계정이 지워지면 그 사람의 문의도 함께 사라진다 (05 P24)', async () => {
