@@ -27,9 +27,9 @@ import {
   isMachineKind,
 } from '@/lib/report-rules';
 import { FAQ } from '@/lib/i18n/content/faq';
-import { REPORT_REASON_LABEL_KEY } from '@/lib/i18n/db-labels';
+import { MACHINE_KIND_KEY, REPORT_REASON_LABEL_KEY } from '@/lib/i18n/db-labels';
 import { Rich } from '@/lib/i18n/rich';
-import { useLang, useT } from '@/lib/i18n/use-t';
+import { useApiError, useLang, useT } from '@/lib/i18n/use-t';
 import { requestWithdrawal } from '@/lib/user-actions';
 
 // FAQ 본문은 네 언어를 함께 두어야 하므로 src/lib/i18n/content/faq.ts 로 옮겼다 (Issue #13).
@@ -41,6 +41,7 @@ type SettingsClientProps = {
 
 export default function SettingsClient({ name, studentId }: SettingsClientProps) {
   const t = useT();
+  const apiError = useApiError();
   const lang = useLang();
   const router = useRouter();
 
@@ -326,7 +327,7 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
           setTimeout(() => router.push('/login'), 800);
           return;
         }
-        showToast(data?.message ?? t('settings.reportFailed'));
+        showToast(apiError(data, t('settings.reportFailed')));
         return;
       }
 
@@ -518,10 +519,13 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px', borderRadius: '12px', background: '#F7FAFE', boxShadow: 'inset 0 0 0 1px #E6EDF7' }}>
                       <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#5A7CA8' }}>{t('settings.machineKindLabel')}</span>
                       <div style={{ display: 'flex', gap: '6px' }}>
-                        {['세탁기', '건조기'].map((t) => {
-                          const on = laundryType === t;
+                        {/* 파라미터 이름을 kind 로 둔다 — `t` 로 두면 번역 함수를 가린다.
+                            state · 서버 전송 값은 DB CHECK 가 받는 한국어 그대로이고(reports.machine_kind),
+                            보이는 글자만 번역한다 (13번 「동적 데이터와 고정 UI 구분」). */}
+                        {(['세탁기', '건조기'] as const).map((kind) => {
+                          const on = laundryType === kind;
                           return (
-                            <div key={t} onClick={() => { setLaundryType(t); setLaundryMachine(null); }} style={{ flex: 1, textAlign: 'center', padding: '8px', borderRadius: '10px', cursor: 'pointer', fontSize: '12.5px', fontWeight: 700, background: on ? '#4C86D8' : '#fff', color: on ? '#fff' : '#4A5F82', boxShadow: `inset 0 0 0 1px ${on ? '#4C86D8' : '#E6EDF7'}` }}>{t}</div>
+                            <div key={kind} onClick={() => { setLaundryType(kind); setLaundryMachine(null); }} style={{ flex: 1, textAlign: 'center', padding: '8px', borderRadius: '10px', cursor: 'pointer', fontSize: '12.5px', fontWeight: 700, background: on ? '#4C86D8' : '#fff', color: on ? '#fff' : '#4A5F82', boxShadow: `inset 0 0 0 1px ${on ? '#4C86D8' : '#E6EDF7'}` }}>{t(MACHINE_KIND_KEY[kind])}</div>
                           );
                         })}
                       </div>

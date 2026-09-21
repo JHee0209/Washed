@@ -7,6 +7,7 @@
 
 import { useMemo, useSyncExternalStore } from 'react';
 
+import { apiErrorText } from './api-error.ts';
 import type { Lang } from './lang.ts';
 import { langServerSnapshot, langSnapshot, subscribeLang } from './store.ts';
 import { translate } from './translate.ts';
@@ -34,4 +35,18 @@ export function useT(): TFunction {
         translate(lang, key, ...args),
     [lang],
   );
+}
+
+/**
+ * 서버가 준 오류를 화면 문구로 바꾸는 함수를 돌려준다 (16단계).
+ *
+ *   const apiError = useApiError();
+ *   showToast(apiError(data, t('home.joinFailed', { label })));
+ *
+ * 두 번째 인자가 **화면이 가진 행동별 문구**다 — 서버가 일반적인 실패 code 를
+ * 보냈거나 code 자체가 없을 때 이쪽이 쓰인다. 판정은 api-error.ts 에 있다.
+ */
+export function useApiError(): (body: unknown, fallback: string) => string {
+  const lang = useLang();
+  return useMemo(() => (body: unknown, fallback: string) => apiErrorText(lang, body, fallback), [lang]);
 }

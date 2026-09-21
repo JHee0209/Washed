@@ -5,7 +5,25 @@ import Link from 'next/link';
 import { signIn } from 'next-auth/react';
 
 import { Rich } from '@/lib/i18n/rich';
-import { useT } from '@/lib/i18n/use-t';
+import { useApiError, useT } from '@/lib/i18n/use-t';
+
+/**
+ * 오류를 **번역된 문장이 아니라 (서버 응답 + fallback key) 로** 담는다 (Issue #13).
+ *
+ * 문장을 state 에 넣어 두면, 오류가 떠 있는 채로 `washed_lang` 이 바뀌어도(다른 탭에서
+ * 고르면 storage 이벤트로 이 화면도 다시 그려진다) 이미 만들어진 문장이 옛 언어로
+ * 남는다. 원재료만 담고 **렌더 시점에** 현재 언어로 계산한다 —
+ * qr-scanner.tsx · notifications-client.tsx 와 같은 방식이다.
+ *
+ * key 를 좁혀 두는 이유는 t() 가 치환 인자를 요구하지 않게 하려는 것이다(types.ts).
+ */
+type PwResetErrorKey =
+  | 'pwReset.sendFailed'
+  | 'pwReset.codeInvalid'
+  | 'pwReset.changeFailed'
+  | 'common.networkError';
+
+type PwResetError = { body: unknown; fallbackKey: PwResetErrorKey } | null;
 
 /**
  * 인증코드 유효 시간의 **기본값**이다 (05 P22 — 5분).
@@ -15,6 +33,7 @@ const DEFAULT_LIMIT = 5 * 60 * 1000;
 
 export default function PasswordResetPage() {
   const t = useT();
+  const apiError = useApiError();
   // --- 상태 관리 ---
   const [step, setStep] = useState(1);
   const [email, setEmail] = useState('');
@@ -23,7 +42,7 @@ export default function PasswordResetPage() {
   const [pw2, setPw2] = useState('');
   
   const [emailError, setEmailError] = useState(false);
-  const [codeErrorText, setCodeErrorText] = useState('');
+  const [codeErrorSource, setCodeErrorSource] = useState<PwResetError>(null);
   const [sentAt, setSentAt] = useState(0);
   const [now, setNow] = useState(Date.now());
 
@@ -38,9 +57,17 @@ export default function PasswordResetPage() {
    * 메시지만 띄우면 갈 곳이 없으므로 구글 로그인으로 가는 길을 함께 보여준다.
    */
   const [googleOnly, setGoogleOnly] = useState(false);
-  const [emailErrorText, setEmailErrorText] = useState('');
-  const [pwErrorText, setPwErrorText] = useState('');
+  const [emailErrorSource, setEmailErrorSource] = useState<PwResetError>(null);
+  const [pwErrorSource, setPwErrorSource] = useState<PwResetError>(null);
   const [pending, setPending] = useState(false);
+
+  // 렌더 시점에 현재 언어로 계산한다 — state 에는 문장이 아니라 원재료만 있다.
+  // code → 번역 / code 없음 → 서버 message / 둘 다 없음 → 화면 문구 (api-error.ts)
+  const resolveError = (source: PwResetError) =>
+    source ? apiError(source.body, t(source.fallbackKey)) : '';
+  const emailErrorText = resolveError(emailErrorSource);
+  const codeErrorText = resolveError(codeErrorSource);
+  const pwErrorText = resolveError(pwErrorSource);
 
   // --- 타이머 실시간 업데이트 ---
   useEffect(() => {
@@ -76,7 +103,7 @@ export default function PasswordResetPage() {
       return;
     }
     setPending(true);
-    setEmailErrorText('');
+    setEmailErrorSource(null);
     setGoogleOnly(false);
     setDevCode('');
     try {
@@ -98,19 +125,19 @@ export default function PasswordResetPage() {
           setGoogleOnly(true);
           return;
         }
-        setEmailErrorText(data.message ?? t('pwReset.sendFailed'));
+        setEmailErrorSource({ body: data, fallbackKey: 'pwReset.sendFailed' });
         return;
       }
 
       setLimit((data.minutes ?? 5) * 60 * 1000);
       setSentAt(Date.now());
       setCode('');
-      setCodeErrorText('');
+      setCodeErrorSource(null);
       setTicket('');
       if (data.devCode) setDevCode(data.devCode);
       setStep(2);
     } catch {
-      setEmailErrorText(t('common.networkError'));
+      setEmailErrorSource({ body: null, fallbackKey: 'common.networkError' });
     } finally {
       setPending(false);
     }
@@ -120,7 +147,7 @@ export default function PasswordResetPage() {
   const handleVerify = async () => {
     if (code.length !== 6 || pending) return;
     setPending(true);
-    setCodeErrorText('');
+    setCodeErrorSource(null);
     try {
       const res = await fetch('/api/auth/password-reset/verify-code', {
         method: 'POST',
@@ -130,7 +157,7 @@ export default function PasswordResetPage() {
       const data = (await res.json()) as { ok: boolean; ticket?: string; message?: string };
 
       if (!data.ok || !data.ticket) {
-        setCodeErrorText(data.message ?? t('pwReset.codeInvalid'));
+        setCodeErrorSource({ body: data, fallbackKey: 'pwReset.codeInvalid' });
         return;
       }
 
@@ -138,7 +165,7 @@ export default function PasswordResetPage() {
       setDevCode('');
       setStep(3);
     } catch {
-      setCodeErrorText(t('common.networkError'));
+      setCodeErrorSource({ body: null, fallbackKey: 'common.networkError' });
     } finally {
       setPending(false);
     }
@@ -147,7 +174,7 @@ export default function PasswordResetPage() {
   const handleSubmit = async () => {
     if (!(pwLongEnough && pwMatch) || pending) return;
     setPending(true);
-    setPwErrorText('');
+    setPwErrorSource(null);
     try {
       const res = await fetch('/api/auth/password-reset', {
         method: 'POST',
@@ -157,13 +184,13 @@ export default function PasswordResetPage() {
       const data = (await res.json()) as { ok: boolean; message?: string };
 
       if (!data.ok) {
-        setPwErrorText(data.message ?? t('pwReset.changeFailed'));
+        setPwErrorSource({ body: data, fallbackKey: 'pwReset.changeFailed' });
         return;
       }
 
       setStep(4);
     } catch {
-      setPwErrorText(t('common.networkError'));
+      setPwErrorSource({ body: null, fallbackKey: 'common.networkError' });
     } finally {
       setPending(false);
     }
@@ -277,7 +304,7 @@ export default function PasswordResetPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <label className="lbl">{t('pwReset.codeLabel')}</label>
                   <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                    <input className="fld" value={code} onChange={(e) => { setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6)); setCodeErrorText(''); }} placeholder="000000" style={{ flex: 1, minWidth: 0, letterSpacing: '3px' }} />
+                    <input className="fld" value={code} onChange={(e) => { setCode(e.target.value.replace(/[^0-9]/g, '').slice(0, 6)); setCodeErrorSource(null); }} placeholder="000000" style={{ flex: 1, minWidth: 0, letterSpacing: '3px' }} />
                     <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#E0554E', flexShrink: 0, minWidth: '44px', textAlign: 'right' }}>{mm}:{ss}</span>
                   </div>
                   {codeErrorText && <span style={{ fontSize: '11.5px', color: '#E0554E' }}>{codeErrorText}</span>}

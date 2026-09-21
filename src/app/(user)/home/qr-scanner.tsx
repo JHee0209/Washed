@@ -15,7 +15,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import jsQR from 'jsqr';
 
-import { useT } from '@/lib/i18n/use-t';
+import { useApiError, useT } from '@/lib/i18n/use-t';
 
 export type QrVerifiedResult = {
   machineId: string;
@@ -28,6 +28,9 @@ export type QrVerifiedResult = {
 // 'denied' · 'no-camera' 는 카메라 자체를 못 얻은 상태 — 「다시 시도」가 카메라
 // 요청부터 다시 한다. 'error' 는 카메라는 켜져 있는데 인식·인증이 실패한 상태 —
 // 「다시 시도」가 스트림은 그대로 두고 디코딩만 다시 켠다.
+/** 이 화면이 띄우는 오류 문구의 key — 전부 치환 인자가 없다 */
+type QrErrorKey = 'qr.verifyFailed' | 'qr.networkFailed' | 'qr.cameraStartFailed';
+
 type Phase = 'starting' | 'scanning' | 'verifying' | 'denied' | 'no-camera' | 'error';
 
 type Props = {
@@ -39,6 +42,7 @@ const SCAN_INTERVAL_MS = 150; // 초당 약 6~7 프레임 — QR 디코딩에는
 
 export default function QrScanner({ onClose, onVerified }: Props) {
   const t = useT();
+  const apiError = useApiError();
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -48,7 +52,12 @@ export default function QrScanner({ onClose, onVerified }: Props) {
   const verifyingRef = useRef(false);
 
   const [phase, setPhase] = useState<Phase>('starting');
-  const [errorMessage, setErrorMessage] = useState('');
+  /**
+   * 오류를 문장으로 담지 않는다. 담으면 아래 useCallback 들이 t 를 붙잡게 되고,
+   * 그것을 의존성에 넣으면 **언어를 바꿀 때 카메라가 재시작된다.**
+   * 서버 응답과 fallback key 만 들고 있다가 렌더에서 번역한다.
+   */
+  const [errorSource, setErrorSource] = useState<{ body: unknown; fallbackKey: QrErrorKey } | null>(null);
   const [errorReason, setErrorReason] = useState<string | null>(null);
 
   // page.tsx는 1초마다 다시 렌더링되므로(카운트다운) onVerified가 매번 새 함수로
@@ -79,7 +88,7 @@ export default function QrScanner({ onClose, onVerified }: Props) {
       if (!res.ok || !data.ok) {
         verifyingRef.current = false;
         decodedRef.current = false; // 다시 스캔할 수 있게 한다
-        setErrorMessage(data.message || t('qr.verifyFailed'));
+        setErrorSource({ body: data, fallbackKey: 'qr.verifyFailed' });
         setErrorReason(typeof data.reason === 'string' ? data.reason : null);
         setPhase('error');
         return;
@@ -96,7 +105,7 @@ export default function QrScanner({ onClose, onVerified }: Props) {
       if (!mountedRef.current) return;
       verifyingRef.current = false;
       decodedRef.current = false;
-      setErrorMessage(t('qr.networkFailed'));
+      setErrorSource({ body: null, fallbackKey: 'qr.networkFailed' });
       setErrorReason(null);
       setPhase('error');
     }
@@ -133,7 +142,7 @@ export default function QrScanner({ onClose, onVerified }: Props) {
       } else if (name === 'NotFoundError' || name === 'OverconstrainedError' || name === 'DevicesNotFoundError') {
         setPhase('no-camera');
       } else {
-        setErrorMessage(t('qr.cameraStartFailed'));
+        setErrorSource({ body: null, fallbackKey: 'qr.cameraStartFailed' });
         setPhase('error');
       }
     }
@@ -186,13 +195,14 @@ export default function QrScanner({ onClose, onVerified }: Props) {
     // 'error' — 카메라는 이미 켜져 있으니 디코딩만 다시 켠다.
     decodedRef.current = false;
     verifyingRef.current = false;
-    setErrorMessage('');
+    setErrorSource(null);
     setErrorReason(null);
     setPhase('scanning');
   };
 
   const showVideo = phase === 'scanning' || phase === 'verifying';
   const isPickupPending = phase === 'error' && errorReason === 'pickup_pending';
+  const errorText = errorSource ? apiError(errorSource.body, t(errorSource.fallbackKey)) : '';
 
   return (
     <div style={{ width: '100%', maxWidth: '300px', background: '#17233C', borderRadius: '20px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '0px 20px 44px -12px rgba(8,20,46,.75)' }}>
@@ -241,7 +251,7 @@ export default function QrScanner({ onClose, onVerified }: Props) {
         )}
         {phase === 'error' && (
           <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FCA5A5', fontSize: '12px', textAlign: 'center', padding: '20px', lineHeight: 1.6 }}>
-            {errorMessage}
+            {errorText}
           </div>
         )}
       </div>

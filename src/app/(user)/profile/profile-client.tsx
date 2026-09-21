@@ -8,7 +8,7 @@ import {
   MAX_PROFILE_PHOTO_LABEL,
   isAllowedProfilePhotoMime,
 } from '@/lib/profile-photo-rules';
-import { useT } from '@/lib/i18n/use-t';
+import { useApiError, useT } from '@/lib/i18n/use-t';
 import { changePassword as changePasswordAction, verifyCurrentPassword } from '@/lib/user-actions';
 
 type ProfileClientProps = {
@@ -20,6 +20,7 @@ type ProfileClientProps = {
 
 export default function ProfileClient({ name, studentId, room: initialRoom, hasPassword }: ProfileClientProps) {
   const t = useT();
+  const apiError = useApiError();
   // --- 상태 관리 ---
   const [room, setRoom] = useState(initialRoom);
 
@@ -128,7 +129,7 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
       const res = await fetch('/api/profile/photo', { method: 'POST', body: formData });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.message ?? t('profile.photoSaveFailed'));
+        throw new Error(apiError(body, t('profile.photoSaveFailed')));
       }
       setPhotoFile(null);
       setPhotoPreviewUrl(null);
@@ -152,7 +153,7 @@ export default function ProfileClient({ name, studentId, room: initialRoom, hasP
       const res = await fetch('/api/profile/photo', { method: 'DELETE' });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        throw new Error(body?.message ?? t('profile.photoResetFailed'));
+        throw new Error(apiError(body, t('profile.photoResetFailed')));
       }
       setHasSavedPhoto(false);
       setPhotoVersion((v) => v + 1);

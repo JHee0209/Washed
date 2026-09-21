@@ -19,12 +19,12 @@ export async function GET() {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
-    return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    return Response.json({ ok: false, code: 'LOGIN_REQUIRED', message: '로그인이 필요해요.' }, { status: 401 });
   }
 
   const photo = await readProfilePhoto(userId);
   if (!photo) {
-    return Response.json({ ok: false, message: '등록된 프로필 사진이 없어요.' }, { status: 404 });
+    return Response.json({ ok: false, code: 'PHOTO_NOT_FOUND', message: '등록된 프로필 사진이 없어요.' }, { status: 404 });
   }
 
   return new Response(new Uint8Array(photo.bytes), {
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
-    return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    return Response.json({ ok: false, code: 'LOGIN_REQUIRED', message: '로그인이 필요해요.' }, { status: 401 });
   }
 
   const blocked = withdrawPendingBlock(session);
@@ -52,13 +52,13 @@ export async function POST(request: Request) {
   try {
     form = await request.formData();
   } catch {
-    return Response.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return Response.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
 
   const field = form.get('photo');
   const file = field instanceof File && field.size > 0 ? field : null;
   if (!file) {
-    return Response.json({ ok: false, message: '사진을 선택해주세요.' }, { status: 400 });
+    return Response.json({ ok: false, code: 'PHOTO_REQUIRED', message: '사진을 선택해주세요.' }, { status: 400 });
   }
 
   // 다 읽기 전에 한 번 본다 — 한도를 넘는 파일을 헛되이 메모리에 올리지 않는다.
@@ -77,7 +77,11 @@ export async function POST(request: Request) {
   // 확장자나 Content-Type 을 조작해도 이 검사는 통과하지 못한다.
   const result = validateProfilePhotoBytes(bytes);
   if (!result.ok) {
-    return Response.json({ ok: false, message: result.message }, { status: result.status });
+    // 검증 결과의 code · params 를 그대로 흘려보낸다 — message 도 그대로 남는다 (Issue #13)
+    return Response.json(
+      { ok: false, code: result.code, params: result.params, message: result.message },
+      { status: result.status },
+    );
   }
 
   await saveProfilePhoto(userId, result.mime, bytes);
@@ -89,7 +93,7 @@ export async function DELETE() {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
-    return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    return Response.json({ ok: false, code: 'LOGIN_REQUIRED', message: '로그인이 필요해요.' }, { status: 401 });
   }
 
   const blocked = withdrawPendingBlock(session);

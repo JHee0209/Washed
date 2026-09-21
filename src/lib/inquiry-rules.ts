@@ -7,6 +7,8 @@
 // 그래서 이 파일은 DB 도 `server-only` 도 import 하지 않는다 —
 // 클라이언트 컴포넌트(src/app/(user)/support/support-client.tsx)에서도 그대로 쓴다.
 
+import type { ApiErrorCode } from './i18n/api-codes.ts';
+
 /**
  * 문의 내용 길이 한도.
  *
@@ -25,7 +27,14 @@ export type ValidInquiry = { content: string };
 export type InquiryValidation =
   | { ok: true; value: ValidInquiry }
   /** `status` 는 라우트가 그대로 HTTP 상태로 쓴다 */
-  | { ok: false; status: 400; message: string };
+  | {
+      ok: false;
+      status: 400;
+      /** 언어와 무관한 식별자 (src/lib/i18n/api-codes.ts). message 는 그대로 남는다 */
+      code: ApiErrorCode;
+      params?: Record<string, string | number>;
+      message: string;
+    };
 
 /**
  * 문의 한 건이 접수될 수 있는지 판정한다 (04 F21 「미입력 시 전송 불가」).
@@ -37,18 +46,20 @@ export type InquiryValidation =
  */
 export function validateInquiryInput(input: InquiryInput): InquiryValidation {
   if (typeof input.content !== 'string') {
-    return { ok: false, status: 400, message: '문의 내용을 적어주세요.' };
+    return { ok: false, status: 400, code: 'INQUIRY_CONTENT_REQUIRED', message: '문의 내용을 적어주세요.' };
   }
 
   const content = input.content.trim();
   if (!content) {
-    return { ok: false, status: 400, message: '문의 내용을 적어주세요.' };
+    return { ok: false, status: 400, code: 'INQUIRY_CONTENT_REQUIRED', message: '문의 내용을 적어주세요.' };
   }
 
   if (content.length > MAX_INQUIRY_LENGTH) {
     return {
       ok: false,
       status: 400,
+      code: 'INQUIRY_TOO_LONG',
+      params: { max: MAX_INQUIRY_LENGTH },
       message: `문의 내용은 ${MAX_INQUIRY_LENGTH}자까지 입력할 수 있어요.`,
     };
   }

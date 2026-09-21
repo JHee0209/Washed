@@ -26,7 +26,7 @@ export async function POST(request: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
-    return NextResponse.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    return NextResponse.json({ ok: false, code: 'LOGIN_REQUIRED', message: '로그인이 필요해요.' }, { status: 401 });
   }
   const blocked = withdrawPendingBlock(session);
   if (blocked) return blocked;
@@ -35,11 +35,11 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return NextResponse.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
   const payload = (body as { payload?: unknown } | null)?.payload;
   if (typeof payload !== 'string' || !payload) {
-    return NextResponse.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return NextResponse.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
 
   // ── 서명 검증을 할 수 있는 서버인지 먼저 본다.
@@ -54,7 +54,7 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         ok: false,
-        message: '서버 설정 문제로 지금은 QR 인증을 할 수 없어요. 관리자에게 알려주세요.',
+        code: 'QR_SERVER_MISCONFIGURED', message: '서버 설정 문제로 지금은 QR 인증을 할 수 없어요. 관리자에게 알려주세요.',
         reason: 'qr_not_configured',
       },
       { status: 500 },
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   const verified = verifyMachineQrPayload(payload);
   if (!verified) {
     return NextResponse.json(
-      { ok: false, message: '알 수 없는 QR이에요. 기기에 붙은 QR을 다시 찍어주세요.', reason: 'invalid_qr' },
+      { ok: false, code: 'QR_UNKNOWN', message: '알 수 없는 QR이에요. 기기에 붙은 QR을 다시 찍어주세요.', reason: 'invalid_qr' },
       { status: 400 },
     );
   }
@@ -90,7 +90,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           ok: false,
-          message: '등록되지 않은 기기 QR이에요. 관리자에게 알려주세요.',
+          code: 'QR_MACHINE_NOT_REGISTERED', message: '등록되지 않은 기기 QR이에요. 관리자에게 알려주세요.',
           reason: 'unknown_machine',
         },
         { status: 404 },
@@ -98,13 +98,13 @@ export async function POST(request: Request) {
     }
     if (result.reason === 'not_assigned') {
       return NextResponse.json(
-        { ok: false, message: '배정된 기기가 아니에요. 배정받은 기기의 QR을 찍어주세요.', reason: 'not_assigned' },
+        { ok: false, code: 'QR_NOT_ASSIGNED_MACHINE', message: '배정된 기기가 아니에요. 배정받은 기기의 QR을 찍어주세요.', reason: 'not_assigned' },
         { status: 404 },
       );
     }
     if (result.reason === 'other_user') {
       return NextResponse.json(
-        { ok: false, message: '다른 사람에게 배정된 기기예요.', reason: 'other_user' },
+        { ok: false, code: 'QR_ASSIGNED_TO_OTHER', message: '다른 사람에게 배정된 기기예요.', reason: 'other_user' },
         { status: 403 },
       );
     }
@@ -112,7 +112,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           ok: false,
-          message: '이미 사용이 끝나 수거 대기 중이에요. 세탁물을 수거한 뒤 홈에서 「다했어요」를 눌러주세요.',
+          code: 'QR_PICKUP_PENDING', message: '이미 사용이 끝나 수거 대기 중이에요. 세탁물을 수거한 뒤 홈에서 「다했어요」를 눌러주세요.',
           reason: 'pickup_pending',
         },
         { status: 409 },
@@ -120,13 +120,13 @@ export async function POST(request: Request) {
     }
     // 'expired'
     return NextResponse.json(
-      { ok: false, message: '인증 가능 시간(10분)이 지났어요.', reason: 'expired' },
+      { ok: false, code: 'QR_EXPIRED', message: '인증 가능 시간(10분)이 지났어요.', reason: 'expired' },
       { status: 409 },
     );
   } catch (error) {
     console.error('QR 인증 실패', userId, verified.machineId, error);
     return NextResponse.json(
-      { ok: false, message: 'QR 인증에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
+      { ok: false, code: 'QR_VERIFY_FAILED', message: 'QR 인증에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
       { status: 500 },
     );
   }

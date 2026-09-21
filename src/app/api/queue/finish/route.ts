@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
-    return NextResponse.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    return NextResponse.json({ ok: false, code: 'LOGIN_REQUIRED', message: '로그인이 필요해요.' }, { status: 401 });
   }
   const blocked = withdrawPendingBlock(session);
   if (blocked) return blocked;
@@ -33,11 +33,11 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return NextResponse.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
   const machineId = (body as { machineId?: unknown } | null)?.machineId;
   if (typeof machineId !== 'string' || !machineId) {
-    return NextResponse.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return NextResponse.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
 
   try {
@@ -59,31 +59,31 @@ export async function POST(request: Request) {
 
     if (result.reason === 'invalid_machine_id') {
       return NextResponse.json(
-        { ok: false, message: '잘못된 기기 정보예요.', reason: 'invalid_machine_id' },
+        { ok: false, code: 'MACHINE_INFO_INVALID', message: '잘못된 기기 정보예요.', reason: 'invalid_machine_id' },
         { status: 400 },
       );
     }
     if (result.reason === 'not_in_use') {
       return NextResponse.json(
-        { ok: false, message: '이용 중인 기기가 아니에요.', reason: 'not_in_use' },
+        { ok: false, code: 'USAGE_NOT_ACTIVE', message: '이용 중인 기기가 아니에요.', reason: 'not_in_use' },
         { status: 404 },
       );
     }
     if (result.reason === 'other_user') {
       return NextResponse.json(
-        { ok: false, message: '다른 사람이 이용 중인 기기예요.', reason: 'other_user' },
+        { ok: false, code: 'USAGE_OTHER_USER', message: '다른 사람이 이용 중인 기기예요.', reason: 'other_user' },
         { status: 403 },
       );
     }
     // 'not_started'
     return NextResponse.json(
-      { ok: false, message: '아직 QR 인증 전이에요.', reason: 'not_started' },
+      { ok: false, code: 'USAGE_QR_NOT_VERIFIED', message: '아직 QR 인증 전이에요.', reason: 'not_started' },
       { status: 409 },
     );
   } catch (error) {
     console.error('다했어요 처리 실패', userId, machineId, error);
     return NextResponse.json(
-      { ok: false, message: '처리에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
+      { ok: false, code: 'FINISH_FAILED', message: '처리에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
       { status: 500 },
     );
   }

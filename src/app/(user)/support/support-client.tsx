@@ -12,12 +12,13 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
-import { useT } from '@/lib/i18n/use-t';
+import { useApiError, useT } from '@/lib/i18n/use-t';
 import { MAX_INQUIRY_LENGTH } from '@/lib/inquiry-rules';
 
 export default function SupportClient({ name, email }: { name: string; email: string }) {
   const router = useRouter();
   const t = useT();
+  const apiError = useApiError();
 
   // --- 상태 관리 ---
   const [content, setContent] = useState('');
@@ -52,7 +53,7 @@ export default function SupportClient({ name, email }: { name: string; email: st
           return;
         }
         // **실패했는데 접수 화면으로 바뀌면 안 된다** — 여기서 끝낸다.
-        setError(data?.message ?? t('support.failed'));
+        setError(apiError(data, t('support.failed')));
         return;
       }
 

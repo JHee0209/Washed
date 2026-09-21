@@ -10,6 +10,7 @@ import { revalidatePath } from 'next/cache';
 import { auth, signOut } from '@/auth';
 import { sql } from '@/lib/db';
 import { hash, verify } from '@/lib/hash';
+import type { ApiErrorCode } from '@/lib/i18n/api-codes';
 import { withdrawPurgeCutoff } from '@/lib/retention';
 import { isValidPassword } from '@/lib/school-email';
 
@@ -113,9 +114,9 @@ export async function cancelWithdrawal(): Promise<void> {
 async function checkCurrentPassword(
   userId: string,
   currentPassword: string,
-): Promise<{ ok: true; hash: string } | { ok: false; message: string }> {
+): Promise<{ ok: true; hash: string } | { ok: false; code: ApiErrorCode; message: string }> {
   if (typeof currentPassword !== 'string' || !currentPassword) {
-    return { ok: false, message: '현재 비밀번호를 입력해주세요.' };
+    return { ok: false, code: 'PASSWORD_CURRENT_REQUIRED', message: '현재 비밀번호를 입력해주세요.' };
   }
 
   const rows = await sql<{ password_hash: string | null }>`
@@ -125,17 +126,19 @@ async function checkCurrentPassword(
 
   if (!currentHash) {
     // 구글 전용 계정 — password_hash 가 있다고 가정하지 않는다.
-    return { ok: false, message: '구글 계정은 비밀번호를 변경할 수 없어요. 구글 계정 설정에서 관리해주세요.' };
+    return { ok: false, code: 'PASSWORD_GOOGLE_ACCOUNT', message: '구글 계정은 비밀번호를 변경할 수 없어요. 구글 계정 설정에서 관리해주세요.' };
   }
 
   if (!(await verify(currentPassword, currentHash))) {
-    return { ok: false, message: '현재 비밀번호가 올바르지 않아요.' };
+    return { ok: false, code: 'PASSWORD_CURRENT_WRONG', message: '현재 비밀번호가 올바르지 않아요.' };
   }
 
   return { ok: true, hash: currentHash };
 }
 
-export type VerifyCurrentPasswordResult = { ok: true } | { ok: false; message: string };
+export type VerifyCurrentPasswordResult =
+  | { ok: true }
+  | { ok: false; code: ApiErrorCode; message: string };
 
 /**
  * 화면의 "확인" 단계(1단계)에서 부른다 — 실제 비밀번호 변경 여부를 정하지
@@ -148,12 +151,12 @@ export async function verifyCurrentPassword(currentPassword: string): Promise<Ve
   if (!userId) throw new Error('로그인이 필요해요.');
 
   const result = await checkCurrentPassword(userId, currentPassword);
-  return result.ok ? { ok: true } : { ok: false, message: result.message };
+  return result.ok ? { ok: true } : { ok: false, code: result.code, message: result.message };
 }
 
 export type ChangePasswordResult =
   | { ok: true }
-  | { ok: false; field: 'current' | 'new'; message: string };
+  | { ok: false; field: 'current' | 'new'; code: ApiErrorCode; message: string };
 
 /**
  * 실제 비밀번호 교체 — 이 함수 하나가 최종 권한을 가진다.
@@ -178,14 +181,14 @@ export async function changePassword(
 
   const checked = await checkCurrentPassword(userId, currentPassword);
   if (!checked.ok) {
-    return { ok: false, field: 'current', message: checked.message };
+    return { ok: false, field: 'current', code: checked.code, message: checked.message };
   }
 
   if (!isValidPassword(newPassword)) {
-    return { ok: false, field: 'new', message: '새 비밀번호는 8자 이상이어야 해요.' };
+    return { ok: false, field: 'new', code: 'PASSWORD_TOO_SHORT', message: '새 비밀번호는 8자 이상이어야 해요.' };
   }
   if (newPassword === currentPassword) {
-    return { ok: false, field: 'new', message: '현재 비밀번호와 같아요. 다른 비밀번호를 입력해주세요.' };
+    return { ok: false, field: 'new', code: 'PASSWORD_SAME_AS_CURRENT', message: '현재 비밀번호와 같아요. 다른 비밀번호를 입력해주세요.' };
   }
 
   const newHash = await hash(newPassword);
@@ -201,7 +204,7 @@ export async function changePassword(
   if (updated.length === 0) {
     // 검증과 저장 사이에 다른 경로로 비밀번호가 바뀌었다 — 최신 값으로 다시
     // 확인하게 한다(옛 해시를 기준으로 덮어쓰지 않는다).
-    return { ok: false, field: 'current', message: '비밀번호가 이미 바뀌었어요. 다시 확인해주세요.' };
+    return { ok: false, field: 'current', code: 'PASSWORD_ALREADY_CHANGED', message: '비밀번호가 이미 바뀌었어요. 다시 확인해주세요.' };
   }
 
   return { ok: true };

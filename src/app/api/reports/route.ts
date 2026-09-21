@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
-    return Response.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    return Response.json({ ok: false, code: 'LOGIN_REQUIRED', message: '로그인이 필요해요.' }, { status: 401 });
   }
 
   // 05 P24 — 탈퇴를 신청하면 즉시 이용이 정지된다. 화면만 막으면 이 라우트를 직접
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
   try {
     form = await request.formData();
   } catch {
-    return Response.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return Response.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
 
   const evidenceField = form.get('evidence');
@@ -83,7 +83,11 @@ export async function POST(request: Request) {
   });
 
   if (!result.ok) {
-    return Response.json({ ok: false, message: result.message }, { status: result.status });
+    // 검증 결과의 code · params 를 그대로 흘려보낸다 — message 도 그대로 남는다 (Issue #13)
+    return Response.json(
+      { ok: false, code: result.code, params: result.params, message: result.message },
+      { status: result.status },
+    );
   }
   const report = result.value;
 
@@ -139,7 +143,7 @@ export async function POST(request: Request) {
     // 어긋났다는 뜻이라 조용히 넘기지 않는다.
     console.error('신고 저장 실패', userId, error);
     return Response.json(
-      { ok: false, message: '신고를 접수하지 못했어요. 잠시 뒤 다시 시도해주세요.' },
+      { ok: false, code: 'REPORT_FAILED', message: '신고를 접수하지 못했어요. 잠시 뒤 다시 시도해주세요.' },
       { status: 500 },
     );
   }

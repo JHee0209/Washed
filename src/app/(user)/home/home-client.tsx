@@ -8,7 +8,7 @@ import NotificationPrompt from '@/components/notification-prompt';
 import QrScanner, { type QrVerifiedResult } from './qr-scanner';
 import { useRouter } from 'next/navigation';
 import { PICKUP_GRACE_MINUTES } from '@/lib/assignment-rules';
-import { useT } from '@/lib/i18n/use-t';
+import { useApiError, useT } from '@/lib/i18n/use-t';
 
 // --- 전역 상수 (타이머 시간 등) ---
 //
@@ -65,6 +65,7 @@ type ApiMine = { washer: ApiQueueEntry | null; dryer: ApiQueueEntry | null };
 
 export default function HomeClient() {
   const t = useT();
+  const apiError = useApiError();
   const router = useRouter();
   // 세션이 authenticated 로 확정되기 전에는 이름을 비워 둔다 — 로딩 중
   // 잘못된 이름(빈 값 → 실제 이름)이 잠깐 깜빡이지 않도록 한다. (#32)
@@ -219,7 +220,7 @@ export default function HomeClient() {
       const data = await res.json();
 
       if (!res.ok) {
-        showToast(data.message || t('home.joinFailed', { label }));
+        showToast(apiError(data, t('home.joinFailed', { label })));
         return;
       }
 
@@ -243,7 +244,7 @@ export default function HomeClient() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        showToast(data.message || t('home.leaveFailed', { label }));
+        showToast(apiError(data, t('home.leaveFailed', { label })));
         loadMine();
         if (res.status === 403) loadMachines();
         return;
@@ -281,7 +282,7 @@ export default function HomeClient() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        showToast(data.message || t('home.finishFailed', { name }));
+        showToast(apiError(data, t('home.finishFailed', { name })));
         loadMine();
         return;
       }
