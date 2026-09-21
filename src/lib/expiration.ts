@@ -37,7 +37,7 @@
 
 import 'server-only';
 
-import { RUN_MINUTES_BY_KIND } from '@/lib/assignment-rules';
+import { PICKUP_GRACE_MINUTES, RUN_MINUTES_BY_KIND } from '@/lib/assignment-rules';
 import { sql } from '@/lib/db';
 import { isFirstOfMonthInKst } from '@/lib/kst-date';
 import { notify } from '@/lib/notify';
@@ -292,7 +292,8 @@ export async function transitionUsageToPickup(
   const started = await sql<{ queue_id: string; user_id: string; machine_name: string }>`
     UPDATE queue q
        SET status = '수거대기',
-           pickup_deadline_at = m.ends_at + interval '3 minutes'
+           pickup_deadline_at = m.ends_at
+             + (${PICKUP_GRACE_MINUTES}::int * interval '1 minute')
       FROM machines m
      WHERE q.machine_id = m.machine_id
        AND q.status = '사용중'
@@ -371,8 +372,9 @@ export async function expireOverduePickups(now: Date = new Date()): Promise<numb
       INSERT INTO usage_history (user_id, machine_id, started_at, ended_at, result, source_queue_id)
       SELECT e.user_id, e.machine_id,
              -- ends_at 은 transitionUsageToPickup() 이 이 값을 근거로 pickup_deadline_at
-             -- 을 찍었으므로 항상 있어야 한다 — 없을 때만 마감에서 3분을 되짚는다.
-             COALESCE(e.ends_at, e.pickup_deadline_at - interval '3 minutes')
+             -- 을 찍었으므로 항상 있어야 한다 — 없을 때만 마감에서 유예를 되짚는다.
+             COALESCE(e.ends_at,
+                      e.pickup_deadline_at - (${PICKUP_GRACE_MINUTES}::int * interval '1 minute'))
                - (CASE e.machine_kind WHEN '세탁기' THEN ${WASHER_MINUTES}::int
                                       ELSE ${DRYER_MINUTES}::int END * interval '1 minute'),
              e.pickup_deadline_at,
