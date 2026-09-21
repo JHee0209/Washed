@@ -4,6 +4,8 @@
 // 한다. 이 파일은 DB · server-only 를 import 하지 않아 클라이언트 컴포넌트
 // (profile-client.tsx · settings-client.tsx)에서도 그대로 쓴다.
 
+import type { ApiErrorCode } from './i18n/api-codes.ts';
+
 /**
  * 최대 용량. 신고 증거 사진(4MB · report-rules.ts)과 달리 프로필 아바타는
  * 화면에 작게만 표시되므로 더 작게 잡는다(사용자 확정).
@@ -74,7 +76,14 @@ export function detectImageMimeFromBytes(bytes: Uint8Array): ProfilePhotoMime | 
 export type ProfilePhotoValidationResult =
   | { ok: true; mime: ProfilePhotoMime }
   /** `status` 는 라우트가 그대로 HTTP 상태로 쓴다 (415 · 413 을 400 과 가른다) */
-  | { ok: false; status: 400 | 413 | 415; message: string };
+  | {
+      ok: false;
+      status: 400 | 413 | 415;
+      /** 언어와 무관한 식별자 (src/lib/i18n/api-codes.ts). message 는 그대로 남는다 */
+      code: ApiErrorCode;
+      params?: Record<string, string | number>;
+      message: string;
+    };
 
 /**
  * 서버가 **실제로 읽은 바이트**를 기준으로 판정한다. `File.type`/Content-Type
@@ -82,14 +91,14 @@ export type ProfilePhotoValidationResult =
  */
 export function validateProfilePhotoBytes(bytes: Uint8Array): ProfilePhotoValidationResult {
   if (bytes.length === 0) {
-    return { ok: false, status: 400, message: '사진 파일이 비어 있어요.' };
+    return { ok: false, status: 400, code: 'IMAGE_EMPTY', message: '사진 파일이 비어 있어요.' };
   }
   if (bytes.length > MAX_PROFILE_PHOTO_BYTES) {
-    return { ok: false, status: 413, message: `사진은 ${MAX_PROFILE_PHOTO_LABEL} 까지 첨부할 수 있어요.` };
+    return { ok: false, status: 413, code: 'IMAGE_TOO_LARGE', params: { limit: MAX_PROFILE_PHOTO_LABEL }, message: `사진은 ${MAX_PROFILE_PHOTO_LABEL} 까지 첨부할 수 있어요.` };
   }
   const detected = detectImageMimeFromBytes(bytes);
   if (!detected) {
-    return { ok: false, status: 415, message: 'JPG · PNG · WebP 이미지만 첨부할 수 있어요.' };
+    return { ok: false, status: 415, code: 'IMAGE_TYPE_NOT_ALLOWED', message: 'JPG · PNG · WebP 이미지만 첨부할 수 있어요.' };
   }
   return { ok: true, mime: detected };
 }

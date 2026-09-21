@@ -143,3 +143,29 @@
   background: #f6f9fe;
   border-color: #cfddf2;
 }
+
+/* 중국어 · 일본어 글꼴 (F37 · 07 「디자인」 의 「글꼴」 · 08 · 11번).
+   글꼴 변수는 src/app/(user)/layout.tsx 가 내려주고, `data-lang` 은 그 아래의
+   LocaleFrame 이 붙인다. `/admin` 은 그 layout 을 거치지 않으므로 변수도
+   `data-lang` 도 내려가지 않는다 — washed_lang 이 무엇이든 관리자 화면은 그대로다.
+
+   **`data-lang` 은 <html> 에 붙이지 않는다.** `:root[data-lang=…]` 로 넓혀 두면
+   지금은 동작이 같아도 나중에 누군가 <html> 에 속성을 붙이는 순간 관리자까지
+   글꼴이 번진다. 격리는 선택자를 넓혀서가 아니라 구조로 지킨다.
+
+   ko · en 에서는 어느 규칙도 매치되지 않아 기존 Pretendard 화면이 그대로이고,
+   CJK 폰트 조각을 한 바이트도 받지 않는다.
+
+   선택자에 `*` 가 붙은 이유 — 사용자 화면 10곳이 각자 <style> 안에서
+   `* { font-family: 'Pretendard', … }` 를 다시 선언한다. `*` 의 명시도는 (0,0,0),
+   아래는 속성 선택자가 붙어 (0,1,0) 이라 순서와 무관하게 이긴다. 덕분에
+   그 10개 블록을 하나도 고치지 않는다. */
+[data-lang="zh"] * {
+  font-family: var(--font-noto-sc), "Pretendard", -apple-system, BlinkMacSystemFont, system-ui,
+    sans-serif;
+}
+
+[data-lang="ja"] * {
+  font-family: var(--font-noto-jp), "Pretendard", -apple-system, BlinkMacSystemFont, system-ui,
+    sans-serif;
+}

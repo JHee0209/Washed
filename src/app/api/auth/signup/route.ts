@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return Response.json({ ok: false, message: '잘못된 요청이에요.' }, { status: 400 });
+    return Response.json({ ok: false, code: 'BAD_REQUEST', message: '잘못된 요청이에요.' }, { status: 400 });
   }
 
   const b = (body ?? {}) as Record<string, unknown>;
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   const ticket = typeof b.ticket === 'string' ? b.ticket : '';
   if (!email || !ticket) {
     return Response.json(
-      { ok: false, field: 'email', message: '이메일 인증을 완료해주세요.' },
+      { ok: false, field: 'email', code: 'EMAIL_VERIFY_REQUIRED', message: '이메일 인증을 완료해주세요.' },
       { status: 400 },
     );
   }
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   // 05 P11 — 비밀번호 8자 이상
   if (!isValidPassword(b.password)) {
     return Response.json(
-      { ok: false, field: 'password', message: '비밀번호는 8자 이상이어야 해요.' },
+      { ok: false, field: 'password', code: 'PASSWORD_TOO_SHORT', message: '비밀번호는 8자 이상이어야 해요.' },
       { status: 400 },
     );
   }
@@ -45,7 +45,7 @@ export async function POST(request: Request) {
   // 05 P11 — 학번은 필수 · 숫자만 · 12자리까지
   if (!isValidStudentId(b.studentId)) {
     return Response.json(
-      { ok: false, field: 'studentId', message: '학번을 입력해주세요.' },
+      { ok: false, field: 'studentId', code: 'STUDENT_ID_REQUIRED', message: '학번을 입력해주세요.' },
       { status: 400 },
     );
   }
@@ -56,7 +56,7 @@ export async function POST(request: Request) {
   const room = typeof b.room === 'string' ? b.room.trim() : '';
   if (!name || !gender || !school || !room) {
     return Response.json(
-      { ok: false, message: '빈 칸을 모두 채워주세요.' },
+      { ok: false, code: 'FIELDS_REQUIRED', message: '빈 칸을 모두 채워주세요.' },
       { status: 400 },
     );
   }
@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   // "끝까지 읽었는지" 는 화면이 보증하고, 서버는 동의 여부만 확인한다.
   if (b.agreed !== true) {
     return Response.json(
-      { ok: false, field: 'agreed', message: '필수 약관에 동의해주세요.' },
+      { ok: false, field: 'agreed', code: 'TERMS_AGREEMENT_REQUIRED', message: '필수 약관에 동의해주세요.' },
       { status: 400 },
     );
   }
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
   // 표를 쓴다. 여기서 실패하면 인증을 마치지 않았거나 이미 쓴 표다.
   if (!(await consumeTicket(email, '회원가입', ticket))) {
     return Response.json(
-      { ok: false, field: 'email', message: '이메일 인증을 다시 해주세요.' },
+      { ok: false, field: 'email', code: 'EMAIL_VERIFY_AGAIN', message: '이메일 인증을 다시 해주세요.' },
       { status: 400 },
     );
   }
@@ -94,19 +94,19 @@ export async function POST(request: Request) {
     const message = String((error as { message?: string })?.message ?? '');
     if (message.includes('users_student_id_key')) {
       return Response.json(
-        { ok: false, field: 'studentId', message: '이미 등록된 학번이에요.' },
+        { ok: false, field: 'studentId', code: 'STUDENT_ID_ALREADY_REGISTERED', message: '이미 등록된 학번이에요.' },
         { status: 409 },
       );
     }
     if (message.includes('users_email_key')) {
       return Response.json(
-        { ok: false, field: 'email', message: '이미 가입된 이메일이에요.' },
+        { ok: false, field: 'email', code: 'EMAIL_ALREADY_REGISTERED', message: '이미 가입된 이메일이에요.' },
         { status: 409 },
       );
     }
     console.error('가입 실패', error);
     return Response.json(
-      { ok: false, message: '가입에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
+      { ok: false, code: 'SIGNUP_FAILED', message: '가입에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
       { status: 500 },
     );
   }

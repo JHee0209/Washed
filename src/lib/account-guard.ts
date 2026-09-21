@@ -35,7 +35,7 @@ export function withdrawPendingBlock(session: Session | null): Response | null {
   if (!session?.withdrawPending) return null;
 
   return Response.json(
-    { ok: false, message: '탈퇴 처리 중인 계정이에요. 계정을 복구한 뒤 이용할 수 있어요.' },
+    { ok: false, code: 'ACCOUNT_WITHDRAW_PENDING', message: '탈퇴 처리 중인 계정이에요. 계정을 복구한 뒤 이용할 수 있어요.' },
     { status: 403 },
   );
 }

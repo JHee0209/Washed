@@ -73,7 +73,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
-    return NextResponse.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    return NextResponse.json({ ok: false, code: 'LOGIN_REQUIRED', message: '로그인이 필요해요.' }, { status: 401 });
   }
   // 05 P24 — 탈퇴를 신청하면 즉시 이용이 정지된다. 화면만 막으면 라우트를 직접
   // 부르는 길이 남는다(account-guard.ts 머리말 · 08 · 9번 「API 도 막는다」).
@@ -82,7 +82,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
 
   const { kind } = await params;
   if (!isClientKind(kind)) {
-    return NextResponse.json({ ok: false, message: '알 수 없는 기기 종류예요.' }, { status: 400 });
+    return NextResponse.json({ ok: false, code: 'MACHINE_KIND_UNKNOWN', message: '알 수 없는 기기 종류예요.' }, { status: 400 });
   }
   const dbKind = toDbKind(kind);
 
@@ -167,13 +167,13 @@ export async function POST(_request: Request, { params }: RouteParams) {
     }
     if (row?.facility_under_inspection) {
       return NextResponse.json(
-        { ok: false, message: '세탁실 점검 중이라 잠시 이용할 수 없어요.', reason: 'facility_inspection' },
+        { ok: false, code: 'FACILITY_UNDER_INSPECTION', message: '세탁실 점검 중이라 잠시 이용할 수 없어요.', reason: 'facility_inspection' },
         { status: 409 },
       );
     }
     if (!row?.kind_serviceable) {
       return NextResponse.json(
-        { ok: false, message: '지금은 대기할 수 있는 기기가 없어요.', reason: 'no_machines' },
+        { ok: false, code: 'NO_MACHINE_AVAILABLE', message: '지금은 대기할 수 있는 기기가 없어요.', reason: 'no_machines' },
         { status: 409 },
       );
     }
@@ -229,7 +229,7 @@ export async function POST(_request: Request, { params }: RouteParams) {
       // 05 P1 — 같은 종류에 두 번 줄 설 수 없다.
       if (constraint !== 'queue_machine_once_idx') {
         return NextResponse.json(
-          { ok: false, message: '이미 대기열에 참여 중이에요.', reason: 'already_queued' },
+          { ok: false, code: 'QUEUE_ALREADY_JOINED', message: '이미 대기열에 참여 중이에요.', reason: 'already_queued' },
           { status: 409 },
         );
       }
@@ -237,13 +237,13 @@ export async function POST(_request: Request, { params }: RouteParams) {
       // NOT EXISTS 가 막는다). 나왔다면 데이터가 어긋난 것이라 로그를 남긴다.
       console.error('배정 충돌: queue_machine_once_idx', userId, dbKind, error);
       return NextResponse.json(
-        { ok: false, message: '방금 다른 분이 배정됐어요. 다시 시도해주세요.', reason: 'retry' },
+        { ok: false, code: 'QUEUE_ASSIGNED_TO_OTHER', message: '방금 다른 분이 배정됐어요. 다시 시도해주세요.', reason: 'retry' },
         { status: 409 },
       );
     }
     console.error('줄서기 실패', userId, dbKind, error);
     return NextResponse.json(
-      { ok: false, message: '줄서기에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
+      { ok: false, code: 'QUEUE_JOIN_FAILED', message: '줄서기에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
       { status: 500 },
     );
   }
@@ -254,14 +254,14 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   const session = await auth();
   const userId = session?.user?.id;
   if (!userId) {
-    return NextResponse.json({ ok: false, message: '로그인이 필요해요.' }, { status: 401 });
+    return NextResponse.json({ ok: false, code: 'LOGIN_REQUIRED', message: '로그인이 필요해요.' }, { status: 401 });
   }
   const blocked = withdrawPendingBlock(session);
   if (blocked) return blocked;
 
   const { kind } = await params;
   if (!isClientKind(kind)) {
-    return NextResponse.json({ ok: false, message: '알 수 없는 기기 종류예요.' }, { status: 400 });
+    return NextResponse.json({ ok: false, code: 'MACHINE_KIND_UNKNOWN', message: '알 수 없는 기기 종류예요.' }, { status: 400 });
   }
   const dbKind = toDbKind(kind);
 
@@ -273,11 +273,11 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     `;
     const row = current[0];
     if (!row) {
-      return NextResponse.json({ ok: false, message: '대기 중인 줄이 없어요.' }, { status: 404 });
+      return NextResponse.json({ ok: false, code: 'QUEUE_NOT_FOUND', message: '대기 중인 줄이 없어요.' }, { status: 404 });
     }
     if (row.status !== '대기 중') {
       return NextResponse.json(
-        { ok: false, message: '배정 상태에서는 줄 빠지기를 할 수 없어요.', reason: 'assigned' },
+        { ok: false, code: 'QUEUE_LEAVE_BLOCKED_ASSIGNED', message: '배정 상태에서는 줄 빠지기를 할 수 없어요.', reason: 'assigned' },
         { status: 403 },
       );
     }
@@ -290,7 +290,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
     `;
     if (deleted.length === 0) {
       return NextResponse.json(
-        { ok: false, message: '방금 배정돼서 줄 빠지기를 할 수 없어요.', reason: 'assigned' },
+        { ok: false, code: 'QUEUE_LEAVE_BLOCKED_JUST_ASSIGNED', message: '방금 배정돼서 줄 빠지기를 할 수 없어요.', reason: 'assigned' },
         { status: 403 },
       );
     }
@@ -299,7 +299,7 @@ export async function DELETE(_request: Request, { params }: RouteParams) {
   } catch (error) {
     console.error('줄 빠지기 실패', userId, dbKind, error);
     return NextResponse.json(
-      { ok: false, message: '줄 빠지기에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
+      { ok: false, code: 'QUEUE_LEAVE_FAILED', message: '줄 빠지기에 실패했어요. 잠시 뒤 다시 시도해주세요.' },
       { status: 500 },
     );
   }
