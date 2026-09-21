@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { signOut } from 'next-auth/react';
 import { useUnreadCount } from '@/lib/use-unread-count';
+import ProfileAvatar from '@/components/profile-avatar';
 import {
   disablePush,
   enablePush,
@@ -336,9 +337,7 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
             {/* 프로필 섹션 */}
             <div className="group" style={{ background: '#EDF1F7', borderColor: '#E1E8F2' }}>
               <Link href="/profile" className="cell" style={{ padding: '16px', gap: '14px' }}>
-                <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: '#B7C6E0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-                  <svg width="56" height="56" viewBox="-7 -5.25 38 38" fill="#fff"><circle cx="12" cy="8.6" r="4.2"></circle><path d="M3.5 22c0-5 3.8-8 8.5-8s8.5 3 8.5 8"></path></svg>
-                </div>
+                <ProfileAvatar size={56} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', flex: 1, minWidth: 0 }}>
                   <span style={{ fontSize: '18px', fontWeight: 700, letterSpacing: '-0.3px' }}>{name}</span>
                   <span style={{ fontSize: '13px', color: '#7C8CA6' }}>{studentId}</span>
