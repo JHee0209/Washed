@@ -70,7 +70,10 @@
   --control-height: 48px; /* 전체 너비 버튼 */
   --icon-sm: 14px;
   --icon-md: 20px;
-  --screen-width: 390px; /* 07 「공통 인수 조건」 — 폰 세로 390px */
+  /* 07 「공통 인수 조건」의 **대표 검증 viewport** 다 — 사용자 화면의 고정 크기가 아니다.
+     사용자 화면은 Issue #69 이후 반응형이고, 실제 프레임 규칙은
+     src/app/(user)/user-layout.css 에 있다. 이 두 값을 읽는 코드는 없다. */
+  --screen-width: 390px;
   --screen-height: 844px;
 }
 

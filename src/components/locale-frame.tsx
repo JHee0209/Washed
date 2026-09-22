@@ -35,8 +35,9 @@ export default function LocaleFrame({ children }: { children: ReactNode }) {
   }, [lang]);
 
   // `display: contents` — 이 div 는 박스를 만들지 않는다.
-  // 사용자 화면은 전부 390×844 고정 프레임에 `margin: 40px auto` 로 놓여 있어서,
-  // 여기에 실제 박스가 하나 끼면 가운데 정렬과 높이 계산이 어긋난다.
+  // 사용자 화면은 각자 `.app-frame`(src/app/(user)/user-layout.css)으로 폭과 높이를 잡고
+  // `margin: 0 auto` 로 가운데 정렬된다. 여기에 실제 박스가 하나 끼면 그 정렬과
+  // `100dvh` 높이 계산이 어긋난다.
   return (
     <div data-lang={lang} style={{ display: 'contents' }}>
       {children}

@@ -334,7 +334,7 @@ export default function SignupPage() {
         @keyframes riseIn { 0% { opacity: 0; transform: translateY(10px) } 100% { opacity: 1; transform: translateY(0) } }
       `}</style>
 
-      <div style={{ width: '390px', height: '844px', margin: '40px auto', position: 'relative', display: 'flex', flexDirection: 'column', background: '#F3F6FB', color: '#1E3557', overflow: 'hidden', borderRadius: '40px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}>
+      <div className="app-frame" style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: '#F3F6FB', color: '#1E3557', overflow: 'hidden' }}>
         
         {/* 헤더 */}
         <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '54px 20px 12px', background: '#fff', borderBottom: '1px solid #EAF0FA' }}>

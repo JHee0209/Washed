@@ -393,9 +393,9 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
         .cval { font-size: 14px; color: #9AAFCC; flex-shrink: 0; }
       `}</style>
 
-      <div style={{ width: '390px', height: '844px', margin: '40px auto', position: 'relative', display: 'flex', flexDirection: 'column', background: '#F3F6FB', color: '#1E3557', overflow: 'hidden', borderRadius: '40px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}>
+      <div className="app-frame" style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: '#F3F6FB', color: '#1E3557', overflow: 'hidden' }}>
 
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '63px 20px 12px', background: '#fff', borderBottom: '1px solid #EAF0FA', width: '396px', height: '96px', position: 'relative' }}>
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '63px 20px 12px', background: '#fff', borderBottom: '1px solid #EAF0FA', width: '100%', height: '96px', position: 'relative' }}>
           <img src="/icons/logo-mark.png" alt="Washed" style={{ width: '34px', height: '34px', objectFit: 'contain', marginLeft: '-3px', marginTop: '2px' }} />
           <span style={{ fontSize: '16px', fontWeight: 800, color: '#2F63B8', letterSpacing: '-0.3px', marginLeft: '-7px', marginTop: '2px' }}>Washed</span>
           <Link href="/notifications" style={{ boxSizing: 'border-box', width: '25px', height: '25px', borderRadius: '8px', position: 'absolute', right: '30px', top: '60px', background: `url(${hasUnread ? '/icons/bell-active.svg' : '/icons/bell.svg'}) center / cover no-repeat` }}></Link>
@@ -600,7 +600,14 @@ export default function SettingsClient({ name, studentId }: SettingsClientProps)
             {/* 언어 설정 */}
             <div>
               <div className="ghead">{t('lang.groupTitle')}</div>
-              <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E6EDF7', position: 'relative', zIndex: 5 }}>
+              {/* `position: relative` 를 두지 않는다 (Issue #69).
+                  <SettingsLanguagePicker /> 는 「언어 설정」 한 줄과 바텀시트를 **함께** 렌더한다.
+                  여기에 positioned 상자가 있으면 시트의 `inset: 0` 이 프레임이 아니라 이 작은 카드에
+                  걸려, 작은 화면에서 시트가 viewport 아래로 벗어났다. 이것을 static 으로 두면
+                  기준 상자가 `.app-frame` 이 되어 FAQ · 탈퇴 시트와 같은 방식으로 화면을 덮는다.
+                  (`z-index` 도 함께 뺀다 — static 요소에서는 어차피 무시되고, 시트는 프레임 위에서
+                  자신의 `z-index: 120` 으로 이미 가장 위에 온다.) */}
+              <div style={{ background: '#fff', borderRadius: '14px', border: '1px solid #E6EDF7' }}>
                 {/* 전과 같은 「언어 설정」 한 줄 — 누르면 같은 바텀시트가 열린다 */}
                 <SettingsLanguagePicker />
               </div>
