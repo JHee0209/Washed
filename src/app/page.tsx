@@ -10,6 +10,9 @@
 import { auth } from '@/auth';
 import SplashClient from './splash-client';
 
+// 스플래시 프레임의 반응형 규칙 (Issue #69). 여기서만 import 하므로 `/admin` 에는 닿지 않는다.
+import './splash.css';
+
 export default async function RootPage() {
   const session = await auth();
   const target = session?.user ? '/home' : '/login';

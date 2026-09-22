@@ -18,18 +18,15 @@ import { useLang, useT } from '@/lib/i18n/use-t';
 
 import RestoreButton from './restore-button';
 
+// 크기 · 여백 · 모서리는 `.app-frame` 이 맡는다 ((user)/user-layout.css · Issue #69).
+// `position: relative` 는 여기 남아야 한다 — 화면 안의 overlay 가 이 상자를 기준으로 잡힌다.
 const frame: React.CSSProperties = {
-  width: '390px',
-  height: '844px',
-  margin: '40px auto',
   position: 'relative',
   display: 'flex',
   flexDirection: 'column',
   background: '#F3F6FB',
   color: '#1E3557',
   overflow: 'hidden',
-  borderRadius: '40px',
-  boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
 };
 
 const header: React.CSSProperties = {
@@ -37,11 +34,13 @@ const header: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: '8px',
-  padding: '63px 20px 12px',
+  // 위쪽 63px 은 프로토타입의 아이폰 목업 상태바 자리를 비워 두던 값이었다.
+  // 실제 폰에서는 OS 상태바가 웹뷰 밖에 따로 있어 그 자리가 빈 흰 띠로 남는다.
+  padding: '14px 20px 12px',
+  paddingTop: 'max(14px, env(safe-area-inset-top))',
   background: '#fff',
   borderBottom: '1px solid #EAF0FA',
-  width: '396px',
-  height: '96px',
+  width: '100%',
   position: 'relative',
 };
 
@@ -82,7 +81,7 @@ export function WithdrawRestored() {
   return (
     <>
       <style>{pageStyle}</style>
-      <div style={frame}>
+      <div className="app-frame" style={frame}>
         <div style={header}>
           <span style={{ fontSize: '16px', fontWeight: 800, color: '#1E3557', letterSpacing: '-0.3px' }}>
             {t('withdraw.restoredHeader')}
@@ -133,7 +132,7 @@ export function WithdrawPending({
     <>
       <style>{pageStyle}</style>
 
-      <div style={frame}>
+      <div className="app-frame" style={frame}>
         {/* 홈 · 기록 · 설정의 로고 헤더가 아니라 /support 꼴의 제목 헤더를 쓴다 —
             이 화면에는 하단 탭도, 돌아갈 곳도 없다(탈퇴 대기 중에는 여기뿐이다). */}
         <div style={header}>

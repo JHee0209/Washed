@@ -1,0 +1,58 @@
+/* 사용자 앱 프레임 (Issue #69).
+ *
+ * ── 왜 이 파일이 `globals.css` 가 아니라 `(user)` 안에 있는가
+ * `src/app/globals.css` 는 root layout 이 import 하므로 `/admin` 까지 닿는다. 이 파일은
+ * `(user)/layout.tsx` 에서만 import 되고, `/admin` 은 그 layout 을 거치지 않으므로
+ * 관리자 화면에는 규칙이 **구조적으로** 내려가지 않는다. 선택자를 넓혀서가 아니라
+ * 구조로 격리하는 것은 globals.css 의 `data-lang` 글꼴 규칙이 이미 세워 둔 원칙이다.
+ * 관리자 콘솔은 Desktop 웹 전용으로 남으므로 이번 반응형 정책의 대상이 아니다.
+ *
+ * ── 무엇을 바꾸는가
+ * 원래 각 사용자 페이지는 프로토타입의 아이폰 목업을 그대로 옮긴
+ * `width:390px; height:844px; margin:40px auto; border-radius:40px; box-shadow:…` 를
+ * 인라인으로 들고 있었다. root layout 의 viewport 는 `width=device-width` 라서, 실제
+ * 폰에서는 이 390px 상자가 화면과 어긋나 가로 스크롤이 생기고 844px 밖 내용이 잘렸다.
+ * 여기서는 **크기 계산만** 반응형으로 바꾼다 — 색 · 그림자 · 반경 값 자체는 그대로다.
+ *
+ * 인라인 style 은 미디어 쿼리를 쓸 수 없어서 이 규칙들이 CSS 파일로 나와 있다.
+ * 페이지 쪽 인라인에는 `position:relative` 와 `overflow:hidden` 이 남아 있어야 한다 —
+ * 사용자 화면의 modal · bottom sheet · toast 가 전부 `position:absolute` 라
+ * 이 프레임을 기준 삼아 자리를 잡는다. */
+
+/* 모바일 — viewport 를 꽉 채운다. 내부의 `overflowY:auto` 컨테이너가 세로 스크롤을 맡는다. */
+.app-frame {
+  width: 100%;
+  max-width: 430px;
+  height: 100dvh;
+  margin: 0 auto;
+}
+
+/* 로그인 — 이 화면만 내부 스크롤 컨테이너가 없고 세로 가운데 정렬이라,
+   높이를 고정하면 작은 폰에서 카드 아래가 잘린다. 늘어날 수 있게 min-height 로 잡는다. */
+.app-frame-auth {
+  width: 100%;
+  max-width: 430px;
+  min-height: 100dvh;
+  margin: 0 auto;
+}
+
+/* Tablet · Desktop — 기존에 보이던 둥근 폰 카드 모양을 그대로 유지한다.
+   430px 카드에 좌우 여백이 45px 이상 남는 지점부터 전환한다.
+   높이에 `min()` 을 쓰는 이유: 세로가 넉넉한 화면에서는 기존과 똑같은 844px 이 되고,
+   1440x900 처럼 짧은 화면에서는 위아래 여백 80px 을 뺀 값으로 줄어 카드가 화면 밖으로
+   나가지 않는다. */
+@media (min-width: 520px) {
+  .app-frame {
+    height: min(844px, calc(100dvh - 80px));
+    margin: 40px auto;
+    border-radius: 40px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  }
+
+  .app-frame-auth {
+    min-height: min(844px, calc(100dvh - 80px));
+    margin: 40px auto;
+    border-radius: 40px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+  }
+}

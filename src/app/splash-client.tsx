@@ -96,11 +96,10 @@ export default function SplashClient({ target }: SplashClientProps) {
         }}
       >
         <div
+          className="splash-frame"
           style={{
+            // 크기는 `.splash-frame` 이 맡는다 (src/app/splash.css · Issue #69).
             position: 'relative',
-            width: 'min(390px, 100vw)',
-            height: 'min(844px, 100dvh)',
-            minHeight: '640px',
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',

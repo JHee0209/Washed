@@ -156,7 +156,9 @@ export default function LoginPage() {
         .check:focus-visible + span { box-shadow: 0 0 0 4px rgba(91, 147, 224, .18); }
       `}</style>
 
-      <div style={{ width: '390px', height: '844px', margin: '40px auto', position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px', background: 'linear-gradient(180deg, #FFFFFF 0%, #F4F8FE 46%, #E4EDFA 100%)', borderRadius: '40px', boxShadow: '0 20px 40px rgba(0,0,0,0.1)' }}>
+      {/* `.app-frame-auth` — 이 화면만 내부 스크롤 컨테이너가 없고 세로 가운데 정렬이라
+          높이를 고정하지 않는다 ((user)/user-layout.css · Issue #69). */}
+      <div className="app-frame-auth" style={{ position: 'relative', overflow: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 24px', background: 'linear-gradient(180deg, #FFFFFF 0%, #F4F8FE 46%, #E4EDFA 100%)' }}>
         
         {/* 상단 장식용 그라데이션 */}
         <div style={{ position: 'absolute', top: '-190px', left: '50%', transform: 'translateX(-50%)', width: '620px', height: '620px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(91,147,224,.16) 0%, rgba(91,147,224,0) 62%)', pointerEvents: 'none' }}></div>
