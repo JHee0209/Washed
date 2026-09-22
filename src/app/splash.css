@@ -1,0 +1,28 @@
+/* 스플래시 프레임 (Issue #69).
+ *
+ * `/` 스플래시는 `(user)` 라우트 그룹 밖에 있어 `(user)/user-layout.css` 가 로드되지 않는다.
+ * 그래서 같은 프레임 정책을 여기에 따로 둔다 — 값을 고칠 때는 두 파일을 함께 본다.
+ * 이 파일은 `src/app/page.tsx` 에서만 import 하므로 `/admin` 에는 내려가지 않는다.
+ *
+ * 원래 값은 `width: min(390px, 100vw); height: min(844px, 100dvh); min-height: 640px` 이었다.
+ * 폭이 390px 에서 멈춰 그보다 넓은 폰에서 좌우에 빈 자리가 남았고, 높이도 844px 에서 멈춰
+ * 세로가 더 긴 폰에서 화면을 다 채우지 못했다. `100vw` 는 세로 스크롤바 폭까지 포함해
+ * 가로 overflow 를 만들 수 있어 쓰지 않는다.
+ *
+ * 프레임의 모서리 · 그림자 · 배경 그라데이션은 원래 없거나 인라인에 있다 — 여기서는
+ * 크기 계산만 다루고 디자인은 건드리지 않는다. */
+
+/* 모바일 — viewport 를 가로 세로 모두 꽉 채운다. */
+.splash-frame {
+  width: 100%;
+  max-width: 430px;
+  height: 100dvh;
+}
+
+/* Tablet · Desktop — 기존의 844px 높이 제한을 되살린다.
+   `(user)/user-layout.css` 의 `.app-frame` 과 같은 지점에서 전환한다. */
+@media (min-width: 520px) {
+  .splash-frame {
+    height: min(844px, 100dvh);
+  }
+}

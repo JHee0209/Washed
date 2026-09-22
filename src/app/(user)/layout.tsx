@@ -11,6 +11,10 @@ import { Noto_Sans_JP, Noto_Sans_SC } from 'next/font/google';
 
 import LocaleFrame from '@/components/locale-frame';
 
+// 사용자 화면 프레임의 반응형 규칙 (Issue #69).
+// 여기서만 import 하므로 `/admin` 번들에는 들어가지 않는다 — 파일 머리말 참고.
+import './user-layout.css';
+
 // 중국어 · 일본어 글꼴 (07 「디자인」 의 「글꼴」 · 08 · 11번 마지막 줄).
 //
 // 기숙사 망에서 외부 폰트 CDN 이 막히면 글자가 깨지므로 **자체 호스팅**이 요구사항이다.
