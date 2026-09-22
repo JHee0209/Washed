@@ -34,11 +34,13 @@ const header: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: '8px',
-  padding: '63px 20px 12px',
+  // 위쪽 63px 은 프로토타입의 아이폰 목업 상태바 자리를 비워 두던 값이었다.
+  // 실제 폰에서는 OS 상태바가 웹뷰 밖에 따로 있어 그 자리가 빈 흰 띠로 남는다.
+  padding: '14px 20px 12px',
+  paddingTop: 'max(14px, env(safe-area-inset-top))',
   background: '#fff',
   borderBottom: '1px solid #EAF0FA',
   width: '100%',
-  height: '96px',
   position: 'relative',
 };
 

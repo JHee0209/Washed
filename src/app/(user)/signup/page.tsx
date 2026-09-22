@@ -337,7 +337,7 @@ export default function SignupPage() {
       <div className="app-frame" style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: '#F3F6FB', color: '#1E3557', overflow: 'hidden' }}>
         
         {/* 헤더 */}
-        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '54px 20px 12px', background: '#fff', borderBottom: '1px solid #EAF0FA' }}>
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '8px', padding: '14px 20px 12px', paddingTop: 'max(14px, env(safe-area-inset-top))', background: '#fff', borderBottom: '1px solid #EAF0FA' }}>
           <img src="/icons/logo-mark.png" alt="Washed" style={{ width: '34px', height: '34px', objectFit: 'contain', marginLeft: '-3px', marginTop: '2px' }} />
           <span style={{ fontSize: '16px', fontWeight: 800, color: '#2F63B8', letterSpacing: '-0.3px', marginLeft: '-7px', marginTop: '2px' }}>Washed</span>
         </div>
