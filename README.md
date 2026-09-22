@@ -1,9 +1,8 @@
 <!--
 발표용 README.
-2026-09-22 기준 실제 구현 상태로 작성함 — dev HEAD 기준.
-Issue #13(다국어), #69(사용자 화면 반응형), #86(관리자 사용자 검색·문의 발신자 이메일)은
-**아직 Open이며 구현 전**이다. 해당 항목은 ⏳ 표시로 구분해 두었다.
-세 Issue가 merge되면 ⏳ 항목과 캡처, Closed/Open 수치를 실제값으로 갱신할 것.
+2026-09-22 기준 실제 구현 상태로 작성함 — dev HEAD `2c43310`.
+Issue #13(다국어) · #69(사용자 화면 반응형) · #86(관리자 사용자 검색·문의 발신자 이메일)은
+모두 구현·merge 완료다. 현재 열려 있는 Issue 는 #99(알림 페이지 번역 보완) 하나다.
 -->
 
 # 🫧 Washed
@@ -15,7 +14,7 @@ Issue #13(다국어), #69(사용자 화면 반응형), #86(관리자 사용자 �
 | 팀명 | **2BA** |
 | 팀원 | **정주희(프로젝트 통합·백엔드/인증·알림), 서수영(백엔드·DB/인프라·테스트), 이서연(프론트엔드·계정/설정·관리자 UI), 조성원(대기열·관리자 기능·데이터 연동)** |
 | 기간 | **2026.09.11 ~ 2026.09.21 (발표 기준)** |
-| 배포 링크 | Dev Preview: `https://vibecoding2-git-dev-zoohi.vercel.app` |
+| 배포 링크 | **Production: https://washed-eulji.vercel.app** |
 | 피그마 | **사용 안 함** |
 | Claude Design | `https://claude.ai/design/p/37542e42-0d27-4c87-ae1b-023841b68cfc?file=%ED%99%88.dc.html&via=share` |
 | GitHub | `https://github.com/JHee0209/Washed` |
@@ -48,9 +47,9 @@ Issue #13(다국어), #69(사용자 화면 반응형), #86(관리자 사용자 �
 | 7 | Web Push 및 앱 알림함 | ✅ 완료 |
 | 8 | 이용기록·신고·경고 연동 | ✅ 완료 |
 | 9 | 관리자 운영 콘솔 | ✅ 1차 완료 |
-| 10 | 네 언어 다국어(한국어·English·中文·日本語) | ⏳ 구현 예정 · Issue #13 — 언어 선택 UI만 있고 화면 번역 미연결 |
-| 11 | 사용자 화면 Desktop·Tablet·Mobile 반응형 | ⏳ 구현 예정 · Issue #69 — 현재 390px 고정 중심 UI (관리자 화면은 #69 범위 밖, Desktop 웹 전용 유지) |
-| 12 | 관리자 사용자 검색·문의 발신자 이메일 | ⏳ 구현 예정 · Issue #86 |
+| 10 | 네 언어 다국어(한국어·English·中文·日本語) | ✅ 완료 · Issue #13 — 알림 페이지 일부 번역은 #99에서 보완 중 |
+| 11 | 사용자 화면 Mobile·Tablet·Desktop 대응 | ✅ 완료 · Issue #69 — 넓은 화면에서는 최대 430px 사용자 UI를 가운데 정렬한다 (관리자 콘솔은 #69 범위 밖) |
+| 12 | 관리자 사용자 검색·문의 발신자 이메일 | ✅ 완료 · Issue #86 |
 
 ### 범위에서 제외한 것
 - **회전 QR / 일회성 QR 토큰** — 현재 MVP는 정적 QR + HMAC 검증으로 구현
@@ -78,7 +77,7 @@ Issue #13(다국어), #69(사용자 화면 반응형), #86(관리자 사용자 �
 | 배정 후 10분 내 QR 미인증 | 배정 만료·경고 처리 | 다시 줄서기 | ✅ |
 | 사용 종료 후 3분 내 미수거 | 수거 만료·경고 처리 | 정책에 따라 이용 상태 종료 | ✅ |
 | Push 권한이 꺼짐 | 브라우저 권한/앱 알림 상태 안내 | 권한 또는 Washed 알림 재활성화 | ✅ |
-| 관리자 사용자 검색 결과 없음 | 자연스러운 빈 상태 | 검색어 변경/삭제 | ⏳ 구현 예정 · Issue #86 |
+| 관리자 사용자 검색 결과 없음 | 자연스러운 빈 상태 | 검색어 변경/삭제 | ✅ |
 | API/DB 저장 실패 | 기능별 오류 문구 | 재시도 | ✅ 주요 흐름 적용 / 화면별 추가 점검 필요 |
 
 ### 기획 문서
@@ -98,7 +97,7 @@ Issue #13(다국어), #69(사용자 화면 반응형), #86(관리자 사용자 �
 
 - Claude Design 공유본: `https://claude.ai/design/p/37542e42-0d27-4c87-ae1b-023841b68cfc?file=%ED%99%88.dc.html&via=share`
 
-> 아래 이미지는 Playwright/Claude Code로 캡처 후 넣을 예정
+> 아래 이미지는 Playwright로 캡처했다.
 
 ![디자인 시스템](docs/images/design-system.png)
 
@@ -109,7 +108,7 @@ Issue #13(다국어), #69(사용자 화면 반응형), #86(관리자 사용자 �
 | Claude Design | 로그인·홈·기록·설정·관리자 등 초기 화면 설계 및 `.dc.html` 산출물 제작 | 디자인 원본/참고 자료 |
 | React + Tailwind CSS | 실제 서비스 화면 구현 | 최종 구현 |
 | `docs/07-screens.md` | 디자인 정책·화면 요구사항 기준 | 문서 원본 |
-| `src/app/globals.css` | 실제 코드에서 사용하는 디자인 토큰 | 코드 단일 원본 |
+| `src/app/globals.css` | 공통 디자인 토큰과 주요 공통 스타일을 정의해 구현 기준으로 사용 | 코드 쪽 기준 |
 
 ### 정의
 | 구분 | 정의 | 디자인 문서 | 실제 구현 |
@@ -143,12 +142,12 @@ Issue #13(다국어), #69(사용자 화면 반응형), #86(관리자 사용자 �
 - Admin Table / Filter
 
 ### 디자인 vs 구현
-| Claude Design | 실제 화면 |
+| Claude Design (시안) | 실제 구현 |
 |---|---|
-| ![](docs/images/cdesign-home.png) | ![](docs/images/real-home.png)<br>⏳ **Issue #69 반응형 구현 후 캡처 예정** |
-| ![](docs/images/cdesign-admin.png) | ![](docs/images/real-admin.png)<br>⏳ **최종 구현 후 캡처 예정** (관리자는 #69 범위 밖 · Desktop 웹 전용) |
+| ![](docs/images/cdesign-home.png) | ![](docs/images/screens/home.png) |
+| ![](docs/images/cdesign-admin.png) | ![](docs/images/screens/admin-devices.png) |
 
-> 피그마는 이번 프로젝트에서 사용하지 않았으므로 비교 표는 **Claude Design ↔ 실제 구현** 중심으로 구성한다. 실제 화면 캡처는 **Issue #69 사용자 화면 반응형 적용 후** 최종 상태로 찍을 예정이라 현재는 비어 있다 — 지금 찍으면 발표용 최종 화면과 달라진다.
+> 피그마는 이번 프로젝트에서 사용하지 않았으므로 비교 표는 **Claude Design ↔ 실제 구현** 중심으로 구성한다. 실제 구현 캡처는 Playwright로 Production(`washed-eulji.vercel.app`)에서 찍었고, 관리자 화면은 공개 저장소에 올리기 위해 개인정보를 가린 공개용 캡처다.
 
 ---
 
@@ -189,7 +188,7 @@ PR merge는 사용자의 명시적 승인 후에만 수행한다.
 - **v2 → v3**: dirty working tree에서 임의 `switch/pull/reset`하지 않는 안전 규칙 추가
 - **v3 → v4**: DB migration과 코드 merge를 분리하고 **Neon branch ID 확인** 절차 강화
 - **v4 → 현재**: commit/push/PR/merge 단계별 승인, 신규 lint 오류와 기존 baseline 분리, Issue 범위 밖 수정 금지 명시
-- **다음 단계(⏳ 예정)**: 다국어(#13), 사용자 화면 반응형(#69), 관리자 검색·문의 발신자 이메일(#86)도 같은 하네스 규칙으로 구현·검증·통합할 계획
+- **마지막 단계**: 다국어(#13), 사용자 화면 반응형(#69), 관리자 검색·문의 발신자 이메일(#86)도 같은 하네스 규칙으로 구현·검증·`dev` 통합까지 마쳤다
 
 ---
 
@@ -287,24 +286,22 @@ gitGraph
 | #84 | 비밀번호 검증·프로필 사진 기본값 복원 | #87 | ✅ 완료 |
 | #85 | 다음 배정 예상 시간 +3분 | #88 | ✅ 완료 |
 | #86 1차 | 문의 관리자 연동·날짜 필터 | #89 | ✅ `dev` 반영 |
-| #86 후속 | 관리자 사용자 검색·문의 발신자 이메일 | — | ⏳ 구현 예정 |
-| #13 | 네 언어 이식 | — | ⏳ 구현 예정 |
-| #69 | 사용자 화면 반응형 UI (관리자 제외) | — | ⏳ 구현 예정 |
+| #86 후속 | 관리자 사용자 검색·문의 발신자 이메일 | #91 | ✅ 완료 |
+| #13 | 네 언어 이식 | #95 | ✅ 완료 |
+| #69 | 사용자 화면 반응형 UI (관리자 제외) | #97 | ✅ 완료 |
 
 - 이슈 템플릿: **있음**
 - 위치: `.github/ISSUE_TEMPLATE/기능-개발-이슈-양식.md`
 
-### 현재 Issue 현황 (2026-09-22 기준)
+### 현재 Issue 현황 (2026-09-22 조회 기준)
 
-**전체 43개 · ✅ Closed 40개 · 🟡 Open 3개**
+**전체 44개 · ✅ Closed 43개 · 🟡 Open 1개**
 
 | Issue | 내용 | 상태 |
 |---|---|---|
-| [#13](https://github.com/JHee0209/Washed/issues/13) | 다국어 네 언어 이식 (한국어·English·中文·日本語) | ⏳ 구현 예정 |
-| [#69](https://github.com/JHee0209/Washed/issues/69) | 사용자 페이지 Desktop·Tablet·Mobile 반응형 | ⏳ 구현 예정 |
-| [#86](https://github.com/JHee0209/Washed/issues/86) | 관리자 사용자 검색 및 문의 발신자 이메일 표시 | ⏳ 구현 예정 |
+| [#99](https://github.com/JHee0209/Washed/issues/99) | `[i18n]` 알림 페이지 다국어 번역 미적용 문제 수정 | 🟡 Open — 보완 중 |
 
-- 세 Issue가 merge되면 Closed/Open 수치와 최종 commit SHA를 실제값으로 갱신
+- 발표 기준 dev HEAD: `2c43310`
 
 ![이슈 화면](docs/images/issues.png)
 
@@ -321,8 +318,8 @@ gitGraph
   - GitHub Checks/Vercel Preview 확인
   - Issue 범위와 변경 파일 비교
   - 사용자의 명시적 승인 후 merge
-- 2026-09-21 조회 기준 총 PR: **47개**
-- merged PR: **42개**
+- 2026-09-22 조회 기준 총 PR: **55개**
+- merged PR: **50개** · Open **0개** · merge 없이 닫은 PR **5개**
 - 발표 시점 기준 README/발표 자산과 기능 작업은 `dev`에 통합 완료
 - 정식 리뷰 코멘트 수: **최종 발표 직전 실제 GitHub 기준으로 별도 집계**
 
@@ -359,8 +356,8 @@ gitGraph
 
 ### 실행 방법
 
-**배포 Preview**
-- `https://vibecoding2-git-dev-zoohi.vercel.app`
+**배포 서비스 (Production)**
+- https://washed-eulji.vercel.app
 
 **로컬**
 ```bash
@@ -382,33 +379,34 @@ npm run dev
 9. 기록 / 경고 확인
 10. 설정 / 알림 ON·OFF
 11. 관리자 — 기기·대기열·사용자·신고·경고·공지·이용내역·문의
-12. 관리자 사용자 검색 — 이름·이메일·학번 부분 검색 및 빈 상태 확인 — ⏳ **Issue #86 완료 후 시연 예정**
-13. 문의 탭 — 실제 사용자 이메일 표시 확인 — ⏳ **Issue #86 완료 후 시연 예정**
-14. 언어 전환 — 한국어 / English / 中文 / 日本語 — ⏳ **Issue #13 완료 후 시연 예정**
-15. 반응형 — Mobile / Tablet / Desktop 화면 비교 — ⏳ **Issue #69 완료 후 시연 예정**
+12. 관리자 사용자 검색 — 이름·이메일·학번 부분 검색 및 빈 상태 확인 (#86)
+13. 문의 탭 — 발신자 이메일 표시 확인 (#86)
+14. 언어 전환 — 한국어 / English / 中文 / 日本語 (#13)
+15. 반응형 — Mobile / Tablet / Desktop viewport 비교 (#69)
 
-> 1~11번은 현재 구현된 범위이고, 12~15번은 위 세 Issue가 끝난 뒤 시연 항목으로 추가한다.
+> 1~15번 모두 현재 구현된 범위다. 다만 14번은 알림 페이지 일부 번역이 #99로 보완 중이라 그 화면에서는 한국어가 섞여 보일 수 있다.
 
-### 데모 캡처 추천
-| 파일 | 캡처 대상 | 상태 |
-|---|---|---|
-| `docs/images/design-system.png` | 디자인 시스템 | ✅ 캡처 완료 |
-| `docs/images/cdesign-home.png` | Claude Design 홈 원본 | ✅ 캡처 완료 |
-| `docs/images/cdesign-admin.png` | Claude Design 관리자 원본 | ✅ 캡처 완료 |
-| `docs/images/real-login.png` | 로그인 | ✅ 캡처 완료 |
-| `docs/images/issues.png` | GitHub Issues | ✅ 캡처 완료 |
-| `docs/images/pr.png` | GitHub PR | ✅ 캡처 완료 |
-| `docs/images/real-home.png` | 홈/기기 상태 | ⏳ #69 후 캡처 예정 |
-| `docs/images/real-queue.png` | 줄서기/배정 상태 | ⏳ #69 후 캡처 예정 |
-| `docs/images/real-notifications.png` | 알림함 | ⏳ #69 후 캡처 예정 |
-| `docs/images/real-history.png` | 기록 | ⏳ #69 후 캡처 예정 |
-| `docs/images/real-settings.png` | 설정 | ⏳ #69 후 캡처 예정 |
-| `docs/images/real-admin.png` | 관리자 콘솔 | ⏳ 최종 구현 후 캡처 예정 (관리자는 #69 범위 밖) |
-| `docs/images/real-responsive.png` | 사용자 화면 Mobile·Tablet·Desktop 비교 | ⏳ #69 후 캡처 예정 |
-| `docs/images/real-i18n.png` | 네 언어 전환 화면 | ⏳ #13 후 캡처 예정 |
-| `docs/images/real-admin-search.png` | 관리자 사용자 검색 + 문의 이메일 | ⏳ #86 후 캡처 예정 |
+### 캡처 현황
 
-> 실제 서비스 화면(`real-*`)은 **Issue #69 사용자 화면 반응형 적용 후 최종 상태로 한 번에 캡처**한다 — 지금 찍으면 발표용 최종 화면과 달라진다. `real-i18n`은 #13, `real-admin-search`는 #86 완료가 선행 조건이며, 관리자 콘솔은 #69 범위 밖이라 Desktop 웹 기준으로 찍는다.
+문서 이미지는 `docs/images/`, 실제 서비스 화면은 `docs/images/screens/` 에 있다.
+`screens/` 아래 캡처는 `scripts/capture-screens.ts`(Playwright)로 Production 에서 찍었다.
+
+| 구분 | 파일 (`docs/images/screens/`) |
+|---|---|
+| 사용자 | `login.png` · `home.png` · `home-empty.png` · `notifications.png` · `records.png` · `settings.png` |
+| 관리자 | `admin-devices.png` · `admin-queue.png` · `admin-reports.png` · `admin-warnings.png` · `admin-notices.png` · `admin-users.png` · `admin-inquiries.png` |
+| 반응형 (#69) | `responsive-mobile.png`(390×844) · `responsive-tablet.png`(834×1194) · `responsive-desktop.png`(1440×900) |
+| 다국어 (#13) | `lang-ko.png` · `lang-en.png` · `lang-zh.png` · `lang-ja.png` |
+
+문서용 이미지는 `docs/images/` 에 `design-system.png` · `cdesign-home.png` · `cdesign-admin.png` · `real-login.png` · `issues.png` · `pr.png` 가 있다.
+
+**아직 캡처하지 않은 화면** — 줄서기 대기 순번 · 배정 직후 QR 안내 · 사용 타이머.
+세 화면은 모든 기기가 사용 중이거나 실제 QR 인증을 거친 상태여야 나오는데, 그 상태를
+만들려면 운영 DB 를 건드려야 해서 캡처하지 않았다. 발표에서는 화면으로 직접 시연한다.
+
+> 관리자 캡처는 Public 저장소에 올리기 위해 이름 · 학번 · 호실 · 이메일 · 문의 내용 ·
+> 관리자 ID 를 불투명하게 가린 **공개용 이미지**다. 화면 구조와 기능(검색창 · 표 · 상태 배지 ·
+> 이메일 컬럼)은 그대로 보인다.
 
 ---
 
@@ -421,11 +419,12 @@ npm run dev
 - `CLAUDE.md`와 Skill로 Claude Code의 Git·DB·검증 행동을 표준화
 - Vercel Preview를 통해 PR 단위로 실제 배포 화면 확인
 - migration 상태 검사 스크립트와 회귀 테스트를 추가해 DB/상태 머신 변경의 위험을 낮춤
+- 발표 직전 마지막 세 Issue까지 같은 하네스로 끝냄 — 다국어(#13), 사용자 화면 반응형(#69), 관리자 검색·문의 발신자 이메일(#86)
 
-### 후속 구현 예정 (현재 진행 중인 개선)
-- ⏳ **Issue #13** — 한국어·영어·중국어·일본어 4개 언어를 실제 화면에 연결하고 기기 단위 언어 설정 유지. 현재는 언어 선택 UI만 있고 화면 문구는 한국어 고정이다
-- ⏳ **Issue #69** — 390px 고정 중심의 사용자 화면을 Mobile·Tablet·Desktop 반응형 레이아웃으로 확장. 관리자 화면은 이번 범위에서 제외하고 Desktop 웹 전용으로 유지한다
-- ⏳ **Issue #86** — 관리자 사용자 검색과 문의 발신자 이메일 표시를 연결해 운영 편의성 보완. 문의 관리자 연동·이용 내역 날짜 필터(1차)는 PR #89로 이미 `dev`에 반영됐다
+### 마지막에 추가한 개선
+- **Issue #13** — 한국어·영어·중국어·일본어 사전을 `src/lib/i18n/` 으로 분리하고 사용자 화면에 연결했다. 언어 선택은 `localStorage` 에 남아 다음 방문에도 유지되고, 중국어·일본어는 Noto Sans SC/JP 폴백으로 글자가 깨지지 않는다. 알림 페이지 일부 문구는 **#99 로 보완 중**이다
+- **Issue #69** — 프로토타입에서 넘어온 `390×844` 고정 상자를 걷어내 실제 폰에서 가로 스크롤이 생기지 않게 했다. 넓은 화면에서는 사용자 UI 를 **최대 430px 로 멈추고 가운데 정렬**한다 — 데스크톱 전용 다단 레이아웃을 새로 만든 것은 아니다. 관리자 콘솔은 Desktop 웹에서 쓰는 화면이라 **반응형 범위에서만** 제외했다(다국어는 별개로, 관리자 쪽에도 i18n 구조가 쓰인다)
+- **Issue #86** — 관리자 사용자 검색(이름·이메일·학번), 문의 발신자 이메일 표시, 사용자 문의 관리자 연동, 이용 내역 날짜 필터까지 운영 편의 기능을 마무리했다
 
 ### 실패 사례와 개선
 | 무엇이 실패했나 | 왜 | 어떻게 고쳤나 |
@@ -433,7 +432,7 @@ npm run dev
 | 초기 화면의 가짜 데이터·localStorage | 여러 사용자가 같은 상태를 공유할 수 없음 | 실제 DB/API 조회·서버 상태로 이전 |
 | 클라이언트 중심 배정 판단 | 동시 접근 시 중복 배정 위험 | 서버/DB 중심 자동 배정으로 변경 |
 | GET 조회 과정에서 상태 변경 | 단순 조회가 side effect를 발생시킬 수 있음 | 조회와 상태 변경 로직 분리(#35) |
-| 자동 만료가 브라우저 실행 상태에 의존 | 사용자가 앱을 닫으면 시간 정책이 깨질 수 있음 | scheduler/cron 기반 서버 처리 |
+| 자동 만료가 브라우저 실행 상태에 의존 | 사용자가 앱을 닫으면 시간 정책이 깨질 수 있음 | 배정·수거 만료 판정을 서버 스케줄러 라우트(`/api/cron/expiration`)로 분리하고 주기 호출이 가능하도록 구성 |
 | Push 권한과 서비스 구독 상태 혼동 | 브라우저 `permission=granted`만으로 실제 수신 가능 여부를 알 수 없음 | PushSubscription과 브라우저 권한을 분리 |
 | 여러 Issue가 공통 resolver 파일 수정 | 최신 `dev` 병합 시 conflict | Issue별 변경 목적을 확인해 수동 통합 후 전체 회귀 검증 |
 | DB branch 혼동 위험 | Preview/Production 연결 문자열이 여러 환경에 존재 | migration 전 Neon branch ID와 status를 반드시 확인 |
@@ -465,9 +464,9 @@ npm run dev
 - [x] 프로젝트 시작일: 2026.09.11
 - [x] Figma: 사용 안 함
 - [x] Claude Design 공유 URL 반영
-- [x] Playwright로 현재 구현 상태 캡처 6개 추가 (디자인 시스템 · Claude Design 홈/관리자 · 로그인 · Issues · PR)
-- [ ] ⏳ #13 · #69 · #86 구현/merge 후 나머지 `real-*` 캡처 9개 추가
-- [ ] ⏳ #13 · #69 · #86 merge 후 GitHub Closed/Open 수치와 최종 commit SHA를 실제값으로 갱신
+- [x] Playwright로 문서용 캡처 6개 추가 (디자인 시스템 · Claude Design 홈/관리자 · 로그인 · Issues · PR)
+- [x] #13 · #69 · #86 구현/merge 후 서비스 화면 캡처 20개 추가 (`docs/images/screens/`)
+- [x] GitHub Issue/PR 수치와 dev HEAD 를 2026-09-22 조회 기준으로 갱신
 - [ ] README/발표 자산 PR merge 후 최종 기준 commit/status 갱신
 - [ ] `dev → main` Production 반영 전 최종 상태 갱신
-- [ ] 발표 직전 GitHub Open Issue 목록을 다시 확인 (2026-09-22 기준 Open 3개: #13 · #69 · #86)
+- [ ] 발표 직전 GitHub Open Issue 목록을 다시 확인 (2026-09-22 기준 Open 1개: #99)
