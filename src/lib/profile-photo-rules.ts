@@ -29,10 +29,10 @@ export function isAllowedProfilePhotoMime(value: unknown): value is ProfilePhoto
 /**
  * 실제 파일 바이트의 매직 넘버로 형식을 판정한다.
  *
- * report-rules.ts 의 기존 검증은 `File.type`(브라우저가 말한 MIME) 문자열만
- * 보는데, 그 값은 사용자가 얼마든지 조작해 보낼 수 있다. 프로필 사진은 여기서
- * **실제 바이트 서명**까지 확인해 그 허점을 막는다 — 확장자를 바꾸거나
- * Content-Type 을 조작해도 파일의 첫 몇 바이트는 바뀌지 않는다.
+ * `File.type`(브라우저가 말한 MIME)은 사용자가 얼마든지 조작해 보낼 수 있다.
+ * 그래서 **실제 바이트 서명**으로 판정한다 — 확장자를 바꾸거나 Content-Type 을
+ * 조작해도 파일의 첫 몇 바이트는 바뀌지 않는다. 프로필 사진(api/profile/photo)과
+ * 신고 증거 사진(api/reports)이 함께 쓴다.
  */
 export function detectImageMimeFromBytes(bytes: Uint8Array): ProfilePhotoMime | null {
   // JPEG — FF D8 FF
