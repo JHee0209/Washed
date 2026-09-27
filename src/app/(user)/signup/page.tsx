@@ -149,7 +149,7 @@ export default function SignupPage() {
       };
 
       if (!data.ok) {
-        // 400 형식 · 409 이미 가입 · 429 쿨다운 · 502 발송 실패 —
+        // 400 형식 · 502 발송 실패 — (가입 여부 · 쿨다운은 서버가 드러내지 않는다)
         // 문구는 서버 것을 그대로 쓴다.
         const message = apiError(data, t('signup.codeSendFailed'));
         setCodeMessageSource({ body: data, fallbackKey: 'signup.codeSendFailed' });

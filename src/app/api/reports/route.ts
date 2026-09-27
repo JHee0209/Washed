@@ -21,6 +21,7 @@ import { auth } from '@/auth';
 import { withdrawPendingBlock } from '@/lib/account-guard';
 import { sql } from '@/lib/db';
 import { evidenceDeleteAfter, evidenceUrl } from '@/lib/evidence-storage';
+import { detectImageMimeFromBytes } from '@/lib/profile-photo-rules';
 import { MAX_EVIDENCE_BYTES, validateReportInput } from '@/lib/report-rules';
 
 export const runtime = 'nodejs';
@@ -77,9 +78,14 @@ export async function POST(request: Request) {
     machineKind: form.get('machineKind'),
     machineNo: form.get('machineNo'),
     etcContent: form.get('etcContent'),
-    // ── 5. 크기는 **실제로 읽은 바이트 수**로 잰다. 형식도 파일이 말한 MIME 을
-    //      validateReportInput 이 허용 목록과 대조한다.
-    evidence: file && bytes ? { mime: file.type, byteSize: bytes.byteLength } : null,
+    // ── 5. 크기는 **실제로 읽은 바이트 수**로 잰다. 형식은 file.type(브라우저가
+    //      말한 MIME · 조작 가능)이 아니라 **실제 바이트의 매직 넘버**로 판정한다 —
+    //      프로필 사진(profile/photo)과 같은 검사다. 서명이 JPEG · PNG · WebP 중
+    //      어느 것과도 맞지 않으면 null 이 들어가 validateReportInput 이 415 로 거절하고,
+    //      통과하면 저장되는 mime_type 도 판정된 값이 된다.
+    evidence: file && bytes
+      ? { mime: detectImageMimeFromBytes(bytes), byteSize: bytes.byteLength }
+      : null,
   });
 
   if (!result.ok) {

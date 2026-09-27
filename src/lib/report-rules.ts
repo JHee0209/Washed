@@ -217,6 +217,8 @@ export function validateReportInput(input: ReportInput): ValidationResult {
 
   if (evidence) {
     // 형식 — accept 속성을 믿지 않는다. 확장자가 아니라 MIME 으로 본다.
+    // 서버(api/reports)는 file.type 이 아니라 매직 넘버로 판정한 값
+    // (detectImageMimeFromBytes · 판정 불가면 null)을 넣으므로 조작된 Content-Type 도 막힌다.
     if (!isAllowedEvidenceMime(evidence.mime)) {
       return { ok: false, status: 415, code: 'IMAGE_TYPE_NOT_ALLOWED', message: 'JPG · PNG · WebP 이미지만 첨부할 수 있어요.' };
     }
